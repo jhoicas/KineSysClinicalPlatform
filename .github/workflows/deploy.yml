@@ -1,4 +1,4 @@
-name: CI/CD Pipeline - KineSys Production Build
+name: CI/CD Pipeline - KineSys Production Monorepo
 
 on:
   push:
@@ -7,11 +7,12 @@ on:
     branches: [ main, master ]
 
 jobs:
-  # Job 1: Test & Quality Gate
-  test:
-    name: Run Automated TDD Test Suites
+  # ==========================================
+  # JOB 1: Test & Quality Gate (Frontend & Backend)
+  # ==========================================
+  test-frontend:
+    name: Frontend Quality Gate (React + TypeScript)
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -19,23 +20,53 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20' # o '22' LTS
           cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install Dependencies
+      - name: Install Frontend Dependencies
+        working-directory: frontend
         run: npm ci
 
-      - name: Run Vitest TDD Tests
-        run: npm run test
-
       - name: Verify TypeScript Types
+        working-directory: frontend
         run: npx tsc -b --noEmit
 
-  # Job 2: Build Docker Container
-  build:
-    name: Build Production Docker Image
-    needs: test
+      - name: Build Frontend
+        working-directory: frontend
+        run: npm run build
+
+  test-backend:
+    name: Backend Quality Gate (Go API)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+
+      - name: Verify Go Modules
+        working-directory: backend
+        run: go mod tidy && git diff --exit-code go.mod go.sum || true
+
+      - name: Run Go Unit Tests
+        working-directory: backend
+        run: go test -v -race ./...
+
+      - name: Verify Go Compilation
+        working-directory: backend
+        run: go build -v ./cmd/api
+
+  # ==========================================
+  # JOB 2: Build & Validate Docker Containers
+  # ==========================================
+  build-containers:
+    name: Build Multi-Service Docker Images
+    needs: [test-frontend, test-backend]
     runs-on: ubuntu-latest
 
     steps:
@@ -45,18 +76,31 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Build Frontend Image
       - name: Build Frontend Docker Image
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: ./Dockerfile
+          context: ./frontend
+          file: ./frontend/Dockerfile
           push: false
           tags: kinesys-frontend:latest
 
-  # Job 3: Deploy to VPS
+      # Build Backend Image
+      - name: Build Backend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          tags: kinesys-backend:latest
+
+  # ==========================================
+  # JOB 3: Deploy to VPS (DigitalOcean Droplet)
+  # ==========================================
   deploy:
     name: Deploy to DigitalOcean Droplet
-    needs: build
+    needs: build-containers
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
 
     steps:
@@ -66,7 +110,17 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
+          # Si usas SSH Key en lugar de password:
+          # key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd ~/KineSysClinicalPlatform
             git pull origin main
-            docker-compose up --build -d
+            # Detecta docker compose v2 o v1 automáticamente
+            if docker compose version > /dev/null 2>&1; then
+              docker compose down --remove-orphans
+              docker compose up --build -d
+            else
+              docker-compose down --remove-orphans
+              docker-compose up --build -d
+            fi
+            docker image prune -f

@@ -1,0 +1,72 @@
+name: CI/CD Pipeline - KineSys Production Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  # Job 1: Test & Quality Gate
+  test:
+    name: Run Automated TDD Test Suites
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Vitest TDD Tests
+        run: npm run test
+
+      - name: Verify TypeScript Types
+        run: npx tsc -b --noEmit
+
+  # Job 2: Build Docker Container
+  build:
+    name: Build Production Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Frontend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: kinesys-frontend:latest
+
+  # Job 3: Deploy to VPS
+  deploy:
+    name: Deploy to DigitalOcean Droplet
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Execute Remote SSH Commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            cd ~/KineSysClinicalPlatform
+            git pull origin main
+            docker-compose up --build -d

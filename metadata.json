@@ -1,0 +1,6 @@
+{
+  "name": "KineSys Clinical Platform",
+  "description": "Sistema de gestión clínica integral con agenda de citas, portal del paciente (perfiles profesionales y reseñas), mapa de dolor, módulo nutricional FHIR con evaluación antropométrica (Mifflin-St Jeor), generador de PDFs con branding multitenant y despacho de documentos Eco-Friendly (Cero Papel) por correo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

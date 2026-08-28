@@ -107,6 +107,13 @@ jobs:
       - name: Execute Remote SSH Commands
         uses: appleboy/ssh-action@v1.0.3
         with:
+          # ==========================================================
+          # ⚠️ IMPORTANTE: DEBES CREAR ESTOS SECRETS EN GITHUB ⚠️
+          # Ve a: Settings > Secrets and variables > Actions > New repository secret
+          # 1. VPS_HOST: La IP de tu Droplet (ej. 142.93.x.x)
+          # 2. VPS_USERNAME: Tu usuario SSH (ej. root)
+          # 3. VPS_PASSWORD: Tu contraseña SSH (o usa VPS_SSH_KEY si usas llaves)
+          # ==========================================================
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}

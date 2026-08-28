@@ -338,7 +338,7 @@ CREATE POLICY "Tenant isolation for prescripciones (UPDATE)"
       <SideNavBar currentPath="/medicina-general" onNavigate={onNavigate} />
       <main className="flex-1 ml-0 md:ml-72 flex flex-col h-screen overflow-hidden">
         <TopNavBar currentPath="/medicina-general" onNavigate={onNavigate} />
-        <div className="flex-1 overflow-y-auto pb-24 bg-surface">
+        <div className="flex-1 overflow-y-auto pb-24 bg-surface mt-16">
           {/* Top Professional App Bar */}
       <header className="sticky top-0 z-40 bg-surface-container-lowest/90 backdrop-blur-md border-b border-outline-variant/30 px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 clinical-shadow">
         <div className="flex items-center gap-3">

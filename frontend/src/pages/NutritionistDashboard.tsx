@@ -66,7 +66,9 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   const [evaluations, setEvaluations] = useState<EvaluacionAntropometrica[]>([]);
   const [plans, setPlans] = useState<PlanNutricional[]>([]);
   const [fhirOrders, setFhirOrders] = useState<OrdenNutricionFHIR[]>([]);
+  const [availablePatients, setAvailablePatients] = useState<PacienteClinico[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
 
   // View modal states
   const [viewingEvaluation, setViewingEvaluation] = useState<EvaluacionAntropometrica | null>(null);
@@ -78,7 +80,42 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
 
   const tenantId = tenant?.id || user?.tenant_id || 'tenant_kine_001';
   const nutritionistId = user?.id || 'prof_nutri_01';
-  const nutritionistName = user?.full_name || 'Nut. Andrea Soler';
+  const nutritionistName = user?.full_name || 'Lic. Nutricionista';
+
+  // Load available patients list from Supabase for this tenant
+  const loadAvailablePatients = async () => {
+    setIsLoadingPatients(true);
+    try {
+      const { data: patData } = await supabase
+        .from('pacientes_clinicos')
+        .select('*')
+        .eq('tenant_id', tenantId);
+
+      if (patData && patData.length > 0) {
+        setAvailablePatients(patData);
+      } else {
+        // Fallback: search patients in users table
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('*')
+          .eq('role', 'patient')
+          .eq('tenant_id', tenantId);
+
+        if (usersData && usersData.length > 0) {
+          const mapped = usersData.map((u: any) => mapActiveToPacienteClinico(u, tenantId));
+          setAvailablePatients(mapped);
+        }
+      }
+    } catch (err) {
+      console.warn('Could not load clinical patients from DB:', err);
+    } finally {
+      setIsLoadingPatients(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAvailablePatients();
+  }, [tenantId]);
 
   // Derived current clinical patient object
   const currentClinico = useMemo<PacienteClinico | null>(() => {
@@ -149,6 +186,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   // Global update listener
   useEffect(() => {
     const handleDataUpdate = () => {
+      loadAvailablePatients();
       if (activePatient?.id) {
         loadPatientNutritionData(activePatient.id);
       }
@@ -203,7 +241,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       <SideNavBar currentPath="/nutricion" onNavigate={onNavigate} />
       <main className="flex-1 ml-0 md:ml-72 flex flex-col h-screen overflow-hidden">
         <TopNavBar currentPath="/nutricion" onNavigate={onNavigate} />
-        <div className="flex-1 overflow-y-auto pb-24 bg-background">
+        <div className="flex-1 overflow-y-auto pb-24 bg-background mt-16">
 
 
       {/* Main Container */}
@@ -276,6 +314,55 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 }}
               />
             </div>
+
+            {/* Quick-Select Real Patients from Supabase */}
+            {availablePatients.length > 0 && (
+              <div className="mt-8 pt-6 border-t border-outline-variant/20 text-left max-w-xl mx-auto space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
+                    Pacientes Registrados en la Clínica ({availablePatients.length})
+                  </p>
+                  <span className="text-[10px] text-primary font-bold">Selección Directa</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {availablePatients.slice(0, 4).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        const activeObj: ActivePatient = {
+                          id: p.id,
+                          full_name: `${p.first_name} ${p.last_name}`,
+                          email: p.telecom_email,
+                          phone: p.telecom_phone,
+                          rut_or_dni: p.identifier_number,
+                          gender: p.gender,
+                          birth_date: p.birth_date,
+                          medical_conditions: p.chronic_conditions,
+                          allergies: p.known_allergies,
+                          role: 'patient',
+                          tenant_id: p.tenant_id,
+                        };
+                        setActivePatient(activeObj);
+                      }}
+                      className="p-3 bg-surface-container hover:bg-surface-container-high border border-outline-variant/30 rounded-2xl text-left transition-all flex items-center gap-3 cursor-pointer group"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-black text-xs shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
+                        {p.first_name.charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-on-surface truncate group-hover:text-primary transition-colors">
+                          {p.first_name} {p.last_name}
+                        </p>
+                        <p className="text-[10px] font-mono text-on-surface-variant truncate">
+                          {p.identifier_number}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Badges de Capacidades Clínicas */}
             <div className="mt-10 pt-6 border-t border-outline-variant/20 flex flex-wrap items-center justify-center gap-6 text-xs text-on-surface-variant font-semibold">

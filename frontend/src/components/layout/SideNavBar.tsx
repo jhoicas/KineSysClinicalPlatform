@@ -216,17 +216,7 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendar
           );
         })}
 
-        {/* Public Landing Shortcut */}
-        <div className="pt-4 px-1">
-          <button
-            onClick={() => handleNavClick('/landing')}
-            className="w-full flex items-center gap-2.5 p-3 rounded-2xl bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/30 text-xs font-bold text-on-surface transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-primary text-base">storefront</span>
-            <span className="flex-1 text-left">Landing & Precios</span>
-            <span className="material-symbols-outlined text-sm text-on-surface-variant">arrow_outward</span>
-          </button>
-        </div>
+
       </div>
 
       {/* Database Sync Status in Sidebar */}

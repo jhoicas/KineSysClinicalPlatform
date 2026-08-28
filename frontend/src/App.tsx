@@ -17,7 +17,7 @@ import { LoginPage } from './pages/LoginPage';
 export function App() {
   const [currentPath, setCurrentPath] = useState<string>(() => {
     const hash = window.location.hash.replace(/^#/, '');
-    return hash || '/calendario';
+    return hash || '/landing';
   });
 
   useEffect(() => {
@@ -41,6 +41,7 @@ export function App() {
     switch (currentPath) {
       case '/login':
         return <LoginPage onNavigate={handleNavigate} />;
+      case '/':
       case '/landing':
         return <LandingPage onNavigate={handleNavigate} />;
       case '/onboarding':

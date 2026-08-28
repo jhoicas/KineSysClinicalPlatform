@@ -11,7 +11,7 @@ interface TopNavBarProps {
 }
 
 export const TopNavBar: React.FC<TopNavBarProps> = ({ onOpenNewAppointment, currentPath = '/calendario', onNavigate }) => {
-  const { user, tenant, role } = useAuth();
+  const { user, tenant, role, signOut } = useAuth();
   const { t } = useI18n();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -22,6 +22,12 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({ onOpenNewAppointment, curr
     } else {
       window.location.hash = path;
     }
+  };
+
+  const handleLogout = async () => {
+    setMobileMenuOpen(false);
+    await signOut();
+    handleNav('/login');
   };
 
   const navItems = [
@@ -90,17 +96,26 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({ onOpenNewAppointment, curr
           </button>
         )}
 
-        {/* User Avatar Mini */}
+        {/* User Avatar & Logout Mini */}
         <div className="flex items-center gap-2 pl-2 border-l border-outline-variant/20">
           <img
             src={user?.avatar_url || 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150'}
             alt="Usuario"
-            className="w-8 h-8 rounded-full object-cover border border-outline-variant"
+            className="w-8 h-8 rounded-full object-cover border border-outline-variant shrink-0"
           />
           <div className="hidden sm:block text-left leading-none">
-            <p className="text-xs font-bold text-on-surface">{user?.full_name?.split(' ')[0] || 'Dr. Usuario'}</p>
-            <p className="text-[10px] text-on-surface-variant capitalize">{role.replace('_', ' ')}</p>
+            <p className="text-xs font-bold text-on-surface truncate max-w-[100px]">{user?.full_name?.split(' ')[0] || 'Dr. Usuario'}</p>
+            <p className="text-[10px] text-on-surface-variant capitalize truncate max-w-[100px]">{role.replace('_', ' ')}</p>
           </div>
+          <button
+            id="btn-logout-topbar"
+            type="button"
+            onClick={handleLogout}
+            className="p-1.5 rounded-xl hover:bg-error-container/30 text-error/80 hover:text-error transition-colors cursor-pointer"
+            title="Cerrar Sesión"
+          >
+            <span className="material-symbols-outlined text-lg">logout</span>
+          </button>
         </div>
       </div>
 
@@ -125,6 +140,15 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({ onOpenNewAppointment, curr
               </button>
             );
           })}
+          <div className="pt-2 border-t border-outline-variant/20">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-error hover:bg-error-container/20 transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined">logout</span>
+              <span>{t('auth.logout', 'Cerrar Sesión')}</span>
+            </button>
+          </div>
         </div>
       )}
     </header>

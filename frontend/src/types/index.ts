@@ -101,7 +101,6 @@ export interface PricingPlanConfig {
   name: string;
   tagline: string;
   price_cop: number;
-  price_clp?: number;
   price_usd: number;
   max_users: number;
   trial_days: number;

@@ -19,9 +19,9 @@ interface AuthContextType {
   trialDaysLeft: number;
   availableUsers: User[];
   allowedModules: AppModule[];
-  allowedRoutes: string[];
   setUserAndRole: (selectedUserId: string) => void;
   setRole: (role: UserRole) => void;
+  signOut: () => Promise<void>;
   updateTenant: (tenant: Partial<Tenant>) => Promise<void>;
   createTenantAndAdmin: (tenantData: Partial<Tenant>, adminData: Partial<User>) => Promise<{ tenant: Tenant; user: User }>;
   refreshAuth: () => void;
@@ -34,7 +34,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [usersList, setUsersList] = useState<User[]>(INITIAL_USERS);
   const [user, setUser] = useState<User | null>(() => {
     const savedUserId = localStorage.getItem('kinesys_active_user_id');
-    return INITIAL_USERS.find((u) => u.id === savedUserId) || INITIAL_USERS[2]; // Default to Klgo Mateo
+    if (!savedUserId) return INITIAL_USERS[2]; // Default to Klgo Mateo if initial demo, but if user logs out it will be null
+    return INITIAL_USERS.find((u) => u.id === savedUserId) || null;
   });
   const [tenant, setTenant] = useState<Tenant | null>(INITIAL_TENANT);
   const [allowedModules, setAllowedModulesState] = useState<AppModule[]>([]);
@@ -220,6 +221,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { tenant: newTenantObj, user: newAdminObj };
   };
 
+  const signOut = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('Error during Supabase signOut:', err);
+    }
+    localStorage.removeItem('kinesys_active_user_id');
+    sessionStorage.removeItem('kinesys_selected_plan');
+    setUser(null);
+    setAllowedModulesState([]);
+    setAllowedRoutesState([]);
+    setStoreAllowedModules([]);
+    useAppStore.getState().clearActivePatient();
+  };
+
   const refreshAuth = () => {
     loadTenantAndUsers();
     if (user?.role) {
@@ -248,6 +264,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         allowedRoutes,
         setUserAndRole,
         setRole,
+        signOut,
         updateTenant,
         createTenantAndAdmin,
         refreshAuth,

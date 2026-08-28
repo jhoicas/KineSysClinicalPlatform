@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useAppStore } from '../../store/useAppStore';
 
@@ -18,6 +18,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const { user, loading, role, allowedModules } = useAuth();
   const isRouteAllowed = useAppStore((state) => state.isRouteAllowed);
 
+  // Auto-redirect if not authenticated
+  useEffect(() => {
+    if (!loading && !user) {
+      onNavigate('/login');
+    }
+  }, [loading, user, onNavigate]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background text-on-background">
@@ -29,25 +36,26 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  // 1. Verificación de Autenticación
+  // 1. Verificación Estricta de Autenticación (Bloqueo Inmediato)
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-background text-on-background">
-        <div className="max-w-md w-full p-8 rounded-3xl bg-surface-container-low border border-outline-variant/30 text-center space-y-5 shadow-2xl">
+        <div className="max-w-md w-full p-8 rounded-3xl bg-surface-container-low border border-outline-variant/30 text-center space-y-5 shadow-2xl animate-fadeIn">
           <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center mx-auto">
             <span className="material-symbols-outlined text-3xl">lock</span>
           </div>
           <div className="space-y-2">
-            <h2 className="text-xl font-black tracking-tight text-on-surface">Sesión Requerida</h2>
+            <h2 className="text-xl font-black tracking-tight text-on-surface">Redirigiendo al Acceso Clínico</h2>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              Debes iniciar sesión con tu cuenta profesional o de paciente para acceder a esta sección de la plataforma clínica.
+              Debes iniciar sesión con tu cuenta profesional o de paciente para acceder a esta sección de la plataforma.
             </p>
           </div>
           <button
             onClick={() => onNavigate('/login')}
-            className="w-full py-3 bg-primary text-on-primary font-bold text-xs rounded-xl shadow-md hover:bg-primary/90 transition-all cursor-pointer"
+            className="w-full py-3 bg-primary text-on-primary font-bold text-xs rounded-xl shadow-md hover:bg-primary/90 transition-all cursor-pointer flex items-center justify-center gap-2"
           >
-            Iniciar Sesión →
+            <span>Ir a Iniciar Sesión</span>
+            <span className="material-symbols-outlined text-base">arrow_forward</span>
           </button>
         </div>
       </div>

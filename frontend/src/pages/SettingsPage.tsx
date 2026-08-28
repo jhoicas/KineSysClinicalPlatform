@@ -356,7 +356,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
                       >
                         <option value="COP">COP ($ - Colombia)</option>
                         <option value="USD">USD ($ - EE. UU.)</option>
-                        <option value="CLP">CLP ($ - Chile)</option>
                         <option value="EUR">EUR (€ - Europa)</option>
                         <option value="MXN">MXN ($ - México)</option>
                         <option value="BRL">BRL (R$ - Brasil)</option>

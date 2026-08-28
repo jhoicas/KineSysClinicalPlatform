@@ -48,6 +48,7 @@ export function App() {
       case '/landing':
         return <LandingPage onNavigate={handleNavigate} />;
       case '/onboarding':
+      case '/registro':
         return <OnboardingPage onNavigate={handleNavigate} />;
       case '/portal-paciente':
         return <PatientPortalPage onNavigate={handleNavigate} />;

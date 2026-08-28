@@ -12,7 +12,7 @@ interface SideNavBarProps {
 }
 
 export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendario', onNavigate }) => {
-  const { user, tenant, role, trialDaysLeft, allowedModules: authAllowedModules } = useAuth();
+  const { user, tenant, role, trialDaysLeft, allowedModules: authAllowedModules, signOut } = useAuth();
   const storeAllowedModules = useAppStore((state) => state.allowedModules);
   const { activeLogoUrl } = useTheme();
   const { t } = useI18n();
@@ -27,6 +27,11 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendar
     } else {
       window.location.hash = path;
     }
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    handleNavClick('/login');
   };
 
   return (
@@ -156,8 +161,8 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendar
         </div>
       </div>
 
-      {/* Authenticated User Footer */}
-      <div className="p-3.5 border-t border-outline-variant/20 bg-surface-container-lowest">
+      {/* Authenticated User Footer with Logout Button */}
+      <div className="p-3.5 border-t border-outline-variant/20 bg-surface-container-lowest space-y-2">
         <div className="flex items-center gap-3 p-2 rounded-2xl bg-surface-container-low/50">
           <img
             src={user?.avatar_url || 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150'}
@@ -174,6 +179,18 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendar
             </p>
           </div>
         </div>
+
+        {/* Botón Cerrar Sesión */}
+        <button
+          id="btn-logout-sidebar"
+          type="button"
+          onClick={handleLogout}
+          className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-error-container/20 hover:bg-error-container/40 text-error text-xs font-bold transition-all border border-error/20 cursor-pointer group"
+          title="Cerrar sesión en KineSys"
+        >
+          <span className="material-symbols-outlined text-base group-hover:scale-110 transition-transform">logout</span>
+          <span>{t('auth.logout', 'Cerrar Sesión')}</span>
+        </button>
       </div>
     </aside>
   );

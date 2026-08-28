@@ -10,7 +10,7 @@ interface LandingPageProps {
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
   const { t } = useI18n();
-  const [currency, setCurrency] = useState<'COP' | 'USD' | 'CLP'>('COP');
+  const [currency, setCurrency] = useState<'COP' | 'USD'>('COP');
   const [activeTab, setActiveTab] = useState<'fisio' | 'nutri' | 'medico' | 'paciente'>('fisio');
 
   const handleSelectPlan = (plan: PricingPlanConfig) => {
@@ -434,14 +434,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             >
               USD ($ - Dólar)
             </button>
-            <button
-              onClick={() => setCurrency('CLP')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                currency === 'CLP' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              CLP ($ - Chile)
-            </button>
           </div>
         </div>
 
@@ -452,8 +444,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
             const price =
               currency === 'COP'
                 ? `$${(plan.price_cop || 119000).toLocaleString('es-CO')} COP`
-                : currency === 'CLP'
-                ? `$${(plan.price_clp || 24990).toLocaleString('es-CL')} CLP`
                 : `$${plan.price_usd} USD`;
 
             return (

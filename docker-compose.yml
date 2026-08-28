@@ -2,21 +2,13 @@ version: "3.8"
 
 services:
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+    build: ./frontend
+    ports: ["3005:3000"]
     environment:
       - VITE_API_BASE_URL=http://backend:8080
-    depends_on:
-      - backend
+    depends_on: [backend]
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    env_file:
-      - ./backend/.env
+    build: ./backend
+    ports: ["8085:8080"]
+    env_file: ./backend/.env

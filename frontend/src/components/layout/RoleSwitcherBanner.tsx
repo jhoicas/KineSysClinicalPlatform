@@ -13,6 +13,10 @@ export const RoleSwitcherBanner: React.FC<RoleSwitcherBannerProps> = ({ onNaviga
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
 
+  if (!import.meta.env.DEV) {
+    return null;
+  }
+
   const rolesCatalog: Array<{
     role: UserRole;
     userId: string;

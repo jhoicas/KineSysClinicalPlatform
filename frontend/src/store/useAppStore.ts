@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { AppModule } from '../types';
 
 export interface ActivePatient {
   id: string;
@@ -32,6 +33,12 @@ interface AppStoreState {
   recentPatients: ActivePatient[];
   addRecentPatient: (patient: ActivePatient) => void;
   clearRecentPatients: () => void;
+
+  // RBAC: Módulos y Rutas Permitidas para el usuario/rol activo
+  allowedModules: AppModule[];
+  allowedRoutes: string[];
+  setAllowedModules: (modules: AppModule[]) => void;
+  isRouteAllowed: (path: string) => boolean;
 }
 
 export const useAppStore = create<AppStoreState>()(
@@ -75,6 +82,30 @@ export const useAppStore = create<AppStoreState>()(
       },
 
       clearRecentPatients: () => set({ recentPatients: [] }),
+
+      // RBAC State & Methods
+      allowedModules: [],
+      allowedRoutes: [],
+
+      setAllowedModules: (modules: AppModule[]) => {
+        const routes = modules.map((m) => m.path_route);
+        set({
+          allowedModules: modules,
+          allowedRoutes: routes,
+        });
+      },
+
+      isRouteAllowed: (path: string) => {
+        const { allowedRoutes } = get();
+        // Rutas públicas universales
+        const publicRoutes = ['/', '/landing', '/login', '/onboarding', '/portal-paciente'];
+        if (publicRoutes.includes(path)) return true;
+        
+        // Comprobar coincidencia exacta o prefijos para subrutas
+        return allowedRoutes.some(
+          (route) => path === route || path.startsWith(`${route}/`) || (route === '/medicina-general' && path === '/doctor-dashboard')
+        );
+      },
     }),
     {
       name: 'kinesys_app_active_patient_store',

@@ -1,6 +1,13 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, Tenant, UserRole } from '../../types';
-import { INITIAL_USERS, INITIAL_TENANT, supabase } from '../../services/supabaseClient';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { User, Tenant, UserRole, AppModule, RolePermission } from '../../types';
+import { 
+  INITIAL_USERS, 
+  INITIAL_TENANT, 
+  INITIAL_APP_MODULES, 
+  INITIAL_ROLE_PERMISSIONS, 
+  supabase 
+} from '../../services/supabaseClient';
+import { useAppStore } from '../../store/useAppStore';
 
 interface AuthContextType {
   user: User | null;
@@ -11,11 +18,14 @@ interface AuthContextType {
   isTrialExpired: boolean;
   trialDaysLeft: number;
   availableUsers: User[];
+  allowedModules: AppModule[];
+  allowedRoutes: string[];
   setUserAndRole: (selectedUserId: string) => void;
   setRole: (role: UserRole) => void;
   updateTenant: (tenant: Partial<Tenant>) => Promise<void>;
   createTenantAndAdmin: (tenantData: Partial<Tenant>, adminData: Partial<User>) => Promise<{ tenant: Tenant; user: User }>;
   refreshAuth: () => void;
+  refreshPermissions: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,25 +37,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return INITIAL_USERS.find((u) => u.id === savedUserId) || INITIAL_USERS[2]; // Default to Klgo Mateo
   });
   const [tenant, setTenant] = useState<Tenant | null>(INITIAL_TENANT);
+  const [allowedModules, setAllowedModulesState] = useState<AppModule[]>([]);
+  const [allowedRoutes, setAllowedRoutesState] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
-  useEffect(() => {
-    loadTenantAndUsers();
+  const setStoreAllowedModules = useAppStore((state) => state.setAllowedModules);
 
-    const handleDataUpdate = (e: any) => {
-      if (
-        e.detail?.table === 'tenants' || 
-        e.detail?.table === 'users' || 
-        e.detail?.table === 'all'
-      ) {
-        loadTenantAndUsers();
+  const loadPermissionsForRole = useCallback(async (activeRole: UserRole) => {
+    try {
+      // 1. Fetch all modules
+      const { data: allModules } = await supabase
+        .from('app_modules')
+        .select('*')
+        .order('display_order', { ascending: true });
+
+      const modulesCatalog: AppModule[] = allModules && allModules.length > 0 ? allModules : INITIAL_APP_MODULES;
+
+      // 2. Fetch permissions for current role
+      const { data: rolePerms } = await supabase
+        .from('role_permissions')
+        .select('*')
+        .eq('role_id', activeRole);
+
+      let grantedModuleIds: string[] = [];
+      if (rolePerms && rolePerms.length > 0) {
+        grantedModuleIds = rolePerms.map((rp: RolePermission) => rp.module_id);
+      } else {
+        // Fallback to initial permissions
+        grantedModuleIds = INITIAL_ROLE_PERMISSIONS
+          .filter((rp) => rp.role_id === activeRole)
+          .map((rp) => rp.module_id);
       }
-    };
-    window.addEventListener('kinesys_data_updated', handleDataUpdate);
-    return () => window.removeEventListener('kinesys_data_updated', handleDataUpdate);
-  }, []);
 
-  const loadTenantAndUsers = async () => {
+      // Filter and sort allowed modules
+      const filtered = modulesCatalog
+        .filter((mod) => grantedModuleIds.includes(mod.id))
+        .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+
+      setAllowedModulesState(filtered);
+      const routes = filtered.map((m) => m.path_route);
+      setAllowedRoutesState(routes);
+
+      // Sync with global Zustand store
+      setStoreAllowedModules(filtered);
+    } catch (err) {
+      console.warn('Could not load permissions from DB, using defaults:', err);
+      const defaultPerms = INITIAL_ROLE_PERMISSIONS
+        .filter((rp) => rp.role_id === activeRole)
+        .map((rp) => rp.module_id);
+      const filtered = INITIAL_APP_MODULES.filter((mod) => defaultPerms.includes(mod.id));
+      setAllowedModulesState(filtered);
+      setAllowedRoutesState(filtered.map((m) => m.path_route));
+      setStoreAllowedModules(filtered);
+    }
+  }, [setStoreAllowedModules]);
+
+  const loadTenantAndUsers = useCallback(async () => {
     try {
       const { data: tenantData } = await supabase.from('tenants').select('*').single();
       if (tenantData) {
@@ -58,13 +105,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('Could not load tenant/users from db:', err);
     }
-  };
+  }, []);
+
+  // Load tenant, users and permissions on initial mount
+  useEffect(() => {
+    loadTenantAndUsers();
+    const activeRole = user?.role || 'fisioterapeuta';
+    loadPermissionsForRole(activeRole);
+
+    const handleDataUpdate = (e: any) => {
+      if (
+        e.detail?.table === 'tenants' || 
+        e.detail?.table === 'users' || 
+        e.detail?.table === 'all'
+      ) {
+        loadTenantAndUsers();
+      }
+      if (
+        e.detail?.table === 'role_permissions' || 
+        e.detail?.table === 'app_modules' || 
+        e.detail?.table === 'app_roles' ||
+        e.detail?.table === 'all'
+      ) {
+        const currentRole = user?.role || 'fisioterapeuta';
+        loadPermissionsForRole(currentRole);
+      }
+    };
+    window.addEventListener('kinesys_data_updated', handleDataUpdate);
+    return () => window.removeEventListener('kinesys_data_updated', handleDataUpdate);
+  }, [loadTenantAndUsers, loadPermissionsForRole, user?.role]);
 
   const setUserAndRole = (selectedUserId: string) => {
     const found = usersList.find((u) => u.id === selectedUserId);
     if (found) {
       setUser(found);
       localStorage.setItem('kinesys_active_user_id', found.id);
+      loadPermissionsForRole(found.role);
     }
   };
 
@@ -72,7 +148,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (user) {
       const updated = { ...user, role: newRole };
       setUser(updated);
+      loadPermissionsForRole(newRole);
     }
+  };
+
+  const refreshPermissions = async () => {
+    const currentRole = user?.role || 'fisioterapeuta';
+    await loadPermissionsForRole(currentRole);
   };
 
   const updateTenant = async (tenantUpdates: Partial<Tenant>) => {
@@ -133,12 +215,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTenant(newTenantObj);
     setUser(newAdminObj);
     localStorage.setItem('kinesys_active_user_id', newAdminObj.id);
+    loadPermissionsForRole(newAdminObj.role);
 
     return { tenant: newTenantObj, user: newAdminObj };
   };
 
   const refreshAuth = () => {
     loadTenantAndUsers();
+    if (user?.role) {
+      loadPermissionsForRole(user.role);
+    }
   };
 
   // Trial Calculations
@@ -158,11 +244,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isTrialExpired,
         trialDaysLeft,
         availableUsers: usersList,
+        allowedModules,
+        allowedRoutes,
         setUserAndRole,
         setRole,
         updateTenant,
         createTenantAndAdmin,
         refreshAuth,
+        refreshPermissions,
       }}
     >
       {children}

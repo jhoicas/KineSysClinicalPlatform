@@ -8,6 +8,29 @@ export type UserRole =
   | 'receptionist'
   | 'professional'; // backwards compatibility
 
+export interface AppRole {
+  id: UserRole | string;
+  name: string;
+  description?: string;
+  created_at?: string;
+}
+
+export interface AppModule {
+  id: string;
+  name: string;
+  path_route: string;
+  icon: string;
+  badge?: string;
+  display_order?: number;
+  created_at?: string;
+}
+
+export interface RolePermission {
+  role_id: UserRole | string;
+  module_id: string;
+  created_at?: string;
+}
+
 export type SubscriptionPlan = 'starter' | 'growth' | 'enterprise';
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'cancelled' | 'incomplete';
 

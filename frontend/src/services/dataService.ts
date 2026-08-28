@@ -44,7 +44,10 @@ import {
   OrdenNutricionFHIR,
   ProfessionalProfile,
   Review,
-  ProfessionalWithDetails
+  ProfessionalWithDetails,
+  AppRole,
+  AppModule,
+  RolePermission
 } from '../types';
 import { 
   INITIAL_NUTRITION_PLANS, 
@@ -1467,6 +1470,82 @@ export const ALL_DEMO_TENANTS: Tenant[] = [
   },
 ];
 
+// Initial RBAC Roles
+export const INITIAL_APP_ROLES: AppRole[] = [
+  { id: 'super_admin', name: 'Super Administrador SaaS', description: 'Control total multi-tenant y configuración global de la plataforma.' },
+  { id: 'clinic_admin', name: 'Administrador de Clínica', description: 'Gestión integral de profesionales, agenda, finanzas y control de accesos.' },
+  { id: 'fisioterapeuta', name: 'Kinesiólogo / Fisioterapeuta', description: 'Atención clínica kinésica, mapa de dolor corporal, prescripción y rehabilitación.' },
+  { id: 'nutricionista', name: 'Nutricionista', description: 'Evaluaciones antropométricas ISAK, pautas nutricionales y bioimpedancia.' },
+  { id: 'medico_general', name: 'Médico General', description: 'Consultas SOAP, emisión de recetas con firma digital y antecedentes médicos.' },
+  { id: 'patient', name: 'Paciente', description: 'Acceso a portal de paciente, citas, recetas y pautas de tratamiento.' },
+  { id: 'receptionist', name: 'Recepcionista', description: 'Gestión de agenda, asignación de box y recepción de pacientes.' },
+];
+
+// Initial App Modules (Screens)
+export const INITIAL_APP_MODULES: AppModule[] = [
+  { id: 'mod_calendario', name: 'Agenda & Citas', path_route: '/calendario', icon: 'calendar_month', badge: 'Hoy', display_order: 1 },
+  { id: 'mod_pacientes', name: 'Pacientes', path_route: '/pacientes', icon: 'group', badge: 'Activos', display_order: 2 },
+  { id: 'mod_mapa_dolor', name: 'Mapa de Dolor', path_route: '/mapa-dolor', icon: 'accessibility_new', badge: 'Fisio', display_order: 3 },
+  { id: 'mod_nutricion', name: 'Nutrición & InBody', path_route: '/nutricion', icon: 'nutrition', badge: 'Nutri', display_order: 4 },
+  { id: 'mod_medicina_general', name: 'Medicina General', path_route: '/medicina-general', icon: 'stethoscope', badge: 'Médico', display_order: 5 },
+  { id: 'mod_portal_paciente', name: 'Portal del Paciente', path_route: '/portal-paciente', icon: 'person', badge: 'B2C', display_order: 6 },
+  { id: 'mod_configuracion', name: 'Gestión de Clínica', path_route: '/configuracion', icon: 'settings', badge: 'Admin', display_order: 7 },
+  { id: 'mod_admin_access', name: 'Control de Accesos RBAC', path_route: '/admin-access', icon: 'security', badge: 'Seguridad', display_order: 8 },
+  { id: 'mod_super_admin', name: 'Super Admin SaaS', path_route: '/super-admin', icon: 'shield_person', badge: 'SaaS', display_order: 9 },
+];
+
+// Initial Role Permissions (Role <-> Module mapping)
+export const INITIAL_ROLE_PERMISSIONS: RolePermission[] = [
+  // super_admin
+  { role_id: 'super_admin', module_id: 'mod_super_admin' },
+  { role_id: 'super_admin', module_id: 'mod_admin_access' },
+  { role_id: 'super_admin', module_id: 'mod_configuracion' },
+  { role_id: 'super_admin', module_id: 'mod_calendario' },
+  { role_id: 'super_admin', module_id: 'mod_pacientes' },
+  { role_id: 'super_admin', module_id: 'mod_mapa_dolor' },
+  { role_id: 'super_admin', module_id: 'mod_nutricion' },
+  { role_id: 'super_admin', module_id: 'mod_medicina_general' },
+  { role_id: 'super_admin', module_id: 'mod_portal_paciente' },
+
+  // clinic_admin
+  { role_id: 'clinic_admin', module_id: 'mod_configuracion' },
+  { role_id: 'clinic_admin', module_id: 'mod_admin_access' },
+  { role_id: 'clinic_admin', module_id: 'mod_calendario' },
+  { role_id: 'clinic_admin', module_id: 'mod_pacientes' },
+  { role_id: 'clinic_admin', module_id: 'mod_mapa_dolor' },
+  { role_id: 'clinic_admin', module_id: 'mod_nutricion' },
+  { role_id: 'clinic_admin', module_id: 'mod_medicina_general' },
+
+  // fisioterapeuta
+  { role_id: 'fisioterapeuta', module_id: 'mod_calendario' },
+  { role_id: 'fisioterapeuta', module_id: 'mod_pacientes' },
+  { role_id: 'fisioterapeuta', module_id: 'mod_mapa_dolor' },
+  { role_id: 'fisioterapeuta', module_id: 'mod_nutricion' },
+  { role_id: 'fisioterapeuta', module_id: 'mod_medicina_general' },
+  { role_id: 'fisioterapeuta', module_id: 'mod_configuracion' },
+
+  // nutricionista
+  { role_id: 'nutricionista', module_id: 'mod_nutricion' },
+  { role_id: 'nutricionista', module_id: 'mod_calendario' },
+  { role_id: 'nutricionista', module_id: 'mod_pacientes' },
+  { role_id: 'nutricionista', module_id: 'mod_portal_paciente' },
+
+  // medico_general
+  { role_id: 'medico_general', module_id: 'mod_medicina_general' },
+  { role_id: 'medico_general', module_id: 'mod_calendario' },
+  { role_id: 'medico_general', module_id: 'mod_pacientes' },
+  { role_id: 'medico_general', module_id: 'mod_portal_paciente' },
+
+  // patient
+  { role_id: 'patient', module_id: 'mod_portal_paciente' },
+  { role_id: 'patient', module_id: 'mod_calendario' },
+
+  // receptionist
+  { role_id: 'receptionist', module_id: 'mod_calendario' },
+  { role_id: 'receptionist', module_id: 'mod_pacientes' },
+  { role_id: 'receptionist', module_id: 'mod_portal_paciente' },
+];
+
 // Local storage keys
 const STORAGE_KEYS = {
   TENANT: 'kinesys_tenant_v2',
@@ -1486,6 +1565,9 @@ const STORAGE_KEYS = {
   REVIEWS: 'kinesys_reviews_v2',
   INVITATIONS: 'kinesys_invitations_v2',
   PRICING_PLANS: 'kinesys_pricing_plans_v2',
+  APP_ROLES: 'kinesys_app_roles_v2',
+  APP_MODULES: 'kinesys_app_modules_v2',
+  ROLE_PERMISSIONS: 'kinesys_role_permissions_v2',
   ACTIVE_USER_ID: 'kinesys_active_user_id_v2',
   SUPABASE_URL: 'kinesys_supabase_url',
   SUPABASE_KEY: 'kinesys_supabase_key',
@@ -1705,6 +1787,12 @@ class LocalQueryBuilder {
         rawData = LocalStore.get<ProfessionalProfile[]>(STORAGE_KEYS.PROFESSIONAL_PROFILES, INITIAL_PROFESSIONAL_PROFILES);
       } else if (this.tableName === 'reviews') {
         rawData = LocalStore.get<Review[]>(STORAGE_KEYS.REVIEWS, INITIAL_REVIEWS);
+      } else if (this.tableName === 'app_roles') {
+        rawData = LocalStore.get<AppRole[]>(STORAGE_KEYS.APP_ROLES, INITIAL_APP_ROLES);
+      } else if (this.tableName === 'app_modules') {
+        rawData = LocalStore.get<AppModule[]>(STORAGE_KEYS.APP_MODULES, INITIAL_APP_MODULES);
+      } else if (this.tableName === 'role_permissions') {
+        rawData = LocalStore.get<RolePermission[]>(STORAGE_KEYS.ROLE_PERMISSIONS, INITIAL_ROLE_PERMISSIONS);
       }
 
       let filtered = rawData;
@@ -1963,6 +2051,19 @@ class LocalQueryBuilder {
         return { data: newReviews, error: null };
       }
 
+      if (this.tableName === 'role_permissions') {
+        const current = LocalStore.get<RolePermission[]>(STORAGE_KEYS.ROLE_PERMISSIONS, INITIAL_ROLE_PERMISSIONS);
+        const newPerms: RolePermission[] = items.map((item) => ({
+          role_id: item.role_id,
+          module_id: item.module_id,
+          created_at: item.created_at || new Date().toISOString(),
+          ...item,
+        }));
+        LocalStore.set(STORAGE_KEYS.ROLE_PERMISSIONS, [...newPerms, ...current]);
+        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'role_permissions' } }));
+        return { data: newPerms, error: null };
+      }
+
       return { data: items, error: null };
     } catch (err: any) {
       return { data: null, error: err };
@@ -1971,6 +2072,17 @@ class LocalQueryBuilder {
 
   async update(updates: any) {
     try {
+      if (this.tableName === 'users') {
+        const currentUsers = LocalStore.get<User[]>(STORAGE_KEYS.USERS, INITIAL_USERS);
+        const updatedUsers = currentUsers.map((u) => {
+          const matches = this.filters.every((fn) => fn(u));
+          return matches ? { ...u, ...updates } : u;
+        });
+        LocalStore.set(STORAGE_KEYS.USERS, updatedUsers);
+        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'users' } }));
+        return { data: updates, error: null };
+      }
+
       if (this.tableName === 'tenants') {
         const allTenants = LocalStore.get<Tenant[]>(STORAGE_KEYS.ALL_TENANTS, ALL_DEMO_TENANTS);
         const updatedTenants = allTenants.map((t) => {
@@ -2023,6 +2135,15 @@ class LocalQueryBuilder {
         window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'appointments' } }));
         return { error: null };
       }
+
+      if (this.tableName === 'role_permissions') {
+        const current = LocalStore.get<RolePermission[]>(STORAGE_KEYS.ROLE_PERMISSIONS, INITIAL_ROLE_PERMISSIONS);
+        const updated = current.filter((perm) => !this.filters.every((fn) => fn(perm)));
+        LocalStore.set(STORAGE_KEYS.ROLE_PERMISSIONS, updated);
+        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'role_permissions' } }));
+        return { error: null };
+      }
+
       return { error: null };
     } catch (err: any) {
       return { error: err };
@@ -2153,6 +2274,9 @@ function createSupabaseProxy() {
       localStorage.removeItem(STORAGE_KEYS.REVIEWS);
       localStorage.removeItem(STORAGE_KEYS.INVITATIONS);
       localStorage.removeItem(STORAGE_KEYS.PRICING_PLANS);
+      localStorage.removeItem(STORAGE_KEYS.APP_ROLES);
+      localStorage.removeItem(STORAGE_KEYS.APP_MODULES);
+      localStorage.removeItem(STORAGE_KEYS.ROLE_PERMISSIONS);
       window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'all' } }));
     },
     isUsingLocalEngine: () => !supabaseAuthClient,

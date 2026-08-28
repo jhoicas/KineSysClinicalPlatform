@@ -4,96 +4,22 @@ import { useI18n } from '../../app/providers/I18nProvider';
 import { useTheme } from '../../app/providers/ThemeProvider';
 import { supabase } from '../../services/supabaseClient';
 
+import { useAppStore } from '../../store/useAppStore';
+
 interface SideNavBarProps {
   currentPath?: string;
   onNavigate?: (path: string) => void;
 }
 
 export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendario', onNavigate }) => {
-  const { user, tenant, role, trialDaysLeft } = useAuth();
+  const { user, tenant, role, trialDaysLeft, allowedModules: authAllowedModules } = useAuth();
+  const storeAllowedModules = useAppStore((state) => state.allowedModules);
   const { activeLogoUrl } = useTheme();
   const { t } = useI18n();
   const isLocal = supabase.isUsingLocalEngine();
 
-  // Dynamic navigation items based on the active RBAC role
-  const getNavItemsForRole = () => {
-    const commonAgenda = {
-      id: 'nav-calendario',
-      path: '/calendario',
-      label: t('nav.calendar', 'Agenda & Citas'),
-      icon: 'calendar_month',
-      badge: 'Hoy',
-    };
-    const commonPacientes = {
-      id: 'nav-pacientes',
-      path: '/pacientes',
-      label: t('nav.patients', 'Pacientes'),
-      icon: 'group',
-      badge: '5 Activos',
-    };
-    const painMap = {
-      id: 'nav-mapa-dolor',
-      path: '/mapa-dolor',
-      label: t('nav.pain_map', 'Mapa de Dolor'),
-      icon: 'accessibility_new',
-      badge: 'Fisio',
-    };
-    const nutrition = {
-      id: 'nav-nutricion',
-      path: '/nutricion',
-      label: t('nav.nutrition', 'Nutrición & InBody'),
-      icon: 'nutrition',
-      badge: 'Nutri',
-    };
-    const medicine = {
-      id: 'nav-medicina-general',
-      path: '/medicina-general',
-      label: t('nav.general_medicine', 'Medicina General'),
-      icon: 'stethoscope',
-      badge: 'Médico',
-    };
-    const patientPortal = {
-      id: 'nav-portal-paciente',
-      path: '/portal-paciente',
-      label: t('nav.patient_portal', 'Portal del Paciente'),
-      icon: 'person',
-      badge: 'B2C',
-    };
-    const settings = {
-      id: 'nav-configuracion',
-      path: '/configuracion',
-      label: t('nav.settings', 'Gestión de Clínica'),
-      icon: 'settings',
-      badge: 'Admin',
-    };
-    const superAdmin = {
-      id: 'nav-super-admin',
-      path: '/super-admin',
-      label: t('nav.super_admin', 'Super Admin SaaS'),
-      icon: 'shield_person',
-      badge: 'SaaS',
-    };
-
-    if (role === 'super_admin') {
-      return [superAdmin, settings, commonAgenda, commonPacientes];
-    }
-    if (role === 'clinic_admin') {
-      return [settings, commonAgenda, commonPacientes, painMap, nutrition, medicine];
-    }
-    if (role === 'nutricionista') {
-      return [nutrition, commonAgenda, commonPacientes, patientPortal];
-    }
-    if (role === 'medico_general') {
-      return [medicine, commonAgenda, commonPacientes, patientPortal];
-    }
-    if (role === 'patient') {
-      return [patientPortal, commonAgenda];
-    }
-    // Default / Fisioterapeuta
-    return [commonAgenda, commonPacientes, painMap, nutrition, medicine, settings];
-  };
-
-  const navItems = getNavItemsForRole();
+  // Dynamic modules list from Store/Auth
+  const activeModules = storeAllowedModules.length > 0 ? storeAllowedModules : authAllowedModules;
 
   const handleNavClick = (path: string) => {
     if (onNavigate) {
@@ -178,13 +104,13 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendar
           </span>
         </div>
 
-        {navItems.map((item) => {
-          const isActive = currentPath === item.path;
+        {activeModules.map((item) => {
+          const isActive = currentPath === item.path_route || (item.path_route === '/medicina-general' && currentPath === '/doctor-dashboard');
           return (
             <button
-              key={item.path}
-              id={item.id}
-              onClick={() => handleNavClick(item.path)}
+              key={item.id || item.path_route}
+              id={`nav-${item.id?.replace('mod_', '') || item.path_route.replace('/', '')}`}
+              onClick={() => handleNavClick(item.path_route)}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200 cursor-pointer text-left ${
                 isActive
                   ? 'bg-primary text-white shadow-sm shadow-primary/30'
@@ -199,7 +125,7 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendar
                 >
                   {item.icon}
                 </span>
-                <span>{item.label}</span>
+                <span>{item.name}</span>
               </div>
               {item.badge && (
                 <span

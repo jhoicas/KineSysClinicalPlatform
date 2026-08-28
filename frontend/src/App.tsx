@@ -13,6 +13,8 @@ import { PatientPortalPage } from './pages/PatientPortalPage';
 import { NutricionistaPage } from './pages/NutricionistaPage';
 import { DoctorDashboard } from './pages/DoctorDashboard';
 import { LoginPage } from './pages/LoginPage';
+import { AdminAccessControl } from './pages/AdminAccessControl';
+import { ProtectedRoute } from './components/auth/ProtectedRoute';
 
 export function App() {
   const [currentPath, setCurrentPath] = useState<string>(() => {
@@ -39,6 +41,7 @@ export function App() {
 
   const renderCurrentView = () => {
     switch (currentPath) {
+      // ─── RUTAS PÚBLICAS (Sin autenticación requerida) ───
       case '/login':
         return <LoginPage onNavigate={handleNavigate} />;
       case '/':
@@ -46,25 +49,65 @@ export function App() {
         return <LandingPage onNavigate={handleNavigate} />;
       case '/onboarding':
         return <OnboardingPage onNavigate={handleNavigate} />;
-      case '/super-admin':
-        return <SuperAdminPage onNavigate={handleNavigate} />;
       case '/portal-paciente':
         return <PatientPortalPage onNavigate={handleNavigate} />;
+
+      // ─── RUTAS PRIVADAS (Protegidas por Sesión y RBAC Dinámico) ───
+      case '/super-admin':
+        return (
+          <ProtectedRoute path="/super-admin" onNavigate={handleNavigate}>
+            <SuperAdminPage onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
       case '/nutricion':
-        return <NutricionistaPage onNavigate={handleNavigate} />;
+        return (
+          <ProtectedRoute path="/nutricion" onNavigate={handleNavigate}>
+            <NutricionistaPage onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
       case '/medicina-general':
       case '/doctor-dashboard':
-        return <DoctorDashboard onNavigate={handleNavigate} />;
+        return (
+          <ProtectedRoute path="/medicina-general" onNavigate={handleNavigate}>
+            <DoctorDashboard onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
       case '/calendario':
-        return <CalendarPage onNavigate={handleNavigate} />;
+        return (
+          <ProtectedRoute path="/calendario" onNavigate={handleNavigate}>
+            <CalendarPage onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
       case '/pacientes':
-        return <PatientsPage onNavigate={handleNavigate} />;
+        return (
+          <ProtectedRoute path="/pacientes" onNavigate={handleNavigate}>
+            <PatientsPage onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
       case '/mapa-dolor':
-        return <DemoPainMapPage onNavigate={handleNavigate} />;
+        return (
+          <ProtectedRoute path="/mapa-dolor" onNavigate={handleNavigate}>
+            <DemoPainMapPage onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
+      case '/admin-access':
+        return (
+          <ProtectedRoute path="/admin-access" onNavigate={handleNavigate}>
+            <AdminAccessControl onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
       case '/configuracion':
-        return <SettingsPage onNavigate={handleNavigate} />;
+        return (
+          <ProtectedRoute path="/configuracion" onNavigate={handleNavigate}>
+            <SettingsPage onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
       default:
-        return <CalendarPage onNavigate={handleNavigate} />;
+        return (
+          <ProtectedRoute path={currentPath} onNavigate={handleNavigate}>
+            <CalendarPage onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
     }
   };
 

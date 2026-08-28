@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase, INITIAL_USERS } from '../services/supabaseClient';
 import { useAuth } from '../app/providers/AuthProvider';
 import { LanguageSelector } from '../components/common/LanguageSelector';
@@ -31,6 +31,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Check for security denial messages on mount or via custom event
+  useEffect(() => {
+    const deniedMsg = sessionStorage.getItem('kinesys_auth_error');
+    if (deniedMsg) {
+      setErrorMessage(deniedMsg);
+      sessionStorage.removeItem('kinesys_auth_error');
+    }
+
+    const handleDenied = (e: any) => {
+      if (e.detail?.message) {
+        setErrorMessage(e.detail.message);
+      }
+    };
+    window.addEventListener('kinesys_oauth_denied', handleDenied);
+    return () => window.removeEventListener('kinesys_oauth_denied', handleDenied);
+  }, []);
+
   // Unified OAuth Authentication Handler (Google & Microsoft Azure)
   const handleOAuthLogin = async (provider: 'google' | 'azure') => {
     setErrorMessage(null);
@@ -38,6 +55,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     setLoadingProvider(provider);
 
     try {
+      // Opción A: Validación previa si el usuario ya escribió un email en el formulario
+      if (email && email.includes('@')) {
+        const normalizedEmail = email.trim().toLowerCase();
+        const { data: dbUsers } = await supabase.from('users').select('*');
+        const allUsers = dbUsers && dbUsers.length > 0 ? dbUsers : INITIAL_USERS;
+        const exists = allUsers.some(
+          (u: any) => u.email?.trim().toLowerCase() === normalizedEmail
+        );
+        if (!exists) {
+          setErrorMessage(
+            `El correo ${email.trim()} no está registrado en la plataforma. Contacta al administrador para habilitar tu cuenta.`
+          );
+          setLoadingProvider(null);
+          return;
+        }
+      }
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {

@@ -108,11 +108,92 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Load tenant, users and permissions on initial mount
+  // Strict verification: Ensure OAuth/Session user is already registered in users DB
+  const verifyAndSyncAuthSession = useCallback(async (sessionUserEmail?: string | null) => {
+    if (!sessionUserEmail) return false;
+    const normalizedEmail = sessionUserEmail.trim().toLowerCase();
+    
+    try {
+      const { data: dbUsers } = await supabase.from('users').select('*');
+      const allUsers = dbUsers && dbUsers.length > 0 ? dbUsers : INITIAL_USERS;
+      const registeredUser = allUsers.find(
+        (u: User) => u.email?.trim().toLowerCase() === normalizedEmail
+      );
+
+      if (!registeredUser) {
+        console.warn(`[KineSys Security] Bloqueo OAuth: El correo ${normalizedEmail} no está registrado en la base de datos.`);
+        
+        // Terminate session immediately
+        try {
+          await supabase.auth.signOut();
+        } catch (err) {
+          console.warn('Error during signOut on security denial:', err);
+        }
+
+        const denialMessage = `El correo ${normalizedEmail} no está registrado en la plataforma. Contacta al administrador para habilitar tu cuenta.`;
+
+        localStorage.removeItem('kinesys_active_user_id');
+        sessionStorage.removeItem('kinesys_selected_plan');
+        sessionStorage.setItem('kinesys_auth_error', denialMessage);
+        
+        setUser(null);
+        setAllowedModulesState([]);
+        setAllowedRoutesState([]);
+        setStoreAllowedModules([]);
+        useAppStore.getState().clearActivePatient();
+
+        window.dispatchEvent(
+          new CustomEvent('kinesys_oauth_denied', {
+            detail: { email: normalizedEmail, message: denialMessage },
+          })
+        );
+
+        if (window.location.hash !== '#/login' && window.location.pathname !== '/login') {
+          window.location.hash = '#/login';
+        }
+        return false;
+      } else {
+        // Authorized registered user
+        setUser(registeredUser);
+        localStorage.setItem('kinesys_active_user_id', registeredUser.id);
+        loadPermissionsForRole(registeredUser.role);
+        return true;
+      }
+    } catch (err) {
+      console.error('[KineSys Security] Error verifying auth session:', err);
+      return false;
+    }
+  }, [loadPermissionsForRole, setStoreAllowedModules]);
+
+  // Load tenant, users and permissions on initial mount + listen to Supabase Auth state changes
   useEffect(() => {
     loadTenantAndUsers();
     const activeRole = user?.role || 'fisioterapeuta';
     loadPermissionsForRole(activeRole);
+
+    // 1. Verify active Supabase session on startup
+    supabase.auth.getSession().then(({ data }: any) => {
+      const email = data?.session?.user?.email;
+      if (email) {
+        verifyAndSyncAuthSession(email);
+      }
+    });
+
+    // 2. Listen to Supabase Auth State Changes (OAuth post-redirect or login)
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event: string, session: any) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        const email = session?.user?.email;
+        if (email) {
+          await verifyAndSyncAuthSession(email);
+        }
+      }
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setAllowedModulesState([]);
+        setAllowedRoutesState([]);
+        setStoreAllowedModules([]);
+      }
+    });
 
     const handleDataUpdate = (e: any) => {
       if (
@@ -133,8 +214,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
     window.addEventListener('kinesys_data_updated', handleDataUpdate);
-    return () => window.removeEventListener('kinesys_data_updated', handleDataUpdate);
-  }, [loadTenantAndUsers, loadPermissionsForRole, user?.role]);
+    return () => {
+      window.removeEventListener('kinesys_data_updated', handleDataUpdate);
+      if (authListener?.subscription) {
+        authListener.subscription.unsubscribe();
+      }
+    };
+  }, [loadTenantAndUsers, loadPermissionsForRole, verifyAndSyncAuthSession, user?.role]);
 
   const setUserAndRole = (selectedUserId: string) => {
     const found = usersList.find((u) => u.id === selectedUserId);

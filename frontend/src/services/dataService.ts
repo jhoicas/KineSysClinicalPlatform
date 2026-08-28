@@ -1522,34 +1522,8 @@ class LocalQueryBuilder {
     this.tableName = tableName;
   }
 
-  async select(columns: string = '*') {
-    // ─── DUAL MODE / API FALLBACK ───
-    try {
-      const API_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
-      const token = await LocalStore.get('sb-access-token', '');
-      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-
-      if (this.tableName === 'users' && this.exactFilters['role'] === 'patient') {
-        const res = await fetch(`${API_URL}/api/v1/patients`, { headers });
-        if (res.ok) return { data: await res.json(), error: null };
-      }
-      if (this.tableName === 'consultas_soap' && this.exactFilters['patient_id']) {
-        const res = await fetch(`${API_URL}/api/v1/patients/${this.exactFilters['patient_id']}/encounters`, { headers });
-        if (res.ok) return { data: await res.json(), error: null };
-      }
-      if (this.tableName === 'evaluaciones_antropometricas' && this.exactFilters['patient_id']) {
-        const res = await fetch(`${API_URL}/api/v1/patients/${this.exactFilters['patient_id']}/anthropometry`, { headers });
-        if (res.ok) return { data: await res.json(), error: null };
-      }
-      if (this.tableName === 'planes_nutricionales' && this.exactFilters['patient_id']) {
-        const res = await fetch(`${API_URL}/api/v1/patients/${this.exactFilters['patient_id']}/nutrition`, { headers });
-        if (res.ok) return { data: await res.json(), error: null };
-      }
-    } catch (e) {
-      console.warn('Backend no disponible, usando mocks locales (LocalStore).');
-    }
-
-    return this.executeSelect();
+  select(columns: string = '*') {
+    return this;
   }
 
   eq(column: string, value: any) {
@@ -1639,6 +1613,32 @@ class LocalQueryBuilder {
   }
 
   private async executeSelect(): Promise<{ data: any; error: any }> {
+    // ─── DUAL MODE / API FALLBACK ───
+    try {
+      const API_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
+      const token = await LocalStore.get('sb-access-token', '');
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+
+      if (this.tableName === 'users' && this.exactFilters['role'] === 'patient') {
+        const res = await fetch(`${API_URL}/api/v1/patients`, { headers });
+        if (res.ok) return { data: await res.json(), error: null };
+      }
+      if (this.tableName === 'consultas_soap' && this.exactFilters['patient_id']) {
+        const res = await fetch(`${API_URL}/api/v1/patients/${this.exactFilters['patient_id']}/encounters`, { headers });
+        if (res.ok) return { data: await res.json(), error: null };
+      }
+      if (this.tableName === 'evaluaciones_antropometricas' && this.exactFilters['patient_id']) {
+        const res = await fetch(`${API_URL}/api/v1/patients/${this.exactFilters['patient_id']}/anthropometry`, { headers });
+        if (res.ok) return { data: await res.json(), error: null };
+      }
+      if (this.tableName === 'planes_nutricionales' && this.exactFilters['patient_id']) {
+        const res = await fetch(`${API_URL}/api/v1/patients/${this.exactFilters['patient_id']}/nutrition`, { headers });
+        if (res.ok) return { data: await res.json(), error: null };
+      }
+    } catch (e) {
+      console.warn('Backend no disponible, usando mocks locales (LocalStore).');
+    }
+
     try {
       let rawData: any[] = [];
       const users = LocalStore.get<User[]>(STORAGE_KEYS.USERS, INITIAL_USERS);

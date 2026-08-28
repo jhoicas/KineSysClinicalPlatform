@@ -70,13 +70,6 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onNavigate }) =>
               Supervisa todas las clínicas registradas, ingresos mensuales por suscripción y configuración de la pasarela Wompi.
             </p>
           </div>
-
-          <button
-            onClick={() => onNavigate('/landing')}
-            className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-xs font-bold rounded-xl transition-colors self-start sm:self-auto cursor-pointer"
-          >
-            Ver Landing Pública →
-          </button>
         </div>
 
         {/* Global KPI Cards */}
@@ -158,13 +151,12 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onNavigate }) =>
                     </td>
                     <td className="py-3 px-3">
                       <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                          t.subscription_status === 'active'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : t.subscription_status === 'trialing'
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${t.subscription_status === 'active'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : t.subscription_status === 'trialing'
                             ? 'bg-amber-100 text-amber-800'
                             : 'bg-rose-100 text-rose-800'
-                        }`}
+                          }`}
                       >
                         {t.subscription_status}
                       </span>
@@ -263,14 +255,12 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onNavigate }) =>
                 <button
                   type="button"
                   onClick={() => setIsSandbox(!isSandbox)}
-                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
-                    isSandbox ? 'bg-teal-600' : 'bg-outline-variant'
-                  }`}
+                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${isSandbox ? 'bg-teal-600' : 'bg-outline-variant'
+                    }`}
                 >
                   <div
-                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                      isSandbox ? 'translate-x-6' : 'translate-x-0'
-                    }`}
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${isSandbox ? 'translate-x-6' : 'translate-x-0'
+                      }`}
                   />
                 </button>
               </div>

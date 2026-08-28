@@ -14,6 +14,8 @@ import { FhirNutritionOrderModule } from '../components/nutrition/FhirNutritionO
 import { NutritionSqlMigrationTab } from '../components/nutrition/NutritionSqlMigrationTab';
 import { AnthropometryPdfModal } from '../components/nutrition/AnthropometryPdfModal';
 import { RoleSwitcherBanner } from '../components/layout/RoleSwitcherBanner';
+import { SideNavBar } from '../components/layout/SideNavBar';
+import { TopNavBar } from '../components/layout/TopNavBar';
 import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
 import { EcoExportActions } from '../components/common/EcoExportActions';
 import { useAppStore, ActivePatient } from '../store/useAppStore';
@@ -197,8 +199,12 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   const latestEvaluation = evaluations.length > 0 ? evaluations[0] : null;
 
   return (
-    <div className="min-h-screen bg-background text-on-background flex flex-col font-sans">
-      {/* Top Banner / Role Switcher */}
+    <div className="min-h-screen flex bg-background font-sans text-on-background overflow-hidden">
+      <SideNavBar currentPath="/nutricion" onNavigate={onNavigate} />
+      <main className="flex-1 ml-0 md:ml-72 flex flex-col h-screen overflow-hidden">
+        <TopNavBar currentPath="/nutricion" onNavigate={onNavigate} />
+        <div className="flex-1 overflow-y-auto pb-24 bg-background">
+          {/* Top Banner / Role Switcher */}
       <RoleSwitcherBanner currentPath="/nutricion" onNavigate={onNavigate} />
 
       {/* Main Container */}
@@ -751,6 +757,8 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
           clinicName={tenant?.name || 'KineSys Salud'}
         />
       )}
+        </div>
+      </main>
     </div>
   );
 };

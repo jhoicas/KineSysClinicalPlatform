@@ -11,6 +11,8 @@ import { PatientListModule } from '../components/medical/PatientListModule';
 import { SoapEditorModule } from '../components/medical/SoapEditorModule';
 import { PrescriptionModule } from '../components/medical/PrescriptionModule';
 import { RoleSwitcherBanner } from '../components/layout/RoleSwitcherBanner';
+import { SideNavBar } from '../components/layout/SideNavBar';
+import { TopNavBar } from '../components/layout/TopNavBar';
 import { PdfViewer } from '../components/common/PdfViewer';
 import { getSoapPdfBlob } from '../utils/soapPdfExport';
 
@@ -333,8 +335,12 @@ CREATE POLICY "Tenant isolation for prescripciones (UPDATE)"
   };
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col font-sans pb-24">
-      {/* Top Professional App Bar */}
+    <div className="min-h-screen flex bg-background font-sans text-on-background overflow-hidden">
+      <SideNavBar currentPath="/medicina-general" onNavigate={onNavigate} />
+      <main className="flex-1 ml-0 md:ml-72 flex flex-col h-screen overflow-hidden">
+        <TopNavBar currentPath="/medicina-general" onNavigate={onNavigate} />
+        <div className="flex-1 overflow-y-auto pb-24 bg-surface">
+          {/* Top Professional App Bar */}
       <header className="sticky top-0 z-40 bg-surface-container-lowest/90 backdrop-blur-md border-b border-outline-variant/30 px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 clinical-shadow">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-600 to-primary text-white flex items-center justify-center shadow-sm">
@@ -761,6 +767,8 @@ CREATE POLICY "Tenant isolation for prescripciones (UPDATE)"
 
       {/* Role Switcher Banner */}
       <RoleSwitcherBanner onNavigate={onNavigate} currentPath="/medicina-general" />
+        </div>
+      </main>
     </div>
   );
 };

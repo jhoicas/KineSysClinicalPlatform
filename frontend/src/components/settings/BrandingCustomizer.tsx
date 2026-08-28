@@ -39,8 +39,6 @@ export const BrandingCustomizer: React.FC<BrandingCustomizerProps> = ({
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [showSqlModal, setShowSqlModal] = useState<boolean>(false);
-  const [copiedSql, setCopiedSql] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -179,82 +177,6 @@ export const BrandingCustomizer: React.FC<BrandingCustomizerProps> = ({
 
   const contrastColor = getContrastForeground(activeColor);
 
-  // Backend SQL Script for SuperAdmin or Cloud deployment
-  const sqlScript = `-- =========================================================================
--- MIGRACIÓN BACKEND SUPABASE: WHITE-LABELING & STORAGE 'tenant_logos'
--- =========================================================================
-
--- 1. Crear el Bucket de Storage para Logos de Clínicas
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-  'tenant_logos',
-  'tenant_logos',
-  true,
-  3145728, -- 3MB límite
-  ARRAY['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp']
-)
-ON CONFLICT (id) DO UPDATE SET
-  public = true,
-  file_size_limit = 3145728;
-
--- 2. Políticas RLS (Row Level Security) para el Bucket 'tenant_logos'
--- Lectura pública para visualización en portal paciente y web
-CREATE POLICY "Logos de clínicas son públicos"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'tenant_logos');
-
--- Escritura (Upload/Update) restringida a administradores de clínica y super_admin
-CREATE POLICY "Admins pueden subir logo de su tenant"
-ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (
-  bucket_id = 'tenant_logos' 
-  AND (
-    (auth.jwt() ->> 'role') IN ('clinic_admin', 'super_admin')
-    OR (name LIKE (auth.jwt() ->> 'tenant_id') || '/%')
-  )
-);
-
-CREATE POLICY "Admins pueden actualizar logo de su tenant"
-ON storage.objects FOR UPDATE
-TO authenticated
-USING (
-  bucket_id = 'tenant_logos'
-  AND (
-    (auth.jwt() ->> 'role') IN ('clinic_admin', 'super_admin')
-    OR (name LIKE (auth.jwt() ->> 'tenant_id') || '/%')
-  )
-);
-
-CREATE POLICY "Admins pueden eliminar logo de su tenant"
-ON storage.objects FOR DELETE
-TO authenticated
-USING (
-  bucket_id = 'tenant_logos'
-  AND (
-    (auth.jwt() ->> 'role') IN ('clinic_admin', 'super_admin')
-    OR (name LIKE (auth.jwt() ->> 'tenant_id') || '/%')
-  )
-);
-
--- 3. Actualizar la tabla 'tenants' para soportar logo_url, primary_color y settings
-ALTER TABLE public.tenants
-ADD COLUMN IF NOT EXISTS logo_url TEXT,
-ADD COLUMN IF NOT EXISTS primary_color VARCHAR(7) DEFAULT '#004870',
-ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{"brand_name_display": "both", "theme": "light"}'::jsonb;
-
--- Comentarios de documentación en esquema
-COMMENT ON COLUMN public.tenants.logo_url IS 'URL pública del logo de la clínica en Supabase Storage';
-COMMENT ON COLUMN public.tenants.primary_color IS 'Código HEX del color principal corporativo para personalización de marca';
-COMMENT ON COLUMN public.tenants.settings IS 'Configuraciones adicionales de visualización y personalización';
-`;
-
-  const copySqlToClipboard = () => {
-    navigator.clipboard.writeText(sqlScript);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 2500);
-  };
-
   return (
     <div id="branding-customizer-root" className="space-y-8">
       {/* Header Banner */}
@@ -278,15 +200,6 @@ COMMENT ON COLUMN public.tenants.settings IS 'Configuraciones adicionales de vis
               </p>
             </div>
           </div>
-
-          <button
-            onClick={() => setShowSqlModal(true)}
-            className="self-start md:self-auto bg-surface-container hover:bg-surface-container-high border border-outline-variant/30 text-xs font-bold text-on-surface-variant hover:text-primary px-3.5 py-2 rounded-2xl flex items-center gap-2 transition-all cursor-pointer"
-            title="Ver código SQL de Storage y Migraciones RLS"
-          >
-            <span className="material-symbols-outlined text-base">code</span>
-            <span>Ver SQL & RLS Storage</span>
-          </button>
         </div>
 
         {/* Form Body */}
@@ -665,71 +578,6 @@ COMMENT ON COLUMN public.tenants.settings IS 'Configuraciones adicionales de vis
 
         </div>
       </div>
-
-      {/* SQL & RLS Policies Modal */}
-      {showSqlModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-surface-container-lowest border border-outline-variant/30 rounded-3xl p-6 md:p-8 max-w-3xl w-full max-h-[90vh] flex flex-col clinical-shadow">
-            
-            {/* Modal Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-outline-variant/20">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                  <span className="material-symbols-outlined text-xl">terminal</span>
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-on-surface">
-                    Código SQL & Políticas RLS de Storage
-                  </h3>
-                  <p className="text-xs text-on-surface-variant">
-                    Ejecuta este script en el Editor SQL de tu proyecto Supabase.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setShowSqlModal(false)}
-                className="p-2 rounded-xl text-on-surface-variant hover:bg-surface-container cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
-
-            {/* SQL Code Body */}
-            <div className="flex-1 overflow-y-auto my-4 p-4 bg-slate-950 text-slate-200 rounded-2xl font-mono text-xs leading-relaxed border border-slate-800">
-              <pre className="whitespace-pre-wrap">{sqlScript}</pre>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="pt-3 border-t border-outline-variant/20 flex items-center justify-between">
-              <span className="text-xs text-on-surface-variant">
-                Incluye creación de bucket, 4 políticas RLS y alter table en tenants.
-              </span>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={copySqlToClipboard}
-                  className="px-4 py-2 bg-primary hover:bg-primary-container text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
-                >
-                  <span className="material-symbols-outlined text-base">
-                    {copiedSql ? 'check' : 'content_copy'}
-                  </span>
-                  <span>{copiedSql ? '¡Copiado!' : 'Copiar SQL'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSqlModal(false)}
-                  className="px-4 py-2 bg-surface-container hover:bg-surface-container-high text-on-surface font-bold text-xs rounded-xl cursor-pointer"
-                >
-                  Cerrar
-                </button>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
     </div>
   );
 };

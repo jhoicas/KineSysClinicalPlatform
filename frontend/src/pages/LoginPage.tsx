@@ -31,17 +31,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // 1. Google OAuth Authentication
-  const handleGoogleLogin = async () => {
+  // Unified OAuth Authentication Handler (Google & Microsoft Azure)
+  const handleOAuthLogin = async (provider: 'google' | 'azure') => {
     setErrorMessage(null);
     setSuccessMessage(null);
-    setLoadingProvider('google');
+    setLoadingProvider(provider);
 
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
+        provider,
         options: {
           redirectTo: window.location.origin + window.location.pathname + '#/calendario',
+          ...(provider === 'azure' ? { scopes: 'email profile openid' } : {}),
         },
       });
 
@@ -49,44 +50,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         throw error;
       }
 
-      setSuccessMessage('¡Autenticación con Google completada! Redirigiendo al espacio clínico...');
+      const providerLabel = provider === 'google' ? 'Google Workspace' : 'Microsoft Azure AD';
+      setSuccessMessage(`¡Conectando con ${providerLabel}! Redirigiendo al espacio clínico...`);
       setTimeout(() => {
         onNavigate('/calendario');
-      }, 1000);
+      }, 1200);
     } catch (err: any) {
-      console.error('Error in Google OAuth:', err);
-      setErrorMessage(err?.message || 'No fue posible conectar con el servicio de Google OAuth. Intente nuevamente.');
-    } finally {
-      setLoadingProvider(null);
-    }
-  };
-
-  // 2. Microsoft (Azure AD / Office 365) OAuth Authentication
-  const handleMicrosoftLogin = async () => {
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    setLoadingProvider('azure');
-
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'azure',
-        options: {
-          scopes: 'email profile openid',
-          redirectTo: window.location.origin + window.location.pathname + '#/calendario',
-        },
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      setSuccessMessage('¡Autenticación con Microsoft exitosa! Redirigiendo al espacio clínico...');
-      setTimeout(() => {
-        onNavigate('/calendario');
-      }, 1000);
-    } catch (err: any) {
-      console.error('Error in Microsoft OAuth:', err);
-      setErrorMessage(err?.message || 'No fue posible conectar con Microsoft Azure AD. Verifique sus credenciales corporativas.');
+      console.error(`Error in ${provider} OAuth:`, err);
+      const providerLabel = provider === 'google' ? 'Google' : 'Microsoft Azure';
+      setErrorMessage(
+        err?.message || `No fue posible conectar con ${providerLabel}. Verifique la configuración o intente nuevamente.`
+      );
     } finally {
       setLoadingProvider(null);
     }
@@ -255,14 +229,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             <button
               id="btn-login-google"
               type="button"
-              onClick={handleGoogleLogin}
+              onClick={() => handleOAuthLogin('google')}
               disabled={isLoading}
-              className="w-full py-3 px-4 rounded-2xl bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/50 text-on-surface font-bold text-xs flex items-center justify-center gap-3 transition-all hover:shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3 px-4 rounded-2xl bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/50 text-on-surface font-bold text-xs flex items-center justify-center gap-3 transition-all hover:shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed group"
             >
               {loadingProvider === 'google' ? (
                 <Loader2 className="w-4 h-4 text-primary animate-spin" />
               ) : (
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" viewBox="0 0 24 24">
                   <path
                     fill="#4285F4"
                     d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -288,14 +262,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
             <button
               id="btn-login-microsoft"
               type="button"
-              onClick={handleMicrosoftLogin}
+              onClick={() => handleOAuthLogin('azure')}
               disabled={isLoading}
-              className="w-full py-3 px-4 rounded-2xl bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/50 text-on-surface font-bold text-xs flex items-center justify-center gap-3 transition-all hover:shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3 px-4 rounded-2xl bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/50 text-on-surface font-bold text-xs flex items-center justify-center gap-3 transition-all hover:shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed group"
             >
               {loadingProvider === 'azure' ? (
                 <Loader2 className="w-4 h-4 text-primary animate-spin" />
               ) : (
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 21 21">
+                <svg className="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" viewBox="0 0 21 21">
                   <rect x="1" y="1" width="9" height="9" fill="#f25022" />
                   <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
                   <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />

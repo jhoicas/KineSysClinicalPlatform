@@ -24,7 +24,7 @@ export const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onNavigate }) 
   const { t } = useI18n();
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<'patients' | 'soap' | 'prescription' | 'history' | 'sql_schema'>('patients');
+  const [activeTab, setActiveTab] = useState<'patients' | 'soap' | 'prescription' | 'history'>('patients');
 
   // Patients State
   const [patients, setPatients] = useState<PacienteClinico[]>([]);
@@ -39,7 +39,6 @@ export const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onNavigate }) 
   // Modal for Viewing Full SOAP Encounter details
   const [viewingEncounter, setViewingEncounter] = useState<ConsultaSOP | null>(null);
   const [viewingPdfEncounter, setViewingPdfEncounter] = useState<ConsultaSOP | null>(null);
-  const [copiedSql, setCopiedSql] = useState(false);
 
   const tenantId = tenant?.id || 'tenant_kine_001';
   const doctorId = user?.id || 'prof_doctor_01';
@@ -147,190 +146,6 @@ export const DoctorDashboard: React.FC<DoctorDashboardProps> = ({ onNavigate }) 
       console.error('Error saving prescription:', e);
       throw e;
     }
-  };
-
-  // SQL Schema Script for Supabase / PostgreSQL Migrations
-  const SQL_MIGRATION_SCRIPT = `-- ==============================================================================
--- MIGRACIÓN SUPABASE: PERFIL MÉDICO GENERAL & HISTORIA CLÍNICA FHIR INTEROPERABLE
--- TABLAS: pacientes_clinicos, consultas_soap, prescripciones
--- SEGURIDAD: Multi-Tenancy con Row Level Security (RLS) habilitado
--- ==============================================================================
-
--- 1. EXTENSIONES REQUERIDAS
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- 2. TABLA: pacientes_clinicos (Mapeo a HL7 FHIR R4 Patient)
-CREATE TABLE IF NOT EXISTS public.pacientes_clinicos (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-    fhir_resource_id VARCHAR(100),
-    identifier_type VARCHAR(20) NOT NULL DEFAULT 'CC', -- 'CC', 'RUT', 'DNI', 'PASSPORT', 'CE'
-    identifier_number VARCHAR(50) NOT NULL,
-    first_name VARCHAR(120) NOT NULL,
-    last_name VARCHAR(120) NOT NULL,
-    gender VARCHAR(20) NOT NULL DEFAULT 'unknown', -- 'male', 'female', 'other', 'unknown'
-    birth_date DATE NOT NULL,
-    telecom_phone VARCHAR(50),
-    telecom_email VARCHAR(150),
-    address_line TEXT,
-    blood_type VARCHAR(10) DEFAULT 'O+', -- 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'
-    known_allergies TEXT[] DEFAULT ARRAY['Ninguna conocida']::TEXT[],
-    chronic_conditions TEXT[] DEFAULT ARRAY[]::TEXT[],
-    emergency_contact JSONB,
-    active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT uq_patient_tenant_identifier UNIQUE (tenant_id, identifier_type, identifier_number)
-);
-
-CREATE INDEX IF NOT EXISTS idx_pacientes_tenant ON public.pacientes_clinicos(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_pacientes_doc ON public.pacientes_clinicos(identifier_number);
-CREATE INDEX IF NOT EXISTS idx_pacientes_name ON public.pacientes_clinicos(last_name, first_name);
-
--- 3. TABLA: consultas_soap (Mapeo a HL7 FHIR R4 Encounter & Composition)
-CREATE TABLE IF NOT EXISTS public.consultas_soap (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-    patient_id UUID NOT NULL REFERENCES public.pacientes_clinicos(id) ON DELETE CASCADE,
-    practitioner_id UUID NOT NULL REFERENCES public.users(id) ON DELETE SET NULL,
-    encounter_type VARCHAR(50) NOT NULL DEFAULT 'control', -- 'primera_vez', 'control', 'urgencia_menor', 'teleconsulta'
-    encounter_date DATE DEFAULT CURRENT_DATE,
-    
-    -- S: Subjetivo
-    subjective JSONB NOT NULL DEFAULT '{
-        "chief_complaint": "",
-        "current_illness_history": "",
-        "review_of_systems": "",
-        "past_medical_history": ""
-    }'::JSONB,
-
-    -- O: Objetivo
-    objective JSONB NOT NULL DEFAULT '{
-        "vitals": {
-            "blood_pressure_systolic": 120,
-            "blood_pressure_diastolic": 80,
-            "heart_rate_bpm": 72,
-            "respiratory_rate_rpm": 16,
-            "temp_celsius": 36.6,
-            "oxygen_saturation_pct": 98,
-            "weight_kg": 70,
-            "height_cm": 170,
-            "bmi": 24.2
-        },
-        "physical_exam": "",
-        "cardiopulmonary_exam": "",
-        "musculoskeletal_exam": ""
-    }'::JSONB,
-
-    -- A: Análisis & Evaluación
-    assessment JSONB NOT NULL DEFAULT '{
-        "diagnoses": [],
-        "clinical_reasoning": "",
-        "prognosis": "favorable"
-    }'::JSONB,
-
-    -- P: Plan
-    plan JSONB NOT NULL DEFAULT '{
-        "treatment_goals": "",
-        "lab_orders": [],
-        "imaging_orders": [],
-        "referrals": [],
-        "patient_instructions": "",
-        "follow_up_days": 15,
-        "alarm_signs": ""
-    }'::JSONB,
-
-    status VARCHAR(30) DEFAULT 'completed', -- 'draft', 'completed', 'signed'
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_soap_tenant_patient ON public.consultas_soap(tenant_id, patient_id);
-CREATE INDEX IF NOT EXISTS idx_soap_created ON public.consultas_soap(created_at DESC);
-
--- 4. TABLA: prescripciones (Mapeo a HL7 FHIR R4 MedicationRequest)
-CREATE TABLE IF NOT EXISTS public.prescripciones (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-    patient_id UUID NOT NULL REFERENCES public.pacientes_clinicos(id) ON DELETE CASCADE,
-    encounter_id UUID REFERENCES public.consultas_soap(id) ON DELETE SET NULL,
-    practitioner_id UUID NOT NULL REFERENCES public.users(id) ON DELETE SET NULL,
-    prescription_date DATE DEFAULT CURRENT_DATE,
-    valid_until DATE DEFAULT (CURRENT_DATE + INTERVAL '30 days'),
-    medications JSONB NOT NULL DEFAULT '[]'::JSONB, -- Array de MedicationItem con chequeo de alergias
-    general_instructions TEXT,
-    status VARCHAR(30) DEFAULT 'active', -- 'active', 'dispensed', 'cancelled'
-    digital_signature_hash VARCHAR(100),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_presc_tenant_patient ON public.prescripciones(tenant_id, patient_id);
-CREATE INDEX IF NOT EXISTS idx_presc_encounter ON public.prescripciones(encounter_id);
-
--- ==============================================================================
--- SEGURIDAD: HABILITACIÓN DE ROW LEVEL SECURITY (RLS) MULTITENANT
--- ==============================================================================
-
-ALTER TABLE public.pacientes_clinicos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.consultas_soap ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.prescripciones ENABLE ROW LEVEL SECURITY;
-
--- Helper policy function para obtener tenant_id del JWT
-CREATE OR REPLACE FUNCTION auth.jwt_tenant_id()
-RETURNS UUID AS $$
-    SELECT COALESCE(
-        (current_setting('request.jwt.claims', true)::jsonb -> 'app_metadata' ->> 'tenant_id')::UUID,
-        (current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id')::UUID,
-        '00000000-0000-0000-0000-000000000000'::UUID
-    );
-$$ LANGUAGE SQL STABLE SECURITY DEFINER;
-
--- POLÍTICAS RLS: pacientes_clinicos
-CREATE POLICY "Tenant isolation for pacientes_clinicos (SELECT)"
-    ON public.pacientes_clinicos FOR SELECT
-    USING (tenant_id = auth.jwt_tenant_id() OR auth.jwt_tenant_id() = '00000000-0000-0000-0000-000000000000'::UUID);
-
-CREATE POLICY "Tenant isolation for pacientes_clinicos (INSERT)"
-    ON public.pacientes_clinicos FOR INSERT
-    WITH CHECK (tenant_id = auth.jwt_tenant_id() OR auth.jwt_tenant_id() = '00000000-0000-0000-0000-000000000000'::UUID);
-
-CREATE POLICY "Tenant isolation for pacientes_clinicos (UPDATE)"
-    ON public.pacientes_clinicos FOR UPDATE
-    USING (tenant_id = auth.jwt_tenant_id() OR auth.jwt_tenant_id() = '00000000-0000-0000-0000-000000000000'::UUID);
-
--- POLÍTICAS RLS: consultas_soap
-CREATE POLICY "Tenant isolation for consultas_soap (SELECT)"
-    ON public.consultas_soap FOR SELECT
-    USING (tenant_id = auth.jwt_tenant_id() OR auth.jwt_tenant_id() = '00000000-0000-0000-0000-000000000000'::UUID);
-
-CREATE POLICY "Tenant isolation for consultas_soap (INSERT)"
-    ON public.consultas_soap FOR INSERT
-    WITH CHECK (tenant_id = auth.jwt_tenant_id() OR auth.jwt_tenant_id() = '00000000-0000-0000-0000-000000000000'::UUID);
-
-CREATE POLICY "Tenant isolation for consultas_soap (UPDATE)"
-    ON public.consultas_soap FOR UPDATE
-    USING (tenant_id = auth.jwt_tenant_id() OR auth.jwt_tenant_id() = '00000000-0000-0000-0000-000000000000'::UUID);
-
--- POLÍTICAS RLS: prescripciones
-CREATE POLICY "Tenant isolation for prescripciones (SELECT)"
-    ON public.prescripciones FOR SELECT
-    USING (tenant_id = auth.jwt_tenant_id() OR auth.jwt_tenant_id() = '00000000-0000-0000-0000-000000000000'::UUID);
-
-CREATE POLICY "Tenant isolation for prescripciones (INSERT)"
-    ON public.prescripciones FOR INSERT
-    WITH CHECK (tenant_id = auth.jwt_tenant_id() OR auth.jwt_tenant_id() = '00000000-0000-0000-0000-000000000000'::UUID);
-
-CREATE POLICY "Tenant isolation for prescripciones (UPDATE)"
-    ON public.prescripciones FOR UPDATE
-    USING (tenant_id = auth.jwt_tenant_id() OR auth.jwt_tenant_id() = '00000000-0000-0000-0000-000000000000'::UUID);
-`;
-
-  const copySqlToClipboard = () => {
-    navigator.clipboard.writeText(SQL_MIGRATION_SCRIPT);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 3000);
   };
 
   return (
@@ -443,18 +258,6 @@ CREATE POLICY "Tenant isolation for prescripciones (UPDATE)"
           >
             <span className="material-symbols-outlined text-base">history</span>
             <span>Historial Clínico ({encounters.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('sql_schema')}
-            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-              activeTab === 'sql_schema'
-                ? 'bg-primary text-white shadow-xs'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">database</span>
-            <span>Migración SQL / RLS</span>
           </button>
         </div>
       </div>
@@ -600,39 +403,6 @@ CREATE POLICY "Tenant isolation for prescripciones (UPDATE)"
                 </p>
               </div>
             )}
-          </div>
-        )}
-
-        {/* TAB 5: SQL MIGRATIONS & RLS POLICIES */}
-        {activeTab === 'sql_schema' && (
-          <div className="space-y-4 animate-fadeIn">
-            <div className="bg-surface-container-lowest p-5 rounded-3xl border border-outline-variant/30 clinical-shadow flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-xl">database</span>
-                  <h3 className="text-base font-black text-on-surface">
-                    Migraciones SQL & Políticas Row Level Security (RLS)
-                  </h3>
-                </div>
-                <p className="text-xs text-on-surface-variant mt-1">
-                  Esquema completo para las tablas <code className="text-primary font-bold">pacientes_clinicos</code>, <code className="text-primary font-bold">consultas_soap</code> y <code className="text-primary font-bold">prescripciones</code> con aislamiento multitenant y compatibilidad HL7 FHIR.
-                </p>
-              </div>
-
-              <button
-                onClick={copySqlToClipboard}
-                className="px-4 py-2.5 bg-primary hover:bg-primary-container text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap"
-              >
-                <span className="material-symbols-outlined text-base">
-                  {copiedSql ? 'check' : 'content_copy'}
-                </span>
-                <span>{copiedSql ? '¡Copiado al Portapapeles!' : 'Copiar Script SQL'}</span>
-              </button>
-            </div>
-
-            <div className="bg-slate-950 text-emerald-400 p-5 rounded-3xl font-mono text-xs leading-relaxed overflow-x-auto border border-slate-800 select-all shadow-inner">
-              <pre>{SQL_MIGRATION_SCRIPT}</pre>
-            </div>
           </div>
         )}
       </main>

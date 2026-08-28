@@ -11,7 +11,6 @@ import {
 import { AnthropometryEvaluationModule } from '../components/nutrition/AnthropometryEvaluationModule';
 import { DietPlannerModule } from '../components/nutrition/DietPlannerModule';
 import { FhirNutritionOrderModule } from '../components/nutrition/FhirNutritionOrderModule';
-import { NutritionSqlMigrationTab } from '../components/nutrition/NutritionSqlMigrationTab';
 import { AnthropometryPdfModal } from '../components/nutrition/AnthropometryPdfModal';
 
 import { SideNavBar } from '../components/layout/SideNavBar';
@@ -59,7 +58,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
 
   // Active Navigation Tab
   const [activeTab, setActiveTab] = useState<
-    'antropometria' | 'planificador' | 'fhir_orders' | 'historial' | 'sql_migration'
+    'antropometria' | 'planificador' | 'fhir_orders' | 'historial'
   >('antropometria');
 
   // Nutrition Domain Records State for Active Patient
@@ -487,18 +486,6 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 <span className="material-symbols-outlined text-base">history</span>
                 <span>Historial & Trazabilidad ({plans.length + evaluations.length})</span>
               </button>
-
-              <button
-                onClick={() => setActiveTab('sql_migration')}
-                className={`px-4 py-2.5 rounded-2xl font-black text-xs transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-                  activeTab === 'sql_migration'
-                    ? 'bg-primary text-white shadow-xs'
-                    : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
-                }`}
-              >
-                <span className="material-symbols-outlined text-base">database</span>
-                <span>Migración SQL / RLS</span>
-              </button>
             </div>
 
             {/* Tab 1: Antropometría & Mifflin-St Jeor */}
@@ -689,9 +676,6 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 </div>
               </div>
             )}
-
-            {/* Tab 5: SQL Migration Script */}
-            {activeTab === 'sql_migration' && <NutritionSqlMigrationTab />}
           </div>
         )}
       </div>

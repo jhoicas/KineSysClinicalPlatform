@@ -1596,6 +1596,7 @@ class LocalQueryBuilder {
   private orderField?: string;
   private orderAscending: boolean = true;
   private limitCount?: number;
+  private isDeleteOperation: boolean = false;
 
   constructor(tableName: string) {
     this.tableName = tableName;
@@ -1687,6 +1688,11 @@ class LocalQueryBuilder {
   }
 
   async then(resolve: (val: { data: any; error: any }) => void) {
+    if (this.isDeleteOperation) {
+      const result = await this.executeDelete();
+      resolve(result);
+      return;
+    }
     const result = await this.executeSelect();
     resolve(result);
   }
@@ -2123,14 +2129,27 @@ class LocalQueryBuilder {
     }
   }
 
-  async delete() {
+  delete() {
+    this.isDeleteOperation = true;
+    return this;
+  }
+
+  private async executeDelete(): Promise<{ data: any; error: any }> {
     try {
       if (this.tableName === 'appointments') {
         const current = LocalStore.get<Appointment[]>(STORAGE_KEYS.APPOINTMENTS, INITIAL_APPOINTMENTS);
         const updated = current.filter((appt) => !this.filters.every((fn) => fn(appt)));
         LocalStore.set(STORAGE_KEYS.APPOINTMENTS, updated);
         window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'appointments' } }));
-        return { error: null };
+        return { data: null, error: null };
+      }
+
+      if (this.tableName === 'pain_observations') {
+        const current = LocalStore.get<PainObservation[]>(STORAGE_KEYS.PAIN_OBSERVATIONS, INITIAL_PAIN_OBSERVATIONS);
+        const updated = current.filter((obs) => !this.filters.every((fn) => fn(obs)));
+        LocalStore.set(STORAGE_KEYS.PAIN_OBSERVATIONS, updated);
+        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'pain_observations' } }));
+        return { data: null, error: null };
       }
 
       if (this.tableName === 'role_permissions') {
@@ -2138,12 +2157,12 @@ class LocalQueryBuilder {
         const updated = current.filter((perm) => !this.filters.every((fn) => fn(perm)));
         LocalStore.set(STORAGE_KEYS.ROLE_PERMISSIONS, updated);
         window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'role_permissions' } }));
-        return { error: null };
+        return { data: null, error: null };
       }
 
-      return { error: null };
+      return { data: null, error: null };
     } catch (err: any) {
-      return { error: err };
+      return { data: null, error: err };
     }
   }
 }

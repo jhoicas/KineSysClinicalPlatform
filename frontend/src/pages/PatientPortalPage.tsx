@@ -6,7 +6,7 @@ import { fetchProfessionalsWithJoinedDetails } from '../services/patientPortalSe
 import { Appointment, ProfessionalWithDetails } from '../types';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
-import { RoleSwitcherBanner } from '../components/layout/RoleSwitcherBanner';
+
 import { PhoneInputWithCountry } from '../components/common/PhoneInputWithCountry';
 import { ProfessionalProfileModal } from '../components/patient/ProfessionalProfileModal';
 import { ProfessionalCard } from '../components/patient/ProfessionalCard';
@@ -524,7 +524,7 @@ export const PatientPortalPage: React.FC<PatientPortalPageProps> = ({ onNavigate
         />
       )}
 
-      <RoleSwitcherBanner onNavigate={onNavigate} currentPath="/portal-paciente" />
+
     </div>
   );
 };

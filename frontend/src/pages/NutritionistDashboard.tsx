@@ -13,7 +13,7 @@ import { DietPlannerModule } from '../components/nutrition/DietPlannerModule';
 import { FhirNutritionOrderModule } from '../components/nutrition/FhirNutritionOrderModule';
 import { NutritionSqlMigrationTab } from '../components/nutrition/NutritionSqlMigrationTab';
 import { AnthropometryPdfModal } from '../components/nutrition/AnthropometryPdfModal';
-import { RoleSwitcherBanner } from '../components/layout/RoleSwitcherBanner';
+
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
 import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
@@ -204,8 +204,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       <main className="flex-1 ml-0 md:ml-72 flex flex-col h-screen overflow-hidden">
         <TopNavBar currentPath="/nutricion" onNavigate={onNavigate} />
         <div className="flex-1 overflow-y-auto pb-24 bg-background">
-          {/* Top Banner / Role Switcher */}
-      <RoleSwitcherBanner currentPath="/nutricion" onNavigate={onNavigate} />
+
 
       {/* Main Container */}
       <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6 flex-1">

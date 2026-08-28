@@ -10,7 +10,6 @@ import {
 import { PatientListModule } from '../components/medical/PatientListModule';
 import { SoapEditorModule } from '../components/medical/SoapEditorModule';
 import { PrescriptionModule } from '../components/medical/PrescriptionModule';
-import { RoleSwitcherBanner } from '../components/layout/RoleSwitcherBanner';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
 import { PdfViewer } from '../components/common/PdfViewer';
@@ -765,8 +764,7 @@ CREATE POLICY "Tenant isolation for prescripciones (UPDATE)"
         </div>
       )}
 
-      {/* Role Switcher Banner */}
-      <RoleSwitcherBanner onNavigate={onNavigate} currentPath="/medicina-general" />
+
         </div>
       </main>
     </div>

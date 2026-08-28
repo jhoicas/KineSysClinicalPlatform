@@ -5,7 +5,7 @@ import { supabase } from '../services/supabaseClient';
 import { GeneralMedicalRecord, User } from '../types';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
-import { RoleSwitcherBanner } from '../components/layout/RoleSwitcherBanner';
+
 
 interface MedicoGeneralPageProps {
   onNavigate: (path: string) => void;
@@ -334,7 +334,7 @@ export const MedicoGeneralPage: React.FC<MedicoGeneralPageProps> = ({ onNavigate
         </div>
       </main>
 
-      <RoleSwitcherBanner onNavigate={onNavigate} currentPath="/medicina-general" />
+
     </div>
   );
 };

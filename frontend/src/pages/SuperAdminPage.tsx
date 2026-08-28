@@ -4,7 +4,7 @@ import { supabase, ALL_DEMO_TENANTS, PRICING_PLANS } from '../services/supabaseC
 import { Tenant, PricingPlanConfig } from '../types';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
-import { RoleSwitcherBanner } from '../components/layout/RoleSwitcherBanner';
+
 
 interface SuperAdminPageProps {
   onNavigate: (path: string) => void;
@@ -289,7 +289,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onNavigate }) =>
         </div>
       </main>
 
-      <RoleSwitcherBanner onNavigate={onNavigate} currentPath="/super-admin" />
+
     </div>
   );
 };

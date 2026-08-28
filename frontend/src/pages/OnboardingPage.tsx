@@ -20,25 +20,24 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Step 1: Datos de la Clínica
-  const [clinicName, setClinicName] = useState('Centro Kinésico Integral');
-  const [clinicNit, setClinicNit] = useState('901.458.720-3');
-  const [clinicSlug, setClinicSlug] = useState('centro-kinesico');
-  const [clinicPhone, setClinicPhone] = useState('+57 300 123 4567');
-  const [clinicAddress, setClinicAddress] = useState('Cra. 15 # 93-60, Bogotá');
+  const [clinicName, setClinicName] = useState('');
+  const [clinicNit, setClinicNit] = useState('');
+  const [clinicPhone, setClinicPhone] = useState('');
+  const [clinicAddress, setClinicAddress] = useState('');
   const [primarySpecialty, setPrimarySpecialty] = useState('Kinesiología & Rehabilitación');
 
   // Step 2: Selección de Plan
   const [selectedPlanId, setSelectedPlanId] = useState<SubscriptionPlan>('growth');
 
   // Step 3: Registro del Admin
-  const [adminName, setAdminName] = useState('Dra. Marcela Lagos');
-  const [adminEmail, setAdminEmail] = useState('directora@centrokinesico.com');
-  const [adminPassword, setAdminPassword] = useState('KineSys2026*');
-  const [adminPasswordConfirm, setAdminPasswordConfirm] = useState('KineSys2026*');
+  const [adminName, setAdminName] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminPasswordConfirm, setAdminPasswordConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [adminPhone, setAdminPhone] = useState('+57 312 987 6543');
-  const [adminRut, setAdminRut] = useState('15.420.912-3');
-  const [adminLicense, setAdminLicense] = useState('MED-REG-84920');
+  const [adminPhone, setAdminPhone] = useState('');
+  const [adminRut, setAdminRut] = useState('');
+  const [adminLicense, setAdminLicense] = useState('');
 
   // Created objects after success
   const [createdTenant, setCreatedTenant] = useState<Tenant | null>(null);
@@ -57,15 +56,6 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
 
   const handleClinicNameChange = (name: string) => {
     setClinicName(name);
-    // Auto-generate clean slug
-    const generated = name
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
-    setClinicSlug(generated || 'clinica');
   };
 
   // Step 1 Validation
@@ -115,11 +105,19 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
     try {
       const newTenantId = `tenant_${Date.now()}`;
       const trialEnds = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const generatedSlug =
+        clinicName
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '') || 'clinica';
 
       const newTenant: Tenant = {
         id: newTenantId,
         name: clinicName.trim(),
-        slug: clinicSlug.trim() || 'clinica',
+        slug: generatedSlug,
         timezone: 'America/Bogota (UTC-5)',
         cancellation_window_hours: 24,
         email: adminEmail.trim(),
@@ -267,14 +265,15 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
                   id="input-onboarding-clinic-name"
                   type="text"
                   required
+                  autoComplete="off"
                   value={clinicName}
                   onChange={(e) => handleClinicNameChange(e.target.value)}
-                  placeholder="Ej: Centro de Rehabilitación Kinésica San Andrés"
+                  placeholder="Ej: Centro de Rehabilitación Kinésica"
                   className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-3 text-sm font-semibold text-on-surface focus:border-primary outline-none transition-all"
                 />
               </div>
 
-              {/* NIT / RUT / Identificación Tributaria */}
+              {/* NIT y Especialidad Principal en 2 columnas */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-black uppercase text-on-surface-variant mb-1.5">
@@ -284,35 +283,11 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
                     id="input-onboarding-clinic-nit"
                     type="text"
                     required
+                    autoComplete="off"
                     value={clinicNit}
                     onChange={(e) => setClinicNit(e.target.value)}
-                    placeholder="901.458.720-3"
+                    placeholder="Ej: 901.458.720-3"
                     className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-3 text-sm font-semibold text-on-surface focus:border-primary outline-none transition-all font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-black uppercase text-on-surface-variant mb-1.5">
-                    {t('onboarding.subdomain', 'Subdominio / Slug')}
-                  </label>
-                  <div className="flex items-center bg-surface-container-low border border-outline-variant/40 rounded-xl px-3 py-2.5 text-on-surface-variant">
-                    <span className="font-mono text-primary font-bold text-xs">{clinicSlug}</span>
-                    <span className="text-[11px] ml-1 text-on-surface-variant/70">.kinesys.cloud</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Teléfono con Selector de País con Banderas */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <PhoneInputWithCountry
-                    id="input-onboarding-clinic-phone"
-                    label={t('onboarding.clinic_phone', 'Teléfono de Contacto')}
-                    value={clinicPhone}
-                    onChange={(fullNumber) => setClinicPhone(fullNumber)}
-                    placeholder="300 123 4567"
-                    defaultCountryCode="CO"
-                    required
                   />
                 </div>
 
@@ -333,19 +308,34 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
                 </div>
               </div>
 
-              {/* Dirección Física */}
-              <div>
-                <label className="block text-xs font-black uppercase text-on-surface-variant mb-1.5">
-                  {t('onboarding.clinic_address', 'Dirección de la Sede')}
-                </label>
-                <input
-                  id="input-onboarding-clinic-address"
-                  type="text"
-                  value={clinicAddress}
-                  onChange={(e) => setClinicAddress(e.target.value)}
-                  placeholder="Cra. 15 # 93-60, Bogotá"
-                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-3 text-xs font-semibold text-on-surface focus:border-primary outline-none transition-all"
-                />
+              {/* Teléfono con Selector de País con Banderas y Dirección */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <PhoneInputWithCountry
+                    id="input-onboarding-clinic-phone"
+                    label={t('onboarding.clinic_phone', 'Teléfono de Contacto')}
+                    value={clinicPhone}
+                    onChange={(fullNumber) => setClinicPhone(fullNumber)}
+                    placeholder="300 123 4567"
+                    defaultCountryCode="CO"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase text-on-surface-variant mb-1.5">
+                    {t('onboarding.clinic_address', 'Dirección de la Sede')}
+                  </label>
+                  <input
+                    id="input-onboarding-clinic-address"
+                    type="text"
+                    autoComplete="off"
+                    value={clinicAddress}
+                    onChange={(e) => setClinicAddress(e.target.value)}
+                    placeholder="Ej: Cra. 15 # 93-60"
+                    className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-3 text-xs font-semibold text-on-surface focus:border-primary outline-none transition-all"
+                  />
+                </div>
               </div>
             </div>
 
@@ -494,6 +484,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
                   id="input-onboarding-admin-name"
                   type="text"
                   required
+                  autoComplete="off"
                   value={adminName}
                   onChange={(e) => setAdminName(e.target.value)}
                   placeholder="Ej: Dra. Marcela Lagos"
@@ -510,6 +501,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
                   id="input-onboarding-admin-email"
                   type="email"
                   required
+                  autoComplete="off"
                   value={adminEmail}
                   onChange={(e) => setAdminEmail(e.target.value)}
                   placeholder="admin@tuclinica.com"
@@ -538,6 +530,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
                       type={showPassword ? 'text' : 'password'}
                       required
                       minLength={6}
+                      autoComplete="new-password"
                       value={adminPassword}
                       onChange={(e) => setAdminPassword(e.target.value)}
                       placeholder="Mínimo 6 caracteres"
@@ -555,6 +548,7 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
                     type={showPassword ? 'text' : 'password'}
                     required
                     minLength={6}
+                    autoComplete="new-password"
                     value={adminPasswordConfirm}
                     onChange={(e) => setAdminPasswordConfirm(e.target.value)}
                     placeholder="Repite la contraseña"
@@ -584,9 +578,10 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
                   <input
                     id="input-onboarding-admin-rut"
                     type="text"
+                    autoComplete="off"
                     value={adminRut}
                     onChange={(e) => setAdminRut(e.target.value)}
-                    placeholder="15.228.910-K"
+                    placeholder="Ej: 15.228.910-K"
                     className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-3 text-xs font-semibold text-on-surface focus:border-primary outline-none transition-all"
                   />
                 </div>
@@ -600,9 +595,10 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
                 <input
                   id="input-onboarding-admin-license"
                   type="text"
+                  autoComplete="off"
                   value={adminLicense}
                   onChange={(e) => setAdminLicense(e.target.value)}
-                  placeholder="Ej: REG-SALUD-89201"
+                  placeholder="Ej: MED-REG-84920"
                   className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-4 py-3 text-xs font-semibold text-on-surface focus:border-primary outline-none transition-all"
                 />
               </div>

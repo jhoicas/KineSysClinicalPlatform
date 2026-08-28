@@ -304,6 +304,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                     id="input-login-email"
                     type="email"
                     required
+                    autoComplete="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="doctor@clinica.com o paciente@email.com"
@@ -357,6 +358,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
                     type="text"
                     required
                     maxLength={8}
+                    autoComplete="one-time-code"
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value)}
                     placeholder="123456"

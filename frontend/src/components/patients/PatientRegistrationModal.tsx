@@ -33,12 +33,12 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
     defaultValues: {
       full_name: '',
       email: '',
-      phone: '+57 300 123 4567',
+      phone: '',
       rut_or_dni: '',
       gender: 'male',
       birth_date: '',
-      medical_conditions: 'Evaluación Kinésica Inicial',
-      allergies: 'Sin alergias conocidas',
+      medical_conditions: '',
+      allergies: '',
       emergency_contact_name: '',
       emergency_contact_phone: '',
     },
@@ -50,12 +50,12 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
       reset({
         full_name: '',
         email: '',
-        phone: '+57 300 123 4567',
+        phone: '',
         rut_or_dni: '',
         gender: 'male',
         birth_date: '',
-        medical_conditions: 'Evaluación Kinésica Inicial',
-        allergies: 'Sin alergias conocidas',
+        medical_conditions: '',
+        allergies: '',
         emergency_contact_name: '',
         emergency_contact_phone: '',
       });
@@ -115,6 +115,7 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
               </span>
               <input
                 type="text"
+                autoComplete="off"
                 {...register('full_name')}
                 placeholder="Ej: Marcelo Morales Riquelme"
                 disabled={isSubmitting}
@@ -146,6 +147,7 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
                 </span>
                 <input
                   type="email"
+                  autoComplete="off"
                   {...register('email')}
                   placeholder="marcelo@ejemplo.com"
                   disabled={isSubmitting}
@@ -200,6 +202,7 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
                 </span>
                 <input
                   type="text"
+                  autoComplete="off"
                   {...register('rut_or_dni')}
                   placeholder="Ej: 18.990.231-5"
                   disabled={isSubmitting}

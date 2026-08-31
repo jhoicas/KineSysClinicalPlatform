@@ -1,15 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useI18n } from '../app/providers/I18nProvider';
 import { supabase } from '../services/supabaseClient';
+import {
+  fetchProfessionalAvailability,
+  fetchProfessionalAvailabilityExceptions,
+} from '../services/dataService';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
 import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
 import { NewAppointmentModal, AppointmentToEdit } from '../components/calendar/NewAppointmentModal';
+import { AvailabilityConfigModal } from '../components/calendar/AvailabilityConfigModal';
+import { CalendarDayView } from '../components/calendar/CalendarDayView';
+import { CalendarWeekView } from '../components/calendar/CalendarWeekView';
+import { CalendarMonthView } from '../components/calendar/CalendarMonthView';
 import { MedicalHistoryModal } from '../components/patients/MedicalHistoryModal';
 import { ToastContainer, ToastMessage } from '../components/common/Toast';
 import { useAppStore } from '../store/useAppStore';
-import { User, AppointmentStatus, Appointment } from '../types';
+import {
+  User,
+  AppointmentStatus,
+  Appointment,
+  CalendarViewMode,
+  ProfessionalAvailability,
+  ProfessionalAvailabilityException,
+} from '../types';
+import {
+  getMonthRange,
+  getWeekRange,
+  isClinicalProfessional,
+  isClinicAdmin,
+} from '../utils/availabilityUtils';
 
 export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => void }) {
   const { user, tenantId } = useAuth();
@@ -26,6 +47,18 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
   );
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [viewMode, setViewMode] = useState<CalendarViewMode>('day');
+  const [availability, setAvailability] = useState<ProfessionalAvailability[]>([]);
+  const [availabilityExceptions, setAvailabilityExceptions] = useState<
+    ProfessionalAvailabilityException[]
+  >([]);
+  const [isAvailabilityModalOpen, setIsAvailabilityModalOpen] = useState(false);
+
+  const effectiveProfessionalId = useMemo(() => {
+    if (selectedProfessionalId !== 'all') return selectedProfessionalId;
+    if (user && isClinicalProfessional(user.role)) return user.id;
+    return undefined;
+  }, [selectedProfessionalId, user]);
 
   // Modals
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -44,23 +77,56 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
     }, 4000);
   };
 
+  // Profesionales ven su propia agenda por defecto; admins mantienen filtro global
+  useEffect(() => {
+    if (user && isClinicalProfessional(user.role)) {
+      setSelectedProfessionalId(user.id);
+    }
+  }, [user?.id, user?.role]);
+
   // Fetch professionals on mount
   useEffect(() => {
     fetchProfessionals();
   }, [tenantId]);
 
-  // Fetch appointments when date, professional or user changes
+  // Fetch availability for active professional filter
+  useEffect(() => {
+    loadAvailabilityData();
+  }, [effectiveProfessionalId]);
+
+  // Fetch appointments when date range, professional or view changes
   useEffect(() => {
     fetchAppointments();
 
     const handleDataUpdate = (e: any) => {
-      if (e.detail?.table === 'appointments' || e.detail?.table === 'all') {
+      const table = e.detail?.table;
+      if (
+        table === 'appointments' ||
+        table === 'professional_availability' ||
+        table === 'professional_availability_exceptions' ||
+        table === 'all'
+      ) {
         fetchAppointments();
+        loadAvailabilityData();
       }
     };
     window.addEventListener('kinesys_data_updated', handleDataUpdate);
     return () => window.removeEventListener('kinesys_data_updated', handleDataUpdate);
-  }, [selectedDate, selectedProfessionalId, user, tenantId]);
+  }, [selectedDate, selectedProfessionalId, user, tenantId, viewMode]);
+
+  const loadAvailabilityData = async () => {
+    if (!effectiveProfessionalId) {
+      setAvailability([]);
+      setAvailabilityExceptions([]);
+      return;
+    }
+    const [avail, exc] = await Promise.all([
+      fetchProfessionalAvailability(effectiveProfessionalId),
+      fetchProfessionalAvailabilityExceptions(effectiveProfessionalId),
+    ]);
+    setAvailability(avail);
+    setAvailabilityExceptions(exc);
+  };
 
   const fetchProfessionals = async () => {
     try {
@@ -85,22 +151,33 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
     if (!user) return;
     setLoading(true);
 
-    const startOfDay = `${selectedDate}T00:00:00Z`;
-    const endOfDay = `${selectedDate}T23:59:59Z`;
+    let rangeStart = selectedDate;
+    let rangeEnd = selectedDate;
+    if (viewMode === 'week') {
+      const week = getWeekRange(selectedDate);
+      rangeStart = week.start;
+      rangeEnd = week.end;
+    } else if (viewMode === 'month') {
+      const month = getMonthRange(selectedDate);
+      rangeStart = month.start;
+      rangeEnd = month.end;
+    }
+
+    const startOfRange = `${rangeStart}T00:00:00Z`;
+    const endOfRange = `${rangeEnd}T23:59:59Z`;
 
     try {
       let query = supabase
         .from('appointments')
         .select('*')
-        .gte('start_time', startOfDay)
-        .lte('start_time', endOfDay)
+        .gte('start_time', startOfRange)
+        .lte('start_time', endOfRange)
         .order('start_time', { ascending: true });
 
       if (selectedProfessionalId !== 'all') {
         query = query.eq('professional_id', selectedProfessionalId);
-      } else if (user.role === 'fisioterapeuta' || user.role === 'nutricionista' || user.role === 'medico_general') {
-        // By default show this professional's appointments unless set to all
-        // Let user see all if they change filter
+      } else if (isClinicalProfessional(user.role)) {
+        query = query.eq('professional_id', user.id);
       }
 
       const { data, error } = await query;
@@ -116,10 +193,11 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
   // Date stepper helpers
   const handleStepDay = (direction: 'prev' | 'next') => {
     const current = new Date(selectedDate + 'T12:00:00');
-    if (direction === 'prev') {
-      current.setDate(current.getDate() - 1);
+    const step = viewMode === 'month' ? (direction === 'prev' ? -1 : 1) * 30 : viewMode === 'week' ? (direction === 'prev' ? -7 : 7) : direction === 'prev' ? -1 : 1;
+    if (viewMode === 'month') {
+      current.setMonth(current.getMonth() + (direction === 'prev' ? -1 : 1));
     } else {
-      current.setDate(current.getDate() + 1);
+      current.setDate(current.getDate() + step);
     }
     const yyyy = current.getFullYear();
     const mm = String(current.getMonth() + 1).padStart(2, '0');
@@ -393,6 +471,35 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
                 </button>
               </div>
 
+              {/* View mode toggle */}
+              <div className="flex items-center bg-surface-container-lowest p-1 rounded-2xl border border-outline-variant/30">
+                {(['day', 'week', 'month'] as CalendarViewMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setViewMode(mode)}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wide transition-all cursor-pointer ${
+                      viewMode === mode
+                        ? 'bg-primary text-white shadow-xs'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {mode === 'day' ? 'Día' : mode === 'week' ? 'Semana' : 'Mes'}
+                  </button>
+                ))}
+              </div>
+
+              {user && isClinicalProfessional(user.role) && (
+                <button
+                  type="button"
+                  onClick={() => setIsAvailabilityModalOpen(true)}
+                  className="bg-secondary hover:bg-secondary/90 text-white text-xs font-black px-4 py-2.5 rounded-2xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">schedule</span>
+                  Configurar mi Disponibilidad
+                </button>
+              )}
+
               {/* Add Appointment Button */}
               <button
                 id="btn-add-appointment"
@@ -416,9 +523,12 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
               <select
                 value={selectedProfessionalId}
                 onChange={(e) => setSelectedProfessionalId(e.target.value)}
-                className="bg-surface-container-lowest border border-outline-variant/40 text-xs font-bold text-on-surface py-1.5 px-3 rounded-xl outline-none cursor-pointer focus:border-primary"
+                disabled={user ? isClinicalProfessional(user.role) && !isClinicAdmin(user.role) : false}
+                className="bg-surface-container-lowest border border-outline-variant/40 text-xs font-bold text-on-surface py-1.5 px-3 rounded-xl outline-none cursor-pointer focus:border-primary disabled:opacity-70"
               >
-                <option value="all">Todos los profesionales ({professionals.length})</option>
+                {user && isClinicAdmin(user.role) && (
+                  <option value="all">Todos los profesionales ({professionals.length})</option>
+                )}
                 {professionals.map((prof) => (
                   <option key={prof.id} value={prof.id}>
                     {prof.full_name} ({prof.role || 'Especialista'})
@@ -487,7 +597,53 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
             </div>
           </div>
 
-          {/* Appointments Grid/List */}
+          {/* Calendar Views */}
+          {!loading && (
+            <div className="mb-6">
+              {viewMode === 'day' && (
+                <CalendarDayView
+                  date={selectedDate}
+                  appointments={filteredAppointments}
+                  availability={availability}
+                  exceptions={availabilityExceptions}
+                  professionalId={effectiveProfessionalId}
+                  onAppointmentClick={handleOpenEditModal}
+                  onSlotClick={(time) => {
+                    setEditingAppointment(null);
+                    setIsNewModalOpen(true);
+                  }}
+                />
+              )}
+              {viewMode === 'week' && (
+                <CalendarWeekView
+                  anchorDate={selectedDate}
+                  appointments={filteredAppointments}
+                  availability={availability}
+                  exceptions={availabilityExceptions}
+                  professionalId={effectiveProfessionalId}
+                  onDaySelect={(day) => {
+                    setSelectedDate(day);
+                    setViewMode('day');
+                  }}
+                  onAppointmentClick={handleOpenEditModal}
+                />
+              )}
+              {viewMode === 'month' && (
+                <CalendarMonthView
+                  anchorDate={selectedDate}
+                  appointments={filteredAppointments}
+                  onDaySelect={setSelectedDate}
+                  onViewDay={(day) => {
+                    setSelectedDate(day);
+                    setViewMode('day');
+                  }}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Appointments Grid/List (detalle en vista día) */}
+          {viewMode === 'day' && (
           <div className="space-y-3.5">
             {loading ? (
               <div className="flex flex-col items-center py-20 opacity-70">
@@ -706,8 +862,21 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
               })
             )}
           </div>
+          )}
         </div>
       </main>
+
+      {user && isClinicalProfessional(user.role) && (
+        <AvailabilityConfigModal
+          isOpen={isAvailabilityModalOpen}
+          onClose={() => setIsAvailabilityModalOpen(false)}
+          userId={user.id}
+          onSaved={() => {
+            loadAvailabilityData();
+            addToast('success', 'Disponibilidad publicada', 'Tus horarios están visibles para reservas.');
+          }}
+        />
+      )}
 
       {/* New & Edit Appointment Modal */}
       <NewAppointmentModal

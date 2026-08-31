@@ -565,4 +565,34 @@ export interface ProfessionalWithDetails extends User {
   reviews_count: number;
 }
 
+/** Bloque horario semanal publicado por un profesional (0=Domingo … 6=Sábado) */
+export interface ProfessionalAvailability {
+  id: string;
+  user_id: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  slot_duration: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Día bloqueado o vacaciones del profesional */
+export interface ProfessionalAvailabilityException {
+  id: string;
+  user_id: string;
+  exception_date: string;
+  reason?: string;
+  created_at?: string;
+}
+
+export type CalendarViewMode = 'day' | 'week' | 'month';
+
+export interface AvailabilityTimeSlot {
+  startTime: string;
+  endTime: string;
+  label: string;
+}
+
 

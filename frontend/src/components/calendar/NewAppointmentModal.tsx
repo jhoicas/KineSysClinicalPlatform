@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, AppointmentStatus, Appointment } from '../../types';
 import { supabase } from '../../services/supabaseClient';
+import { fetchAvailableTimeSlots, validateAppointmentSlot } from '../../services/dataService';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useI18n } from '../../app/providers/I18nProvider';
 
@@ -66,6 +67,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [channel, setChannel] = useState<'presencial' | 'virtual'>('presencial');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [availableSlots, setAvailableSlots] = useState<{ startTime: string; endTime: string; label: string }[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotError, setSlotError] = useState<string | null>(null);
 
   const isEditing = Boolean(appointmentToEdit?.id);
 
@@ -131,6 +135,39 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       setChannel('presencial');
     }
   }, [appointmentToEdit, defaultDate, isOpen, user]);
+
+  useEffect(() => {
+    if (!isOpen || !professionalId || !date) return;
+
+    const loadSlots = async () => {
+      setSlotsLoading(true);
+      setSlotError(null);
+      const slots = await fetchAvailableTimeSlots(
+        professionalId,
+        date,
+        appointmentToEdit?.id
+      );
+      setAvailableSlots(slots);
+      if (slots.length > 0 && !slots.some((s) => s.startTime === time)) {
+        setTime(slots[0].startTime);
+        const duration = Math.max(
+          15,
+          (() => {
+            const [sh, sm] = slots[0].startTime.split(':').map(Number);
+            const [eh, em] = slots[0].endTime.split(':').map(Number);
+            return eh * 60 + em - (sh * 60 + sm);
+          })()
+        );
+        setDurationMinutes(duration);
+      }
+      if (slots.length === 0) {
+        setSlotError('No hay horarios disponibles publicados para esta fecha.');
+      }
+      setSlotsLoading(false);
+    };
+
+    loadSlots();
+  }, [isOpen, professionalId, date, appointmentToEdit?.id]);
 
   const fetchPatientsAndProfessionals = async () => {
     setLoadingLists(true);
@@ -205,6 +242,20 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     try {
       const finalReason = reason === 'custom' ? (customReason.trim() || 'Consulta Kinésica General') : reason;
       const finalRoom = channel === 'virtual' ? 'Telemedicina (Virtual)' : room;
+
+      const validation = await validateAppointmentSlot({
+        professionalId: professionalId || user.id,
+        dateStr: date,
+        startTime: time,
+        durationMinutes,
+        excludeAppointmentId: appointmentToEdit?.id,
+      });
+
+      if (!validation.valid) {
+        setSlotError(validation.error || 'Horario no disponible.');
+        setSaving(false);
+        return;
+      }
 
       const [hours, minutes] = time.split(':').map(Number);
       const [year, month, day] = date.split('-').map(Number);
@@ -412,13 +463,45 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               <label className="block text-xs font-black uppercase text-on-surface-variant mb-1.5">
                 {t('calendar.start_time', 'Hora de Inicio')} <span className="text-red-500">*</span>
               </label>
-              <input
-                type="time"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-2.5 text-xs font-bold text-on-surface outline-none focus:border-primary"
-                required
-              />
+              {slotsLoading ? (
+                <div className="p-2.5 text-xs text-on-surface-variant bg-surface-container-low rounded-xl animate-pulse">
+                  Consultando disponibilidad...
+                </div>
+              ) : availableSlots.length > 0 ? (
+                <select
+                  value={time}
+                  onChange={(e) => {
+                    const selected = availableSlots.find((s) => s.startTime === e.target.value);
+                    setTime(e.target.value);
+                    if (selected) {
+                      const [sh, sm] = selected.startTime.split(':').map(Number);
+                      const [eh, em] = selected.endTime.split(':').map(Number);
+                      setDurationMinutes(eh * 60 + em - (sh * 60 + sm));
+                    }
+                    setSlotError(null);
+                  }}
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-2.5 text-xs font-bold text-on-surface outline-none focus:border-primary cursor-pointer"
+                  required
+                >
+                  {availableSlots.map((slot) => (
+                    <option key={slot.startTime} value={slot.startTime}>
+                      {slot.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-2.5 text-xs font-bold text-on-surface outline-none focus:border-primary"
+                  required
+                  disabled
+                />
+              )}
+              {slotError && (
+                <p className="text-[11px] font-bold text-red-600 mt-1">{slotError}</p>
+              )}
             </div>
 
             <div>

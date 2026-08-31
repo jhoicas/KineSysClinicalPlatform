@@ -62,6 +62,13 @@ export {
   fetchProfessionalsWithFullDetails,
   fetchProfessionalDetails,
   submitProfessionalReview,
+  fetchProfessionalAvailability,
+  saveProfessionalWeeklyAvailability,
+  fetchProfessionalAvailabilityExceptions,
+  saveProfessionalAvailabilityExceptions,
+  fetchAvailableTimeSlots,
+  validateAppointmentSlot,
+  INITIAL_PROFESSIONAL_AVAILABILITY,
 } from './dataService';
 
 // ─── API Client (Target Architecture — Go Backend) ────────────────────────────

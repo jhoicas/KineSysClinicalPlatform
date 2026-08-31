@@ -45,10 +45,18 @@ import {
   ProfessionalProfile,
   Review,
   ProfessionalWithDetails,
+  ProfessionalAvailability,
+  ProfessionalAvailabilityException,
+  AvailabilityTimeSlot,
   AppRole,
   AppModule,
   RolePermission
 } from '../types';
+import {
+  getAvailableSlots as computeAvailableSlots,
+  isTimeWithinPublishedAvailability,
+  isSlotBooked,
+} from '../utils/availabilityUtils';
 import { 
   INITIAL_NUTRITION_PLANS, 
   INITIAL_FHIR_NUTRITION_ORDERS 
@@ -415,6 +423,44 @@ export const INITIAL_APPOINTMENTS: Appointment[] = [
     },
   },
 ];
+
+function buildDefaultAvailabilityForProfessional(userId: string): ProfessionalAvailability[] {
+  const weekdays = [1, 2, 3, 4, 5];
+  const blocks: ProfessionalAvailability[] = [];
+  for (const day of weekdays) {
+    blocks.push(
+      {
+        id: `avail_${userId}_d${day}_am`,
+        user_id: userId,
+        day_of_week: day,
+        start_time: '08:00',
+        end_time: '12:00',
+        slot_duration: 45,
+        is_active: true,
+        created_at: '2025-01-01T00:00:00Z',
+      },
+      {
+        id: `avail_${userId}_d${day}_pm`,
+        user_id: userId,
+        day_of_week: day,
+        start_time: '14:00',
+        end_time: '18:00',
+        slot_duration: 45,
+        is_active: true,
+        created_at: '2025-01-01T00:00:00Z',
+      }
+    );
+  }
+  return blocks;
+}
+
+export const INITIAL_PROFESSIONAL_AVAILABILITY: ProfessionalAvailability[] = [
+  ...buildDefaultAvailabilityForProfessional('prof_mateo_01'),
+  ...buildDefaultAvailabilityForProfessional('prof_nutri_01'),
+  ...buildDefaultAvailabilityForProfessional('prof_doctor_01'),
+];
+
+export const INITIAL_PROFESSIONAL_AVAILABILITY_EXCEPTIONS: ProfessionalAvailabilityException[] = [];
 
 export const INITIAL_PAIN_OBSERVATIONS: PainObservation[] = [
   {
@@ -1565,6 +1611,8 @@ const STORAGE_KEYS = {
   APP_ROLES: 'kinesys_app_roles_v2',
   APP_MODULES: 'kinesys_app_modules_v2',
   ROLE_PERMISSIONS: 'kinesys_role_permissions_v2',
+  PROFESSIONAL_AVAILABILITY: 'kinesys_professional_availability_v1',
+  PROFESSIONAL_AVAILABILITY_EXCEPTIONS: 'kinesys_professional_availability_exceptions_v1',
   ACTIVE_USER_ID: 'kinesys_active_user_id_v2',
   SUPABASE_URL: 'kinesys_supabase_url',
   SUPABASE_KEY: 'kinesys_supabase_key',
@@ -1796,6 +1844,16 @@ class LocalQueryBuilder {
         rawData = LocalStore.get<AppModule[]>(STORAGE_KEYS.APP_MODULES, INITIAL_APP_MODULES);
       } else if (this.tableName === 'role_permissions') {
         rawData = LocalStore.get<RolePermission[]>(STORAGE_KEYS.ROLE_PERMISSIONS, INITIAL_ROLE_PERMISSIONS);
+      } else if (this.tableName === 'professional_availability') {
+        rawData = LocalStore.get<ProfessionalAvailability[]>(
+          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY,
+          INITIAL_PROFESSIONAL_AVAILABILITY
+        );
+      } else if (this.tableName === 'professional_availability_exceptions') {
+        rawData = LocalStore.get<ProfessionalAvailabilityException[]>(
+          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS,
+          INITIAL_PROFESSIONAL_AVAILABILITY_EXCEPTIONS
+        );
       }
 
       let filtered = rawData;
@@ -2067,6 +2125,47 @@ class LocalQueryBuilder {
         return { data: newPerms, error: null };
       }
 
+      if (this.tableName === 'professional_availability') {
+        const current = LocalStore.get<ProfessionalAvailability[]>(
+          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY,
+          INITIAL_PROFESSIONAL_AVAILABILITY
+        );
+        const newBlocks: ProfessionalAvailability[] = items.map((item) => ({
+          id: item.id || `avail_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          created_at: item.created_at || new Date().toISOString(),
+          is_active: item.is_active ?? true,
+          slot_duration: item.slot_duration ?? 45,
+          ...item,
+        }));
+        LocalStore.set(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY, [...newBlocks, ...current]);
+        window.dispatchEvent(
+          new CustomEvent('kinesys_data_updated', { detail: { table: 'professional_availability' } })
+        );
+        return { data: newBlocks, error: null };
+      }
+
+      if (this.tableName === 'professional_availability_exceptions') {
+        const current = LocalStore.get<ProfessionalAvailabilityException[]>(
+          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS,
+          INITIAL_PROFESSIONAL_AVAILABILITY_EXCEPTIONS
+        );
+        const newExceptions: ProfessionalAvailabilityException[] = items.map((item) => ({
+          id: item.id || `avail_exc_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          created_at: item.created_at || new Date().toISOString(),
+          ...item,
+        }));
+        LocalStore.set(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS, [
+          ...newExceptions,
+          ...current,
+        ]);
+        window.dispatchEvent(
+          new CustomEvent('kinesys_data_updated', {
+            detail: { table: 'professional_availability_exceptions' },
+          })
+        );
+        return { data: newExceptions, error: null };
+      }
+
       return { data: items, error: null };
     } catch (err: any) {
       return { data: null, error: err };
@@ -2157,6 +2256,34 @@ class LocalQueryBuilder {
         const updated = current.filter((perm) => !this.filters.every((fn) => fn(perm)));
         LocalStore.set(STORAGE_KEYS.ROLE_PERMISSIONS, updated);
         window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'role_permissions' } }));
+        return { data: null, error: null };
+      }
+
+      if (this.tableName === 'professional_availability') {
+        const current = LocalStore.get<ProfessionalAvailability[]>(
+          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY,
+          INITIAL_PROFESSIONAL_AVAILABILITY
+        );
+        const updated = current.filter((row) => !this.filters.every((fn) => fn(row)));
+        LocalStore.set(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY, updated);
+        window.dispatchEvent(
+          new CustomEvent('kinesys_data_updated', { detail: { table: 'professional_availability' } })
+        );
+        return { data: null, error: null };
+      }
+
+      if (this.tableName === 'professional_availability_exceptions') {
+        const current = LocalStore.get<ProfessionalAvailabilityException[]>(
+          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS,
+          INITIAL_PROFESSIONAL_AVAILABILITY_EXCEPTIONS
+        );
+        const updated = current.filter((row) => !this.filters.every((fn) => fn(row)));
+        LocalStore.set(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS, updated);
+        window.dispatchEvent(
+          new CustomEvent('kinesys_data_updated', {
+            detail: { table: 'professional_availability_exceptions' },
+          })
+        );
         return { data: null, error: null };
       }
 
@@ -2293,6 +2420,8 @@ function createSupabaseProxy() {
       localStorage.removeItem(STORAGE_KEYS.APP_ROLES);
       localStorage.removeItem(STORAGE_KEYS.APP_MODULES);
       localStorage.removeItem(STORAGE_KEYS.ROLE_PERMISSIONS);
+      localStorage.removeItem(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY);
+      localStorage.removeItem(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS);
       window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'all' } }));
     },
     isUsingLocalEngine: () => !supabaseAuthClient,
@@ -2383,6 +2512,189 @@ export async function fetchProfessionalDetails(userId: string): Promise<Professi
 /**
  * Submits a new review from a patient
  */
+/**
+ * Lee la disponibilidad semanal publicada de un profesional.
+ */
+export async function fetchProfessionalAvailability(
+  userId: string
+): Promise<ProfessionalAvailability[]> {
+  try {
+    const { data, error } = await supabase
+      .from('professional_availability')
+      .select('*')
+      .eq('user_id', userId)
+      .order('day_of_week', { ascending: true });
+    if (error) throw error;
+    return (data as ProfessionalAvailability[]) || [];
+  } catch (e) {
+    console.error('Error fetching professional availability:', e);
+    return [];
+  }
+}
+
+/**
+ * Reemplaza la disponibilidad semanal del profesional en sesión.
+ */
+export async function saveProfessionalWeeklyAvailability(
+  userId: string,
+  blocks: Omit<ProfessionalAvailability, 'id' | 'user_id' | 'created_at' | 'updated_at'>[]
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await supabase.from('professional_availability').delete().eq('user_id', userId);
+
+    if (blocks.length === 0) {
+      window.dispatchEvent(
+        new CustomEvent('kinesys_data_updated', { detail: { table: 'professional_availability' } })
+      );
+      return { success: true };
+    }
+
+    const payload = blocks.map((block) => ({
+      ...block,
+      user_id: userId,
+      is_active: block.is_active ?? true,
+      slot_duration: block.slot_duration ?? 45,
+    }));
+
+    const { error } = await supabase.from('professional_availability').insert(payload);
+    if (error) throw error;
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'No se pudo guardar la disponibilidad' };
+  }
+}
+
+/**
+ * Lee excepciones (días bloqueados / vacaciones) del profesional.
+ */
+export async function fetchProfessionalAvailabilityExceptions(
+  userId: string
+): Promise<ProfessionalAvailabilityException[]> {
+  try {
+    const { data, error } = await supabase
+      .from('professional_availability_exceptions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('exception_date', { ascending: true });
+    if (error) throw error;
+    return (data as ProfessionalAvailabilityException[]) || [];
+  } catch (e) {
+    console.error('Error fetching availability exceptions:', e);
+    return [];
+  }
+}
+
+/**
+ * Guarda el listado completo de excepciones del profesional.
+ */
+export async function saveProfessionalAvailabilityExceptions(
+  userId: string,
+  exceptions: Omit<ProfessionalAvailabilityException, 'id' | 'user_id' | 'created_at'>[]
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await supabase.from('professional_availability_exceptions').delete().eq('user_id', userId);
+
+    if (exceptions.length === 0) {
+      window.dispatchEvent(
+        new CustomEvent('kinesys_data_updated', {
+          detail: { table: 'professional_availability_exceptions' },
+        })
+      );
+      return { success: true };
+    }
+
+    const payload = exceptions.map((exc) => ({
+      ...exc,
+      user_id: userId,
+    }));
+
+    const { error } = await supabase.from('professional_availability_exceptions').insert(payload);
+    if (error) throw error;
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'No se pudieron guardar las excepciones' };
+  }
+}
+
+/**
+ * Calcula slots disponibles para agendar (publicados y sin conflicto con citas activas).
+ */
+export async function fetchAvailableTimeSlots(
+  professionalId: string,
+  dateStr: string,
+  excludeAppointmentId?: string
+): Promise<AvailabilityTimeSlot[]> {
+  try {
+    const [availability, exceptions, appointmentsResult] = await Promise.all([
+      fetchProfessionalAvailability(professionalId),
+      fetchProfessionalAvailabilityExceptions(professionalId),
+      supabase.from('appointments').select('*'),
+    ]);
+
+    const appointments = (appointmentsResult.data as Appointment[]) || [];
+    return computeAvailableSlots(
+      availability,
+      exceptions,
+      appointments,
+      dateStr,
+      professionalId,
+      excludeAppointmentId
+    );
+  } catch (e) {
+    console.error('Error computing available slots:', e);
+    return [];
+  }
+}
+
+/**
+ * Valida que un horario esté dentro de bloques publicados y libre de conflictos.
+ */
+export async function validateAppointmentSlot(params: {
+  professionalId: string;
+  dateStr: string;
+  startTime: string;
+  durationMinutes: number;
+  excludeAppointmentId?: string;
+}): Promise<{ valid: boolean; error?: string }> {
+  const { professionalId, dateStr, startTime, durationMinutes, excludeAppointmentId } = params;
+
+  const [availability, exceptions, appointmentsResult] = await Promise.all([
+    fetchProfessionalAvailability(professionalId),
+    fetchProfessionalAvailabilityExceptions(professionalId),
+    supabase.from('appointments').select('*'),
+  ]);
+
+  const appointments = (appointmentsResult.data as Appointment[]) || [];
+  const profAppts = appointments.filter((a) => a.professional_id === professionalId);
+
+  if (
+    !isTimeWithinPublishedAvailability(
+      availability,
+      exceptions,
+      dateStr,
+      startTime,
+      durationMinutes,
+      professionalId
+    )
+  ) {
+    return {
+      valid: false,
+      error: 'El horario seleccionado no está dentro de la disponibilidad publicada del profesional.',
+    };
+  }
+
+  if (isSlotBooked(profAppts, dateStr, startTime, durationMinutes, excludeAppointmentId)) {
+    return {
+      valid: false,
+      error: 'Ya existe una cita reservada en ese horario.',
+    };
+  }
+
+  return { valid: true };
+}
+
 export async function submitProfessionalReview(review: Omit<Review, 'id' | 'created_at'>): Promise<{ success: boolean; data?: Review; error?: string }> {
   try {
     const newRev: Partial<Review> = {

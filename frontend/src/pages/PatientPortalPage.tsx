@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useI18n } from '../app/providers/I18nProvider';
 import { supabase } from '../services/supabaseClient';
+import { fetchAvailableTimeSlots, validateAppointmentSlot } from '../services/dataService';
 import { fetchProfessionalsWithJoinedDetails } from '../services/patientPortalService';
 import { Appointment, ProfessionalWithDetails } from '../types';
 import { SideNavBar } from '../components/layout/SideNavBar';
@@ -53,11 +54,31 @@ export const PatientPortalPage: React.FC<PatientPortalPageProps> = ({ onNavigate
   // Booking Success State with Calendar Links
   const [lastBookedAppointment, setLastBookedAppointment] = useState<Appointment | null>(null);
   const [bookedSuccess, setBookedSuccess] = useState<boolean>(false);
+  const [availableSlots, setAvailableSlots] = useState<
+    { startTime: string; endTime: string; label: string }[]
+  >([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   useEffect(() => {
     loadProfessionals();
     loadAppointments();
   }, []);
+
+  useEffect(() => {
+    if (!selectedProfId || !selectedDate) return;
+    const loadSlots = async () => {
+      setSlotsLoading(true);
+      setBookingError(null);
+      const slots = await fetchAvailableTimeSlots(selectedProfId, selectedDate);
+      setAvailableSlots(slots);
+      if (slots.length > 0) {
+        setSelectedTime(slots[0].startTime);
+      }
+      setSlotsLoading(false);
+    };
+    loadSlots();
+  }, [selectedProfId, selectedDate]);
 
   const loadProfessionals = async () => {
     const profs = await fetchProfessionalsWithJoinedDetails({ tenantId: tenant?.id });
@@ -102,9 +123,36 @@ export const PatientPortalPage: React.FC<PatientPortalPageProps> = ({ onNavigate
 
   const handleBookAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
+    setBookingError(null);
     const prof = professionals.find((p) => p.id === selectedProfId) || professionals[0];
-    const startIso = `${selectedDate}T${selectedTime}:00Z`;
-    const endIso = `${selectedDate}T${selectedTime.split(':')[0]}:45:00Z`;
+
+    const selectedSlot = availableSlots.find((s) => s.startTime === selectedTime);
+    const durationMinutes = selectedSlot
+      ? (() => {
+          const [sh, sm] = selectedSlot.startTime.split(':').map(Number);
+          const [eh, em] = selectedSlot.endTime.split(':').map(Number);
+          return eh * 60 + em - (sh * 60 + sm);
+        })()
+      : 45;
+
+    const validation = await validateAppointmentSlot({
+      professionalId: selectedProfId,
+      dateStr: selectedDate,
+      startTime: selectedTime,
+      durationMinutes,
+    });
+
+    if (!validation.valid) {
+      setBookingError(validation.error || 'El horario ya no está disponible.');
+      return;
+    }
+
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const [hours, minutes] = selectedTime.split(':').map(Number);
+    const startDate = new Date(year, month - 1, day, hours, minutes, 0);
+    const endDate = new Date(startDate.getTime() + durationMinutes * 60000);
+    const startIso = startDate.toISOString();
+    const endIso = endDate.toISOString();
 
     const newAppt: Partial<Appointment> = {
       tenant_id: tenant?.id || 'tenant_kine_001',
@@ -315,19 +363,27 @@ export const PatientPortalPage: React.FC<PatientPortalPageProps> = ({ onNavigate
                   <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                     {t('portal.select_time', 'Horario Disponible')}
                   </label>
-                  <select
-                    value={selectedTime}
-                    onChange={(e) => setSelectedTime(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-900 dark:text-white"
-                  >
-                    <option value="08:30">08:30 - 09:15</option>
-                    <option value="09:30">09:30 - 10:15</option>
-                    <option value="10:00">10:00 - 10:45</option>
-                    <option value="11:30">11:30 - 12:15</option>
-                    <option value="14:00">14:00 - 14:45</option>
-                    <option value="15:30">15:30 - 16:15</option>
-                    <option value="16:30">16:30 - 17:15</option>
-                  </select>
+                  {slotsLoading ? (
+                    <div className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-500">
+                      Cargando horarios publicados...
+                    </div>
+                  ) : availableSlots.length > 0 ? (
+                    <select
+                      value={selectedTime}
+                      onChange={(e) => setSelectedTime(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-900 dark:text-white"
+                    >
+                      {availableSlots.map((slot) => (
+                        <option key={slot.startTime} value={slot.startTime}>
+                          {slot.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                      No hay bloques disponibles para esta fecha. Prueba otra fecha o profesional.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -437,10 +493,17 @@ export const PatientPortalPage: React.FC<PatientPortalPageProps> = ({ onNavigate
                 </div>
               )}
 
+              {bookingError && (
+                <p className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                  {bookingError}
+                </p>
+              )}
+
               <button
                 id="btn-submit-booking"
                 type="submit"
-                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-extrabold transition-all shadow-md shadow-indigo-600/20 cursor-pointer flex items-center justify-center gap-2"
+                disabled={availableSlots.length === 0 || slotsLoading}
+                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-extrabold transition-all shadow-md shadow-indigo-600/20 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <CalendarPlus className="w-4 h-4" />
                 <span>{t('portal.confirm_booking', 'Confirmar Reserva de Cita')}</span>

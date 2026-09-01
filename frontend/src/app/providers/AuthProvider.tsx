@@ -34,7 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [usersList, setUsersList] = useState<User[]>(INITIAL_USERS);
   const [user, setUser] = useState<User | null>(() => {
     const savedUserId = localStorage.getItem('kinesys_active_user_id');
-    if (!savedUserId) return INITIAL_USERS[2]; // Default to Klgo Mateo if initial demo, but if user logs out it will be null
+    if (!savedUserId) return null;
     return INITIAL_USERS.find((u) => u.id === savedUserId) || null;
   });
   const [tenant, setTenant] = useState<Tenant | null>(INITIAL_TENANT);
@@ -122,8 +122,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (!registeredUser) {
         console.warn(`[KineSys Security] Bloqueo OAuth: El correo ${normalizedEmail} no está registrado en la base de datos.`);
-        
-        // Terminate session immediately
         try {
           await supabase.auth.signOut();
         } catch (err) {
@@ -152,13 +150,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           window.location.hash = '#/login';
         }
         return false;
-      } else {
-        // Authorized registered user
-        setUser(registeredUser);
-        localStorage.setItem('kinesys_active_user_id', registeredUser.id);
-        loadPermissionsForRole(registeredUser.role);
-        return true;
       }
+
+      if (registeredUser.is_active === false) {
+        try {
+          await supabase.auth.signOut();
+        } catch (err) {
+          console.warn('Error during signOut on inactive user:', err);
+        }
+
+        const denialMessage =
+          'Tu acceso ha sido revocado por el administrador de la clínica. Contacta a soporte si crees que es un error.';
+
+        localStorage.removeItem('kinesys_active_user_id');
+        sessionStorage.setItem('kinesys_auth_error', denialMessage);
+        setUser(null);
+        setAllowedModulesState([]);
+        setAllowedRoutesState([]);
+        setStoreAllowedModules([]);
+        useAppStore.getState().clearActivePatient();
+
+        if (window.location.hash !== '#/login') {
+          window.location.hash = '#/login';
+        }
+        return false;
+      }
+
+      // Authorized registered user
+      setUser(registeredUser);
+      localStorage.setItem('kinesys_active_user_id', registeredUser.id);
+      loadPermissionsForRole(registeredUser.role);
+      return true;
     } catch (err) {
       console.error('[KineSys Security] Error verifying auth session:', err);
       return false;

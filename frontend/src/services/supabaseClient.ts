@@ -69,6 +69,13 @@ export {
   fetchAvailableTimeSlots,
   validateAppointmentSlot,
   INITIAL_PROFESSIONAL_AVAILABILITY,
+  fetchClinicProfessionals,
+  createProfessional,
+  updateProfessionalRole,
+  deactivateProfessional,
+  reactivateProfessional,
+  getProfessionalRoleLabel,
+  CLINIC_STAFF_ROLES,
 } from './dataService';
 
 // ─── API Client (Target Architecture — Go Backend) ────────────────────────────

@@ -14,12 +14,12 @@ interface SettingsPageProps {
 }
 
 export function SettingsPage({ onNavigate }: SettingsPageProps) {
-  const { tenantId, updateTenant } = useAuth();
+  const { tenantId, updateTenant, user, role } = useAuth();
   const { t, locale, setLocale, selectedCountry, setSelectedCountry, countries, availableLocales } = useI18n();
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'branding' | 'general' | 'database'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'general' | 'team' | 'database'>('branding');
 
   // Form Fields State
   const [clinicName, setClinicName] = useState('');
@@ -135,12 +135,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
     }
   };
 
-  const handleResetDemoData = () => {
-    supabase.resetLocalDatabase();
-    fetchTenantSettings();
-    addToast('info', t('common.reset', 'Datos Reiniciados'), 'La base de datos se restauró con el conjunto de pruebas inicial.');
-  };
-
   const timezones = [
     'America/Bogota (UTC-5)',
     'America/Santiago (UTC-3)',
@@ -177,14 +171,18 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
               </p>
             </div>
 
-            <button
-              onClick={handleResetDemoData}
-              className="bg-surface-container-lowest hover:bg-surface-container-low border border-outline-variant/30 text-xs font-bold text-on-surface-variant hover:text-primary px-3.5 py-2 rounded-2xl flex items-center gap-2 clinical-shadow cursor-pointer transition-all"
-              title="Restaurar datos iniciales de prueba"
-            >
-              <span className="material-symbols-outlined text-base">restart_alt</span>
-              {t('common.reset', 'Restaurar Datos')}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {(role === 'clinic_admin' || role === 'super_admin') && onNavigate && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/admin-access')}
+                  className="bg-primary hover:bg-primary-container text-white text-xs font-black px-4 py-2.5 rounded-2xl flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">group_add</span>
+                  Gestionar Profesionales
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Navigation Tabs */}
@@ -212,6 +210,20 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
               <span className="material-symbols-outlined text-base">tune</span>
               <span>{t('settings.general_settings', 'Parámetros Generales')}</span>
             </button>
+
+            {(role === 'clinic_admin' || role === 'super_admin') && (
+              <button
+                onClick={() => setActiveTab('team')}
+                className={`px-4 py-2.5 rounded-2xl font-extrabold text-xs flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === 'team'
+                    ? 'bg-primary text-white shadow-md shadow-primary/20'
+                    : 'bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                }`}
+              >
+                <span className="material-symbols-outlined text-base">groups</span>
+                <span>Equipo Profesional</span>
+              </button>
+            )}
           </div>
 
           {/* Success Banner Alert */}
@@ -246,6 +258,23 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
               onSuccessToast={(title, msg) => addToast('success', title, msg)}
               onErrorToast={(title, msg) => addToast('error', title, msg)}
             />
+          ) : activeTab === 'team' ? (
+            <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 clinical-shadow p-8 text-center max-w-2xl mx-auto">
+              <span className="material-symbols-outlined text-5xl text-primary mb-4">groups</span>
+              <h3 className="text-lg font-black text-on-surface mb-2">Gestión del Equipo Profesional</h3>
+              <p className="text-sm text-on-surface-variant mb-6">
+                Invita médicos, nutricionistas y fisioterapeutas. Edita roles y revoca accesos desde el panel de administración.
+              </p>
+              {onNavigate && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate('/admin-access')}
+                  className="bg-primary hover:bg-primary-container text-white text-sm font-black px-6 py-3 rounded-2xl cursor-pointer"
+                >
+                  Abrir Panel de Profesionales
+                </button>
+              )}
+            </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
               

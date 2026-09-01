@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, INITIAL_USERS } from '../services/supabaseClient';
-import { useAuth } from '../app/providers/AuthProvider';
+import { supabase } from '../services/supabaseClient';
 import { LanguageSelector } from '../components/common/LanguageSelector';
 import { 
   Mail, 
@@ -19,13 +18,11 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
-  const { setUserAndRole } = useAuth();
-
   // Form states
   const [email, setEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [isOtpSent, setIsOtpSent] = useState(false);
-  const [loadingProvider, setLoadingProvider] = useState<'google' | 'azure' | 'email' | 'otp' | 'demo' | null>(null);
+  const [loadingProvider, setLoadingProvider] = useState<'google' | 'azure' | 'email' | 'otp' | null>(null);
   
   // Feedback alerts
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -59,7 +56,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       if (email && email.includes('@')) {
         const normalizedEmail = email.trim().toLowerCase();
         const { data: dbUsers } = await supabase.from('users').select('*');
-        const allUsers = dbUsers && dbUsers.length > 0 ? dbUsers : INITIAL_USERS;
+        const allUsers = dbUsers || [];
         const exists = allUsers.some(
           (u: any) => u.email?.trim().toLowerCase() === normalizedEmail
         );
@@ -167,16 +164,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     } finally {
       setLoadingProvider(null);
     }
-  };
-
-  // 5. Quick Demo Profile Quick Switcher (For Evaluation & QA)
-  const handleFastDemoLogin = (userId: string, targetRoute: string) => {
-    setLoadingProvider('demo');
-    setUserAndRole(userId);
-    setSuccessMessage('Iniciando sesión con perfil demo autorizado...');
-    setTimeout(() => {
-      onNavigate(targetRoute);
-    }, 600);
   };
 
   const isLoading = loadingProvider !== null;
@@ -424,56 +411,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
               </div>
             </form>
           )}
-
-          {/* Quick Demo Access Bar (Instant QA & Demo Testing) */}
-          <div className="pt-3 border-t border-outline-variant/30 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black text-on-surface-variant uppercase tracking-wider">
-                Acceso Rápido Demo (QA)
-              </span>
-              <span className="text-[10px] font-mono text-primary font-bold">
-                5 Roles Disponibles
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-              <button
-                type="button"
-                onClick={() => handleFastDemoLogin('prof_mateo_01', '/calendario')}
-                className="p-2 rounded-xl bg-surface-container-low hover:bg-primary-fixed/40 border border-outline-variant/30 text-left transition-all cursor-pointer"
-              >
-                <div className="font-bold text-on-surface truncate">Klgo. Mateo</div>
-                <div className="text-[9px] text-on-surface-variant truncate">Fisioterapia</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleFastDemoLogin('prof_nutri_01', '/nutricion')}
-                className="p-2 rounded-xl bg-surface-container-low hover:bg-emerald-50 border border-outline-variant/30 text-left transition-all cursor-pointer"
-              >
-                <div className="font-bold text-on-surface truncate">Nut. Andrea</div>
-                <div className="text-[9px] text-emerald-700 truncate">Nutricionista</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleFastDemoLogin('prof_doctor_01', '/doctor-dashboard')}
-                className="p-2 rounded-xl bg-surface-container-low hover:bg-teal-50 border border-outline-variant/30 text-left transition-all cursor-pointer"
-              >
-                <div className="font-bold text-on-surface truncate">Dr. Castillo</div>
-                <div className="text-[9px] text-teal-700 truncate">Médico General</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleFastDemoLogin('pat_camila_01', '/portal-paciente')}
-                className="p-2 rounded-xl bg-surface-container-low hover:bg-sky-50 border border-outline-variant/30 text-left transition-all cursor-pointer"
-              >
-                <div className="font-bold text-on-surface truncate">Camila Soto</div>
-                <div className="text-[9px] text-sky-700 truncate">Portal Paciente</div>
-              </button>
-            </div>
-          </div>
 
           {/* Footer Call to Onboarding */}
           <div className="pt-2 text-center text-xs text-on-surface-variant">

@@ -29,6 +29,7 @@ import {
 } from './supabaseAuth';
 import { 
   User, 
+  UserRole,
   Tenant, 
   Appointment, 
   PainObservation, 
@@ -1938,6 +1939,7 @@ class LocalQueryBuilder {
           created_at: item.created_at || new Date().toISOString(),
           tenant_id: item.tenant_id || DEFAULT_TENANT_ID,
           role: item.role || 'patient',
+          is_active: item.is_active ?? true,
           ...item,
         }));
         LocalStore.set(STORAGE_KEYS.USERS, [...users, ...newUsers]);
@@ -2693,6 +2695,175 @@ export async function validateAppointmentSlot(params: {
   }
 
   return { valid: true };
+}
+
+/** Roles gestionables desde el panel de profesionales de la clínica */
+export const CLINIC_STAFF_ROLES: UserRole[] = [
+  'fisioterapeuta',
+  'nutricionista',
+  'medico_general',
+  'clinic_admin',
+];
+
+export interface CreateProfessionalInput {
+  full_name: string;
+  email: string;
+  role: UserRole;
+  phone?: string;
+  license_number?: string;
+  specialty?: string;
+}
+
+const ROLE_SPECIALTY_MAP: Record<string, string> = {
+  fisioterapeuta: 'Kinesiología & Fisioterapia',
+  nutricionista: 'Nutrición Clínica',
+  medico_general: 'Medicina General',
+  clinic_admin: 'Administración Clínica',
+};
+
+export function getProfessionalRoleLabel(role: UserRole | string): string {
+  switch (role) {
+    case 'fisioterapeuta':
+      return 'Fisioterapeuta';
+    case 'nutricionista':
+      return 'Nutricionista';
+    case 'medico_general':
+      return 'Médico General';
+    case 'clinic_admin':
+      return 'Administrador de Clínica';
+    case 'super_admin':
+      return 'Super Administrador';
+    case 'receptionist':
+      return 'Recepcionista';
+    default:
+      return String(role);
+  }
+}
+
+/**
+ * Lista profesionales y administradores del tenant activo.
+ */
+export async function fetchClinicProfessionals(tenantId: string): Promise<User[]> {
+  try {
+    const { data, error } = await supabase.from('users').select('*').eq('tenant_id', tenantId);
+    if (error) throw error;
+    const users = (data as User[]) || [];
+    return users
+      .filter((u) => CLINIC_STAFF_ROLES.includes(u.role))
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  } catch (e) {
+    console.error('Error fetching clinic professionals:', e);
+    return [];
+  }
+}
+
+/**
+ * Crea un profesional en la tabla users y registra invitación pendiente.
+ */
+export async function createProfessional(
+  tenantId: string,
+  input: CreateProfessionalInput,
+  invitedBy?: string
+): Promise<{ success: boolean; data?: User; error?: string }> {
+  try {
+    const normalizedEmail = input.email.trim().toLowerCase();
+    const { data: allUsers } = await supabase.from('users').select('*');
+    const duplicate = (allUsers as User[] | null)?.some(
+      (u) => u.email?.trim().toLowerCase() === normalizedEmail
+    );
+    if (duplicate) {
+      return { success: false, error: 'Ya existe un usuario registrado con ese correo electrónico.' };
+    }
+
+    const newUser: Partial<User> = {
+      full_name: input.full_name.trim(),
+      email: normalizedEmail,
+      role: input.role,
+      tenant_id: tenantId,
+      phone: input.phone?.trim(),
+      license_number: input.license_number?.trim(),
+      specialty: input.specialty?.trim() || ROLE_SPECIALTY_MAP[input.role] || '',
+      is_active: true,
+      avatar_url:
+        'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80',
+      created_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from('users').insert(newUser);
+    if (error) throw error;
+
+    const created = Array.isArray(data) ? data[0] : (newUser as User);
+
+    await supabase.from('team_invitations').insert({
+      tenant_id: tenantId,
+      email: normalizedEmail,
+      role: input.role,
+      status: 'pending',
+      invited_by: invitedBy || 'clinic_admin',
+    });
+
+    return { success: true, data: created as User };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'No se pudo crear el profesional.' };
+  }
+}
+
+/**
+ * Actualiza el rol de un profesional de la clínica.
+ */
+export async function updateProfessionalRole(
+  userId: string,
+  newRole: UserRole
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('users')
+      .eq('id', userId)
+      .update({
+        role: newRole,
+        specialty: ROLE_SPECIALTY_MAP[newRole] || undefined,
+      });
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'No se pudo actualizar el rol.' };
+  }
+}
+
+/**
+ * Revoca el acceso de un profesional (soft-delete).
+ */
+export async function deactivateProfessional(
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('users')
+      .eq('id', userId)
+      .update({ is_active: false });
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'No se pudo revocar el acceso.' };
+  }
+}
+
+/**
+ * Reactiva un profesional previamente inhabilitado.
+ */
+export async function reactivateProfessional(
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('users')
+      .eq('id', userId)
+      .update({ is_active: true });
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'No se pudo reactivar el acceso.' };
+  }
 }
 
 export async function submitProfessionalReview(review: Omit<Review, 'id' | 'created_at'>): Promise<{ success: boolean; data?: Review; error?: string }> {

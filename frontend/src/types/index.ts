@@ -56,6 +56,7 @@ export interface User {
     phone: string;
     relationship: string;
   };
+  is_active?: boolean;
   created_at: string;
 }
 

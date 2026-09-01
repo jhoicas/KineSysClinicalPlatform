@@ -146,3 +146,39 @@ export function onAuthStateChange(callback: AuthStateCallback): AuthStateSubscri
 export function isAuthConfigured(): boolean {
   return subscribeAuthStateChange !== null;
 }
+
+/** URL de retorno post-OAuth (hash router) */
+export function getOAuthRedirectUrl(path = '/calendario'): string {
+  return `${window.location.origin}/#${path}`;
+}
+
+export async function signInWithGoogle() {
+  if (!nativeAuth) {
+    return {
+      data: { provider: 'google', url: null },
+      error: { message: 'Supabase Auth no está configurado.' },
+    };
+  }
+  return nativeAuth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: getOAuthRedirectUrl('/calendario'),
+    },
+  });
+}
+
+export async function signInWithMicrosoft() {
+  if (!nativeAuth) {
+    return {
+      data: { provider: 'azure', url: null },
+      error: { message: 'Supabase Auth no está configurado.' },
+    };
+  }
+  return nativeAuth.signInWithOAuth({
+    provider: 'azure',
+    options: {
+      redirectTo: getOAuthRedirectUrl('/calendario'),
+      scopes: 'email profile',
+    },
+  });
+}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, loadUserByEmail } from '../services/supabaseClient';
+import { supabase, signInWithGoogle, signInWithMicrosoft, loadUserByEmail } from '../services/supabaseClient';
 import { LanguageSelector } from '../components/common/LanguageSelector';
 import { 
   Mail, 
@@ -52,7 +52,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     setLoadingProvider(provider);
 
     try {
-      // Opción A: Validación previa si el usuario ya escribió un email en el formulario
       if (email && email.includes('@')) {
         const normalizedEmail = email.trim().toLowerCase();
         const exists = await loadUserByEmail(normalizedEmail);
@@ -65,13 +64,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
         }
       }
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: window.location.origin + window.location.pathname + '#/calendario',
-          ...(provider === 'azure' ? { scopes: 'email profile openid' } : {}),
-        },
-      });
+      const { error } =
+        provider === 'google' ? await signInWithGoogle() : await signInWithMicrosoft();
 
       if (error) {
         throw error;
@@ -79,11 +73,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
 
       const providerLabel = provider === 'google' ? 'Google Workspace' : 'Microsoft Azure AD';
       setSuccessMessage(`¡Conectando con ${providerLabel}! Serás redirigido al espacio clínico...`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(`Error in ${provider} OAuth:`, err);
       const providerLabel = provider === 'google' ? 'Google' : 'Microsoft Azure';
+      const message = err instanceof Error ? err.message : undefined;
       setErrorMessage(
-        err?.message || `No fue posible conectar con ${providerLabel}. Verifique la configuración o intente nuevamente.`
+        message || `No fue posible conectar con ${providerLabel}. Verifique la configuración o intente nuevamente.`
       );
     } finally {
       setLoadingProvider(null);
@@ -106,7 +101,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       const { data, error } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),
         options: {
-          emailRedirectTo: window.location.origin + window.location.pathname + '#/calendario',
+          emailRedirectTo: `${window.location.origin}/#/calendario`,
         },
       });
 

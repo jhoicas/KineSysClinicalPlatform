@@ -1,24 +1,7 @@
 /**
- * KineSys — Data Service (Mock Engine + Backward Compatibility)
- *
- * This module contains:
- * - All demo/seed data constants (INITIAL_*)
- * - LocalStore + LocalQueryBuilder (localStorage mock engine)
- * - The `supabase` proxy object for backward-compat with existing pages
- *
- * MIGRATION PATH:
- * Pages should progressively migrate from:
- *   import { supabase } from '../services/supabaseClient'
- *   supabase.from('table').select('*')
- * To:
- *   import { api } from '../services/apiClient'
- *   api.appointments.list({ tenant_id: '...' })
- *
- * Once all pages are migrated, this file can be deleted.
+ * KineSys — Repositorio de datos clínicos (Supabase Postgres real)
  */
-
 import {
-  supabaseAuthClient,
   signInWithOAuth as authSignInWithOAuth,
   signInWithOtp as authSignInWithOtp,
   verifyOtp as authVerifyOtp,
@@ -26,17 +9,17 @@ import {
   getUser as authGetUser,
   getSession as authGetSession,
   onAuthStateChange as authOnAuthStateChange,
+  isAuthConfigured,
 } from './supabaseAuth';
-import { 
-  User, 
+import { supabaseDataClient, isSupabaseConfigured } from './supabaseDataClient';
+import { assertSupabaseOk } from '../utils/supabaseErrors';
+import {
+  User,
   UserRole,
-  Tenant, 
-  Appointment, 
-  PainObservation, 
-  BodyCompositionRecord, 
-  GeneralMedicalRecord, 
+  Tenant,
+  Appointment,
+  PainObservation,
   PricingPlanConfig,
-  TeamInvitation,
   PacienteClinico,
   ConsultaSOP,
   PrescripcionMedica,
@@ -49,54 +32,15 @@ import {
   ProfessionalAvailability,
   ProfessionalAvailabilityException,
   AvailabilityTimeSlot,
-  AppRole,
   AppModule,
-  RolePermission
 } from '../types';
 import {
   getAvailableSlots as computeAvailableSlots,
   isTimeWithinPublishedAvailability,
   isSlotBooked,
 } from '../utils/availabilityUtils';
-import { 
-  INITIAL_NUTRITION_PLANS, 
-  INITIAL_FHIR_NUTRITION_ORDERS 
-} from '../data/nutritionCatalog';
 
-// Default initial tenant with 7 days trial & Wompi integration fields
-const DEFAULT_TENANT_ID = 'tenant_kine_001';
-
-// Calculate trial end date (7 days from now)
-const defaultTrialEndDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-export const INITIAL_TENANT: Tenant = {
-  id: DEFAULT_TENANT_ID,
-  name: 'Centro Kinésico & Salud KineSys',
-  slug: 'kinesys-salud',
-  timezone: 'America/Bogota (UTC-5)',
-  cancellation_window_hours: 24,
-  email: 'contacto@kinesys-salud.co',
-  phone: '+57 300 123 4567',
-  address: 'Calle 100 # 19-61, Piso 6, Bogotá, Colombia',
-  currency: 'COP',
-  appointment_duration_minutes: 45,
-  subscription_plan: 'growth',
-  subscription_status: 'trialing',
-  max_users: 5,
-  trial_ends_at: defaultTrialEndDate,
-  wompi_public_key: 'pub_test_Q123456789WompiKeySample',
-  wompi_private_key: 'prv_test_987654321WompiPrivateKey',
-  wompi_integrity_secret: 'prod_integrity_secret_xyz123',
-  is_wompi_sandbox: true,
-  logo_url: 'https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=150&auto=format&fit=crop&q=80',
-  primary_color: '#004870',
-  settings: {
-    theme: 'light',
-    brand_name_display: 'both',
-    accent_color: '#006c49',
-  },
-  created_at: '2025-01-01T00:00:00Z',
-};
+// ─── Config estática ───────────────────────────────────────────────────────────
 
 export const PRICING_PLANS: PricingPlanConfig[] = [
   {
@@ -154,2402 +98,229 @@ export const PRICING_PLANS: PricingPlanConfig[] = [
   },
 ];
 
-// Initial demo users with distinct RBAC roles
-export const INITIAL_USERS: User[] = [
-  {
-    id: 'user_superadmin_01',
-    email: 'superadmin@kinesys.cloud',
-    full_name: 'Dr. Alejandro Silva (Super Admin SaaS)',
-    role: 'super_admin',
-    phone: '+56 9 1111 2222',
-    tenant_id: 'system_global',
-    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    created_at: '2025-01-01T00:00:00Z',
-  },
-  {
-    id: 'user_admin_01',
-    email: 'directora@kinesys-salud.cl',
-    full_name: 'Dra. Marcela Lagos (Clinic Admin)',
-    role: 'clinic_admin',
-    phone: '+56 9 8888 7777',
-    tenant_id: DEFAULT_TENANT_ID,
-    avatar_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-    license_number: 'COL-MED-9941',
-    created_at: '2025-01-01T00:00:00Z',
-  },
-  {
-    id: 'prof_mateo_01',
-    email: 'mateo.gomez@kinesys-salud.cl',
-    full_name: 'Klgo. Mateo Gómez V. (Fisioterapeuta)',
-    role: 'fisioterapeuta',
-    specialty: 'Kinesiología & Rehabilitación Deportiva',
-    phone: '+56 9 9123 4567',
-    tenant_id: DEFAULT_TENANT_ID,
-    avatar_url: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80',
-    rut_or_dni: '16.890.342-K',
-    license_number: 'COL-KIN-4502',
-    created_at: '2025-01-01T00:00:00Z',
-  },
-  {
-    id: 'prof_nutri_01',
-    email: 'valeria.nutri@kinesys-salud.cl',
-    full_name: 'Nut. Valeria Benítez (Nutricionista)',
-    role: 'nutricionista',
-    specialty: 'Nutrición Clínica & Composición Corporal',
-    phone: '+56 9 8234 5678',
-    tenant_id: DEFAULT_TENANT_ID,
-    avatar_url: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=150&auto=format&fit=crop&q=80',
-    rut_or_dni: '17.441.229-3',
-    license_number: 'COL-NUT-3199',
-    created_at: '2025-01-05T00:00:00Z',
-  },
-  {
-    id: 'prof_doctor_01',
-    email: 'dr.castillo@kinesys-salud.cl',
-    full_name: 'Dr. Fernando Castillo (Médico General)',
-    role: 'medico_general',
-    specialty: 'Medicina General & Salud Preventiva',
-    phone: '+56 9 7345 6789',
-    tenant_id: DEFAULT_TENANT_ID,
-    avatar_url: 'https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=150&auto=format&fit=crop&q=80',
-    rut_or_dni: '15.228.910-8',
-    license_number: 'COL-MED-8420',
-    created_at: '2025-01-08T00:00:00Z',
-  },
-  {
-    id: 'pat_camila_01',
-    email: 'camila.soto@email.com',
-    full_name: 'Camila Soto Valenzuela',
-    role: 'patient',
-    phone: '+56 9 8451 2299',
-    tenant_id: DEFAULT_TENANT_ID,
-    avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    rut_or_dni: '19.452.128-4',
-    birth_date: '1995-04-12',
-    gender: 'Femenino',
-    medical_conditions: ['Tendinitis rotuliana', 'Cirugía LCA (2023)'],
-    allergies: ['Penicilina'],
-    emergency_contact: {
-      name: 'Carlos Soto (Padre)',
-      phone: '+56 9 7712 3456',
-      relationship: 'Padre',
-    },
-    created_at: '2025-01-10T10:00:00Z',
-  },
-  {
-    id: 'pat_rodrigo_02',
-    email: 'rodrigo.mendoza@email.com',
-    full_name: 'Rodrigo Mendoza Tapia',
-    role: 'patient',
-    phone: '+56 9 7622 1100',
-    tenant_id: DEFAULT_TENANT_ID,
-    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    rut_or_dni: '14.231.890-7',
-    birth_date: '1988-11-23',
-    gender: 'Masculino',
-    medical_conditions: ['Hernia discal lumbar L4-L5', 'Hipertensión leve'],
-    allergies: ['Ninguna conocida'],
-    emergency_contact: {
-      name: 'Elena Morales (Cónyuge)',
-      phone: '+56 9 6543 2198',
-      relationship: 'Cónyuge',
-    },
-    created_at: '2025-01-12T14:30:00Z',
-  },
-  {
-    id: 'pat_valentina_03',
-    email: 'valentina.rios@email.com',
-    full_name: 'Valentina Ríos Castro',
-    role: 'patient',
-    phone: '+56 9 5544 3322',
-    tenant_id: DEFAULT_TENANT_ID,
-    avatar_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
-    rut_or_dni: '18.904.551-9',
-    birth_date: '1992-08-17',
-    gender: 'Femenino',
-    medical_conditions: ['Pinzamiento subacromial derecho'],
-    allergies: ['Ibuprofeno'],
-    emergency_contact: {
-      name: 'Javier Ríos',
-      phone: '+56 9 4433 2211',
-      relationship: 'Hermano',
-    },
-    created_at: '2025-01-15T09:00:00Z',
-  },
-  {
-    id: 'pat_diego_04',
-    email: 'diego.alarcon@email.com',
-    full_name: 'Diego Alarcón Herrera',
-    role: 'patient',
-    phone: '+56 9 9887 6655',
-    tenant_id: DEFAULT_TENANT_ID,
-    avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-    rut_or_dni: '17.334.882-1',
-    birth_date: '1990-03-05',
-    gender: 'Masculino',
-    medical_conditions: ['Esguince de tobillo grado II (lateral)'],
-    allergies: ['Ninguna'],
-    emergency_contact: {
-      name: 'Marcela Herrera',
-      phone: '+56 9 3322 1100',
-      relationship: 'Madre',
-    },
-    created_at: '2025-01-20T11:15:00Z',
-  },
-  {
-    id: 'pat_lucia_05',
-    email: 'lucia.pardo@email.com',
-    full_name: 'Dra. Lucía Pardo Silva',
-    role: 'patient',
-    phone: '+56 9 6112 3344',
-    tenant_id: DEFAULT_TENANT_ID,
-    avatar_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-    rut_or_dni: '15.678.901-3',
-    birth_date: '1984-06-29',
-    gender: 'Femenino',
-    medical_conditions: ['Cervicobraquialgia derecha', 'Bruxismo severo'],
-    allergies: ['Látex'],
-    emergency_contact: {
-      name: 'Andrés Pardo',
-      phone: '+56 9 1122 3344',
-      relationship: 'Esposo',
-    },
-    created_at: '2025-02-01T16:00:00Z',
-  },
+/** Fallback mínimo si RBAC aún no está en DB */
+export const DEFAULT_APP_MODULES: AppModule[] = [
+  { id: 'mod_calendario', name: 'Agenda & Citas', path_route: '/calendario', icon: 'calendar_month', display_order: 1 },
+  { id: 'mod_pacientes', name: 'Pacientes', path_route: '/pacientes', icon: 'group', display_order: 2 },
+  { id: 'mod_configuracion', name: 'Gestión de Clínica', path_route: '/configuracion', icon: 'settings', display_order: 7 },
 ];
 
-export const INITIAL_PROFESSIONAL = INITIAL_USERS[2]; // Klgo Mateo
-export const INITIAL_PATIENTS = INITIAL_USERS.filter((u) => u.role === 'patient');
+// ─── Cliente Supabase (real) ───────────────────────────────────────────────────
 
-const todayStr = new Date().toISOString().split('T')[0];
+export const supabase = Object.assign(supabaseDataClient, {
+  auth: {
+    getUser: authGetUser,
+    getSession: authGetSession,
+    signInWithOAuth: authSignInWithOAuth,
+    signInWithOtp: authSignInWithOtp,
+    verifyOtp: authVerifyOtp,
+    signOut: authSignOut,
+    onAuthStateChange: authOnAuthStateChange,
+    signUp: (credentials: { email: string; password: string; options?: Record<string, unknown> }) =>
+      supabaseDataClient.auth.signUp(credentials),
+  },
+  isUsingLocalEngine: () => !isSupabaseConfigured(),
+});
 
-export const INITIAL_APPOINTMENTS: Appointment[] = [
-  {
-    id: 'appt_001',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_mateo_01',
-    patient_id: 'pat_camila_01',
-    start_time: `${todayStr}T09:00:00Z`,
-    end_time: `${todayStr}T09:45:00Z`,
-    status: 'booked',
-    reason: 'Rehabilitación post-quirúrgica LCA - Sesión 8',
-    notes: 'Control de flexión activa y fortalecimiento de cuádriceps.',
-    room_or_box: 'Box 3 - Gimnasio',
-    professional_type: 'fisioterapeuta',
-    patient: {
-      full_name: 'Camila Soto Valenzuela',
-      email: 'camila.soto@email.com',
-      phone: '+56 9 8451 2299',
-      avatar_url: INITIAL_USERS[5].avatar_url,
-    },
-    professional: {
-      full_name: 'Klgo. Mateo Gómez V.',
-      email: 'mateo.gomez@kinesys-salud.cl',
-      role: 'fisioterapeuta',
-      specialty: 'Kinesiología Deportiva',
-    },
-  },
-  {
-    id: 'appt_002',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_mateo_01',
-    patient_id: 'pat_rodrigo_02',
-    start_time: `${todayStr}T10:30:00Z`,
-    end_time: `${todayStr}T11:15:00Z`,
-    status: 'confirmed',
-    reason: 'Terapia descompresiva lumbar y ejercicios McKenzie',
-    notes: 'Paciente refiere disminución de irradiación a glúteo.',
-    room_or_box: 'Box 1',
-    professional_type: 'fisioterapeuta',
-    patient: {
-      full_name: 'Rodrigo Mendoza Tapia',
-      email: 'rodrigo.mendoza@email.com',
-      phone: '+56 9 7622 1100',
-      avatar_url: INITIAL_USERS[6].avatar_url,
-    },
-    professional: {
-      full_name: 'Klgo. Mateo Gómez V.',
-      email: 'mateo.gomez@kinesys-salud.cl',
-      role: 'fisioterapeuta',
-    },
-  },
-  {
-    id: 'appt_003',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_nutri_01',
-    patient_id: 'pat_valentina_03',
-    start_time: `${todayStr}T11:30:00Z`,
-    end_time: `${todayStr}T12:15:00Z`,
-    status: 'confirmed',
-    reason: 'Evaluación InBody y ajuste calórico déficit leve',
-    notes: 'Plan adaptado a entrenamiento de fuerza 4x semana.',
-    room_or_box: 'Box Nutrición 2',
-    professional_type: 'nutricionista',
-    patient: {
-      full_name: 'Valentina Ríos Castro',
-      email: 'valentina.rios@email.com',
-      phone: '+56 9 5544 3322',
-      avatar_url: INITIAL_USERS[7].avatar_url,
-    },
-    professional: {
-      full_name: 'Nut. Valeria Benítez',
-      email: 'valeria.nutri@kinesys-salud.cl',
-      role: 'nutricionista',
-      specialty: 'Nutrición Clínica',
-    },
-  },
-  {
-    id: 'appt_004',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_doctor_01',
-    patient_id: 'pat_diego_04',
-    start_time: `${todayStr}T14:00:00Z`,
-    end_time: `${todayStr}T14:45:00Z`,
-    status: 'completed',
-    reason: 'Chequeo preventivo anual y orden de laboratorio',
-    notes: 'Presión 120/80 mmHg. Se solicitan perfil lipídico y glicemia.',
-    room_or_box: 'Box Médico 1',
-    professional_type: 'medico_general',
-    patient: {
-      full_name: 'Diego Alarcón Herrera',
-      email: 'diego.alarcon@email.com',
-      phone: '+56 9 9887 6655',
-      avatar_url: INITIAL_USERS[8].avatar_url,
-    },
-    professional: {
-      full_name: 'Dr. Fernando Castillo',
-      email: 'dr.castillo@kinesys-salud.cl',
-      role: 'medico_general',
-      specialty: 'Medicina General',
-    },
-  },
-];
+// ─── CRUD Pacientes ────────────────────────────────────────────────────────────
 
-function buildDefaultAvailabilityForProfessional(userId: string): ProfessionalAvailability[] {
-  const weekdays = [1, 2, 3, 4, 5];
-  const blocks: ProfessionalAvailability[] = [];
-  for (const day of weekdays) {
-    blocks.push(
-      {
-        id: `avail_${userId}_d${day}_am`,
-        user_id: userId,
-        day_of_week: day,
-        start_time: '08:00',
-        end_time: '12:00',
-        slot_duration: 45,
-        is_active: true,
-        created_at: '2025-01-01T00:00:00Z',
-      },
-      {
-        id: `avail_${userId}_d${day}_pm`,
-        user_id: userId,
-        day_of_week: day,
-        start_time: '14:00',
-        end_time: '18:00',
-        slot_duration: 45,
-        is_active: true,
-        created_at: '2025-01-01T00:00:00Z',
-      }
-    );
-  }
-  return blocks;
+export async function getPatients(tenantId: string): Promise<PacienteClinico[]> {
+  const { data, error } = await supabase
+    .from('pacientes_clinicos')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .eq('active', true)
+    .order('last_name', { ascending: true });
+  if (error) throw error;
+  return (data as PacienteClinico[]) || [];
 }
 
-export const INITIAL_PROFESSIONAL_AVAILABILITY: ProfessionalAvailability[] = [
-  ...buildDefaultAvailabilityForProfessional('prof_mateo_01'),
-  ...buildDefaultAvailabilityForProfessional('prof_nutri_01'),
-  ...buildDefaultAvailabilityForProfessional('prof_doctor_01'),
-];
-
-export const INITIAL_PROFESSIONAL_AVAILABILITY_EXCEPTIONS: ProfessionalAvailabilityException[] = [];
-
-export const INITIAL_PAIN_OBSERVATIONS: PainObservation[] = [
-  {
-    id: 'pain_obs_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_camila_01',
-    professional_id: 'prof_mateo_01',
-    pain_level: 6,
-    pain_type: 'punzante',
-    body_region: 'Rodilla Derecha (Tendón Rotuliano)',
-    body_side: 'front',
-    coordinates_x: 42,
-    coordinates_y: 68,
-    clinical_notes: 'Dolor agudo al realizar sentadilla unipodal y bajar escaleras. Sin derrame articular evidente.',
-    tags: ['Tendinitis', 'Post-ejercicio', 'Rodilla'],
-    created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
-  },
-  {
-    id: 'pain_obs_02',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_rodrigo_02',
-    professional_id: 'prof_mateo_01',
-    pain_level: 8,
-    pain_type: 'irradiado',
-    body_region: 'Zona Lumbar Baja (L4-L5)',
-    body_side: 'back',
-    coordinates_x: 50,
-    coordinates_y: 48,
-    clinical_notes: 'Dolor urente con irradiación hacia dermatoma L5 derecho tras sedestación prolongada (+45 min).',
-    tags: ['Lumbalgia', 'Irradiación L5', 'Sedestación'],
-    created_at: new Date(Date.now() - 1 * 86400000).toISOString(),
-  },
-];
-
-export const INITIAL_BODY_COMPOSITIONS: BodyCompositionRecord[] = [
-  {
-    id: 'body_comp_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_valentina_03',
-    nutritionist_id: 'prof_nutri_01',
-    weight_kg: 62.4,
-    height_cm: 167,
-    body_fat_percentage: 22.1,
-    muscle_mass_kg: 27.8,
-    visceral_fat_level: 4,
-    bmr_kcal: 1420,
-    metabolic_age: 26,
-    dietary_plan: 'Pauta hiperproteica 1.8g/kg para recomposición corporal y entrenamiento de fuerza.',
-    caloric_target_kcal: 1850,
-    macros: {
-      protein_grams: 115,
-      carbs_grams: 195,
-      fats_grams: 55,
-    },
-    clinical_notes: 'Excelente adherencia al consumo hídrico. Se redujo porcentaje graso en 1.2% respecto al mes anterior.',
-    created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
-  },
-];
-
-export const INITIAL_MEDICAL_RECORDS: GeneralMedicalRecord[] = [
-  {
-    id: 'med_rec_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_diego_04',
-    doctor_id: 'prof_doctor_01',
-    vital_signs: {
-      blood_pressure: '120/80',
-      heart_rate_bpm: 68,
-      temp_celsius: 36.6,
-      oxygen_saturation: 99,
-    },
-    chief_complaint: 'Control preventivo general y evaluación de aptitud física deportiva.',
-    physical_examination: 'Paciente normolíneo, orientado en tiempo y espacio. Ruidos cardíacos rítmicos sin soplos. Murmullo pulmonar conservado bilateralmente.',
-    diagnosis_icd10: 'Z00.0 - Examen médico general',
-    prescriptions: [
-      {
-        medication: 'Vitamina D3 50.000 UI',
-        dosage: '1 cápsula',
-        frequency: 'Cada 15 días',
-        duration: '3 meses',
-      },
-    ],
-    lab_orders: ['Hemograma completo', 'Perfil Lipídico', 'Glicemia en ayunas', 'TSH y T4 libre'],
-    evolution_notes: 'Paciente en excelente condición hemodinámica general. Próximo control con exámenes.',
-    created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
-  },
-];
-
-export const INITIAL_INVITATIONS: TeamInvitation[] = [
-  {
-    id: 'inv_001',
-    tenant_id: DEFAULT_TENANT_ID,
-    email: 'kine.andres@kinesys-salud.cl',
-    role: 'fisioterapeuta',
-    status: 'pending',
-    invited_by: 'user_admin_01',
-    created_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 7 * 86400000).toISOString(),
-  },
-];
-
-// FHIR R4 Patient simulation records
-export const INITIAL_PACIENTES_CLINICOS: PacienteClinico[] = [
-  {
-    id: 'pat_camila_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    fhir_resource_id: 'Patient/19452128-4',
-    identifier_type: 'CC',
-    identifier_number: '19.452.128-4',
-    first_name: 'Camila',
-    last_name: 'Soto Valenzuela',
-    gender: 'female',
-    birth_date: '1995-04-12',
-    telecom_phone: '+57 300 845 2299',
-    telecom_email: 'camila.soto@email.com',
-    blood_type: 'A+',
-    known_allergies: ['Penicilina', 'Amoxicilina'],
-    chronic_conditions: ['Tendinitis rotuliana crónica', 'Rinitis alérgica'],
-    emergency_contact: {
-      name: 'Carlos Soto',
-      phone: '+57 300 771 3456',
-      relationship: 'Padre',
-    },
-    active: true,
-    created_at: '2025-01-10T10:00:00Z',
-  },
-  {
-    id: 'pat_rodrigo_02',
-    tenant_id: DEFAULT_TENANT_ID,
-    fhir_resource_id: 'Patient/14231890-7',
-    identifier_type: 'CC',
-    identifier_number: '14.231.890-7',
-    first_name: 'Rodrigo',
-    last_name: 'Mendoza Tapia',
-    gender: 'male',
-    birth_date: '1988-11-23',
-    telecom_phone: '+57 312 762 1100',
-    telecom_email: 'rodrigo.mendoza@email.com',
-    blood_type: 'O+',
-    known_allergies: ['Ninguna'],
-    chronic_conditions: ['Hernia discal lumbar L4-L5', 'Hipertensión arterial estadio 1'],
-    emergency_contact: {
-      name: 'Elena Morales',
-      phone: '+57 310 654 2198',
-      relationship: 'Cónyuge',
-    },
-    active: true,
-    created_at: '2025-01-12T14:30:00Z',
-  },
-  {
-    id: 'pat_valentina_03',
-    tenant_id: DEFAULT_TENANT_ID,
-    fhir_resource_id: 'Patient/18904551-9',
-    identifier_type: 'CC',
-    identifier_number: '18.904.551-9',
-    first_name: 'Valentina',
-    last_name: 'Ríos Castro',
-    gender: 'female',
-    birth_date: '1992-08-17',
-    telecom_phone: '+57 315 554 3322',
-    telecom_email: 'valentina.rios@email.com',
-    blood_type: 'B+',
-    known_allergies: ['Ibuprofeno', 'Ketorolaco', 'AINEs'],
-    chronic_conditions: ['Pinzamiento subacromial derecho'],
-    emergency_contact: {
-      name: 'Javier Ríos',
-      phone: '+57 311 443 2211',
-      relationship: 'Hermano',
-    },
-    active: true,
-    created_at: '2025-01-15T09:00:00Z',
-  },
-  {
-    id: 'pat_diego_04',
-    tenant_id: DEFAULT_TENANT_ID,
-    fhir_resource_id: 'Patient/17334882-1',
-    identifier_type: 'CC',
-    identifier_number: '17.334.882-1',
-    first_name: 'Diego',
-    last_name: 'Alarcón Herrera',
-    gender: 'male',
-    birth_date: '1990-03-05',
-    telecom_phone: '+57 318 988 6655',
-    telecom_email: 'diego.alarcon@email.com',
-    blood_type: 'O-',
-    known_allergies: ['Ninguna conocida'],
-    chronic_conditions: ['Esguince de tobillo grado II lateral'],
-    emergency_contact: {
-      name: 'Marcela Herrera',
-      phone: '+57 320 332 1100',
-      relationship: 'Madre',
-    },
-    active: true,
-    created_at: '2025-01-20T11:15:00Z',
-  },
-];
-
-// Initial SOAP Encounter records
-export const INITIAL_CONSULTAS_SOAP: ConsultaSOP[] = [
-  {
-    id: 'soap_demo_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_rodrigo_02',
-    practitioner_id: 'prof_doctor_01',
-    encounter_type: 'control',
-    encounter_date: '2025-02-15',
-    subjective: {
-      chief_complaint: 'Control por lumbago mecánico recurrente y evaluación de cifras tensionales.',
-      current_illness_history: 'Paciente refiere mejoría parcial con analgesia de rescate, pero persiste rigidez matutina lumbar de 15 minutos de duración.',
-      review_of_systems: 'Sin cefalea ni tinitus. Afebril.',
-      past_medical_history: 'HTA diagnosticada hace 2 años, hernia L4-L5.',
-    },
-    objective: {
-      vitals: {
-        blood_pressure_systolic: 125,
-        blood_pressure_diastolic: 82,
-        heart_rate_bpm: 70,
-        respiratory_rate_rpm: 16,
-        temp_celsius: 36.5,
-        oxygen_saturation_pct: 99,
-        weight_kg: 78,
-        height_cm: 175,
-        bmi: 25.5,
-      },
-      physical_exam: 'Lúcido, afebril, eupneico. Ruidos cardiacos rítmicos sin soplos.',
-      musculoskeletal_exam: 'Contractura paravertebral lumbar leve. Lasègue negativo bilateral. Rango de flexión anterior 75°.',
-    },
-    assessment: {
-      diagnoses: [
-        { code: 'M54.5', description: 'Lumbago no especificado / Dolor lumbar mecánico', type: 'primary' },
-        { code: 'I10', description: 'Hipertensión esencial (primaria)', type: 'secondary' },
-      ],
-      clinical_reasoning: 'Lumbago crónico agudizado en paciente hipertenso bien compensado.',
-      prognosis: 'favorable',
-    },
-    plan: {
-      treatment_goals: 'Optimizar postura laboral, continuar esquema antihipertensivo y kinesioterapia de columna.',
-      lab_orders: ['Perfil Lipídico', 'Creatinina sérica', 'Uroanálisis'],
-      imaging_orders: ['Rx Columna Lumbosacra AP y Lateral'],
-      referrals: ['Fisioterapia y Kinesiología Lumbar (10 sesiones)'],
-      patient_instructions: 'Evitar sobrecargas de flexión y mantener pausas activas.',
-      follow_up_days: 30,
-      alarm_signs: 'Urgencias si presenta parestesias progresivas o déficit motor en pies.',
-    },
-    status: 'completed',
-    created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
-  },
-];
-
-// Initial electronic prescriptions
-export const INITIAL_PRESCRIPCIONES: PrescripcionMedica[] = [
-  {
-    id: 'rx_demo_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_rodrigo_02',
-    encounter_id: 'soap_demo_01',
-    practitioner_id: 'prof_doctor_01',
-    prescription_date: '2025-02-15',
-    valid_until: '2025-03-15',
-    medications: [
-      {
-        id: 'med_rx_01',
-        medication_name: 'Paracetamol',
-        generic_name: 'Acetaminofén',
-        pharmaceutical_form: 'tableta',
-        strength_concentration: '500 mg',
-        dosage_instruction: '1 tableta',
-        route: 'oral',
-        frequency: 'Cada 8 horas en caso de dolor',
-        duration: '5 días',
-        quantity_to_dispense: 15,
-        clinical_indication: 'Manejo analgésico de rescate para dolor lumbar',
-      },
-      {
-        id: 'med_rx_02',
-        medication_name: 'Losartán',
-        generic_name: 'Losartán Potásico',
-        pharmaceutical_form: 'tableta',
-        strength_concentration: '500 mg',
-        dosage_instruction: '1 tableta (50 mg)',
-        route: 'oral',
-        frequency: 'Cada 24 horas en ayunas (Mañana)',
-        duration: '30 días (Crónico)',
-        quantity_to_dispense: 30,
-        clinical_indication: 'Tratamiento antihipertensivo de mantenimiento',
-      },
-    ],
-    general_instructions: 'Tomar con suficiente agua. Mantener control de presión arterial una vez por semana.',
-    status: 'active',
-    digital_signature_hash: 'SIG-HL7-D8420-7492A',
-    created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
-  },
-];
-
-// Initial anthropometric evaluations (Mifflin-St Jeor & Skinfolds)
-export const INITIAL_EVALUACIONES_ANTROPOMETRICAS: EvaluacionAntropometrica[] = [
-  // --- HISTORIAL PACIENTE: RODRIGO MENDOZA (pat_rodrigo_02) ---
-  {
-    id: 'antropo_rodrigo_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_rodrigo_02',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2024-11-15',
-    age: 36,
-    gender: 'male',
-    weight_kg: 82.5,
-    height_cm: 175,
-    activity_factor: 1.2, // Sedentario inicial
-    skinfold_triceps_mm: 17.0,
-    skinfold_subscapular_mm: 21.5,
-    skinfold_suprailiac_mm: 23.0,
-    skinfold_abdominal_mm: 26.5,
-    skinfold_biceps_mm: 10.0,
-    skinfold_thigh_mm: 18.5,
-    skinfold_calf_mm: 12.5,
-    waist_cm: 93.0,
-    hip_cm: 100.0,
-    relaxed_arm_cm: 33.0,
-    contracted_arm_cm: 34.5,
-    thigh_cm: 58.0,
-    calf_cm: 38.0,
-    neck_cm: 39.5,
-    bmi: 26.9,
-    bmr_kcal: 1754,
-    tdee_kcal: 2105,
-    waist_hip_ratio: 0.93,
-    body_fat_percentage: 23.4,
-    fat_mass_kg: 19.3,
-    fat_free_mass_kg: 63.2,
-    cardiovascular_risk_level: 'moderado',
-    clinical_notes: 'Primera consulta antropométrica. Paciente con sobrepeso leve e HTA diagnosticada. Presenta perímetro de cintura elevado con riesgo metabólico. Se inicia plan hiposódico y restricción de ultraprocesados.',
-    created_at: '2024-11-15T10:00:00Z',
-  },
-  {
-    id: 'antropo_rodrigo_02',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_rodrigo_02',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2024-12-20',
-    age: 36,
-    gender: 'male',
-    weight_kg: 80.2,
-    height_cm: 175,
-    activity_factor: 1.375, // Inicio caminatas ligeras
-    skinfold_triceps_mm: 15.5,
-    skinfold_subscapular_mm: 19.5,
-    skinfold_suprailiac_mm: 21.0,
-    skinfold_abdominal_mm: 24.0,
-    skinfold_biceps_mm: 9.0,
-    skinfold_thigh_mm: 17.5,
-    skinfold_calf_mm: 12.0,
-    waist_cm: 90.5,
-    hip_cm: 99.0,
-    relaxed_arm_cm: 32.8,
-    contracted_arm_cm: 34.8,
-    thigh_cm: 57.0,
-    calf_cm: 37.8,
-    neck_cm: 39.2,
-    bmi: 26.2,
-    bmr_kcal: 1731,
-    tdee_kcal: 2380,
-    waist_hip_ratio: 0.91,
-    body_fat_percentage: 22.0,
-    fat_mass_kg: 17.6,
-    fat_free_mass_kg: 62.6,
-    cardiovascular_risk_level: 'moderado',
-    clinical_notes: 'Control mes 1. Buena adherencia al plan alimentario. Reducción de 2.3 kg con disminución marcada en perímetro abdominal (-2.5 cm). Presión arterial más estable.',
-    created_at: '2024-12-20T11:15:00Z',
-  },
-  {
-    id: 'antropo_rodrigo_03',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_rodrigo_02',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2025-01-22',
-    age: 36,
-    gender: 'male',
-    weight_kg: 78.8,
-    height_cm: 175,
-    activity_factor: 1.375,
-    skinfold_triceps_mm: 15.0,
-    skinfold_subscapular_mm: 18.5,
-    skinfold_suprailiac_mm: 20.0,
-    skinfold_abdominal_mm: 22.8,
-    skinfold_biceps_mm: 8.8,
-    skinfold_thigh_mm: 16.5,
-    skinfold_calf_mm: 11.5,
-    waist_cm: 89.0,
-    hip_cm: 98.5,
-    relaxed_arm_cm: 32.6,
-    contracted_arm_cm: 35.0,
-    thigh_cm: 56.5,
-    calf_cm: 37.6,
-    neck_cm: 39.0,
-    bmi: 25.7,
-    bmr_kcal: 1717,
-    tdee_kcal: 2361,
-    waist_hip_ratio: 0.90,
-    body_fat_percentage: 21.2,
-    fat_mass_kg: 16.7,
-    fat_free_mass_kg: 62.1,
-    cardiovascular_risk_level: 'moderado',
-    clinical_notes: 'Control mes 2. Progreso continuo. Masa libre de grasa preservada con éxito. Se ajusta la prescripción energética para continuar descenso progresivo sin fatiga.',
-    created_at: '2025-01-22T09:30:00Z',
-  },
-  {
-    id: 'antropo_demo_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_rodrigo_02',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2025-02-15',
-    age: 36,
-    gender: 'male',
-    weight_kg: 78.0,
-    height_cm: 175,
-    activity_factor: 1.375, // Ligero
-    skinfold_triceps_mm: 14.5,
-    skinfold_subscapular_mm: 18.0,
-    skinfold_suprailiac_mm: 19.5,
-    skinfold_abdominal_mm: 22.0,
-    skinfold_biceps_mm: 8.5,
-    skinfold_thigh_mm: 16.0,
-    skinfold_calf_mm: 11.0,
-    waist_cm: 88.0,
-    hip_cm: 98.0,
-    relaxed_arm_cm: 32.5,
-    contracted_arm_cm: 35.0,
-    thigh_cm: 56.0,
-    calf_cm: 37.5,
-    neck_cm: 39.0,
-    bmi: 25.5,
-    bmr_kcal: 1709,
-    tdee_kcal: 2350,
-    waist_hip_ratio: 0.90,
-    body_fat_percentage: 20.8,
-    fat_mass_kg: 16.2,
-    fat_free_mass_kg: 61.8,
-    cardiovascular_risk_level: 'moderado',
-    clinical_notes: 'Evaluación de control mes 3. Acumula pérdida neta de 4.5 kg desde la consulta basal. Perímetro de cintura se sitúa bajo 88 cm. Excelente adaptación a la dieta DASH con FHIR NutritionOrder activa.',
-    created_at: '2025-02-15T10:30:00Z',
-  },
-
-  // --- HISTORIAL PACIENTE: CAMILA SOTO (pat_camila_01) ---
-  {
-    id: 'antropo_camila_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_camila_01',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2024-12-10',
-    age: 29,
-    gender: 'female',
-    weight_kg: 66.0,
-    height_cm: 165,
-    activity_factor: 1.375,
-    skinfold_triceps_mm: 18.5,
-    skinfold_subscapular_mm: 16.5,
-    skinfold_suprailiac_mm: 17.0,
-    skinfold_abdominal_mm: 20.0,
-    skinfold_biceps_mm: 10.5,
-    skinfold_thigh_mm: 22.0,
-    skinfold_calf_mm: 14.5,
-    waist_cm: 74.0,
-    hip_cm: 98.0,
-    relaxed_arm_cm: 28.5,
-    contracted_arm_cm: 29.8,
-    thigh_cm: 56.0,
-    calf_cm: 36.0,
-    neck_cm: 33.0,
-    bmi: 24.2,
-    bmr_kcal: 1395,
-    tdee_kcal: 1918,
-    waist_hip_ratio: 0.76,
-    body_fat_percentage: 25.2,
-    fat_mass_kg: 16.6,
-    fat_free_mass_kg: 49.4,
-    cardiovascular_risk_level: 'bajo',
-    clinical_notes: 'Consulta inicial. Paciente con tendinitis rotuliana en rehabilitación. Se busca optimizar composición corporal para disminuir impacto articular en rodilla.',
-    created_at: '2024-12-10T09:00:00Z',
-  },
-  {
-    id: 'antropo_camila_02',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_camila_01',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2025-01-18',
-    age: 29,
-    gender: 'female',
-    weight_kg: 64.2,
-    height_cm: 165,
-    activity_factor: 1.55, // Retorno progresivo a deporte
-    skinfold_triceps_mm: 17.0,
-    skinfold_subscapular_mm: 15.0,
-    skinfold_suprailiac_mm: 15.5,
-    skinfold_abdominal_mm: 18.0,
-    skinfold_biceps_mm: 9.5,
-    skinfold_thigh_mm: 20.5,
-    skinfold_calf_mm: 13.5,
-    waist_cm: 71.5,
-    hip_cm: 96.5,
-    relaxed_arm_cm: 28.0,
-    contracted_arm_cm: 29.5,
-    thigh_cm: 54.5,
-    calf_cm: 35.5,
-    neck_cm: 32.5,
-    bmi: 23.6,
-    bmr_kcal: 1377,
-    tdee_kcal: 2134,
-    waist_hip_ratio: 0.74,
-    body_fat_percentage: 23.8,
-    fat_mass_kg: 15.3,
-    fat_free_mass_kg: 48.9,
-    cardiovascular_risk_level: 'bajo',
-    clinical_notes: 'Control evolutivo. Buena respuesta al tratamiento kinesiologico y nutricional. Se incrementa ingesta proteica post-ejercicio a 1.6 g/kg.',
-    created_at: '2025-01-18T10:15:00Z',
-  },
-  {
-    id: 'antropo_camila_03',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_camila_01',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2025-02-12',
-    age: 29,
-    gender: 'female',
-    weight_kg: 62.8,
-    height_cm: 165,
-    activity_factor: 1.55,
-    skinfold_triceps_mm: 15.5,
-    skinfold_subscapular_mm: 14.0,
-    skinfold_suprailiac_mm: 14.5,
-    skinfold_abdominal_mm: 16.5,
-    skinfold_biceps_mm: 8.8,
-    skinfold_thigh_mm: 19.5,
-    skinfold_calf_mm: 12.8,
-    waist_cm: 69.5,
-    hip_cm: 95.0,
-    relaxed_arm_cm: 27.5,
-    contracted_arm_cm: 29.2,
-    thigh_cm: 53.5,
-    calf_cm: 35.0,
-    neck_cm: 32.0,
-    bmi: 23.1,
-    bmr_kcal: 1363,
-    tdee_kcal: 2112,
-    waist_hip_ratio: 0.73,
-    body_fat_percentage: 22.5,
-    fat_mass_kg: 14.1,
-    fat_free_mass_kg: 48.7,
-    cardiovascular_risk_level: 'bajo',
-    clinical_notes: 'Control mes 2. Excelente progreso: reducción de 3.2 kg de peso y descenso de 2.7% en grasa corporal. Sin dolor de rodilla durante actividades de carga.',
-    created_at: '2025-02-12T11:00:00Z',
-  },
-
-  // --- HISTORIAL PACIENTE: VALENTINA RÍOS (pat_valentina_03) ---
-  {
-    id: 'antropo_valentina_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_valentina_03',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2024-11-28',
-    age: 32,
-    gender: 'female',
-    weight_kg: 64.5,
-    height_cm: 167,
-    activity_factor: 1.375,
-    skinfold_triceps_mm: 17.5,
-    skinfold_subscapular_mm: 16.0,
-    skinfold_suprailiac_mm: 16.5,
-    skinfold_abdominal_mm: 19.0,
-    skinfold_biceps_mm: 10.0,
-    skinfold_thigh_mm: 21.5,
-    skinfold_calf_mm: 14.0,
-    waist_cm: 73.0,
-    hip_cm: 97.5,
-    relaxed_arm_cm: 28.0,
-    contracted_arm_cm: 29.2,
-    thigh_cm: 55.0,
-    calf_cm: 35.5,
-    neck_cm: 33.0,
-    bmi: 23.1,
-    bmr_kcal: 1368,
-    tdee_kcal: 1881,
-    waist_hip_ratio: 0.75,
-    body_fat_percentage: 23.8,
-    fat_mass_kg: 15.3,
-    fat_free_mass_kg: 49.2,
-    cardiovascular_risk_level: 'bajo',
-    clinical_notes: 'Evaluación inicial. Paciente con pinzamiento de hombro. Plan enfocado en alimentos antiinflamatorios y protección digestiva.',
-    created_at: '2024-11-28T09:30:00Z',
-  },
-  {
-    id: 'antropo_demo_02',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_valentina_03',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2025-02-14',
-    age: 32,
-    gender: 'female',
-    weight_kg: 62.4,
-    height_cm: 167,
-    activity_factor: 1.55, // Moderado
-    skinfold_triceps_mm: 16.0,
-    skinfold_subscapular_mm: 14.5,
-    skinfold_suprailiac_mm: 15.0,
-    skinfold_abdominal_mm: 17.5,
-    skinfold_biceps_mm: 9.0,
-    skinfold_thigh_mm: 20.5,
-    skinfold_calf_mm: 13.0,
-    waist_cm: 70.0,
-    hip_cm: 96.0,
-    relaxed_arm_cm: 27.5,
-    contracted_arm_cm: 29.0,
-    thigh_cm: 54.0,
-    calf_cm: 35.0,
-    neck_cm: 32.5,
-    bmi: 22.4,
-    bmr_kcal: 1347,
-    tdee_kcal: 2088,
-    waist_hip_ratio: 0.73,
-    body_fat_percentage: 22.1,
-    fat_mass_kg: 13.8,
-    fat_free_mass_kg: 48.6,
-    cardiovascular_risk_level: 'bajo',
-    clinical_notes: 'Paciente con excelente evolución clínica. Recomposición corporal exitosa con descenso de 2.1 kg de masa grasa.',
-    created_at: '2025-02-14T09:45:00Z',
-  },
-
-  // --- HISTORIAL PACIENTE: DIEGO ALARCÓN (pat_diego_04) ---
-  {
-    id: 'antropo_diego_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_diego_04',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2025-01-08',
-    age: 34,
-    gender: 'male',
-    weight_kg: 84.0,
-    height_cm: 180,
-    activity_factor: 1.375,
-    skinfold_triceps_mm: 14.0,
-    skinfold_subscapular_mm: 16.5,
-    skinfold_suprailiac_mm: 18.0,
-    skinfold_abdominal_mm: 20.5,
-    skinfold_biceps_mm: 8.0,
-    skinfold_thigh_mm: 16.0,
-    skinfold_calf_mm: 11.5,
-    waist_cm: 86.0,
-    hip_cm: 101.0,
-    relaxed_arm_cm: 34.0,
-    contracted_arm_cm: 36.5,
-    thigh_cm: 59.0,
-    calf_cm: 39.0,
-    neck_cm: 40.0,
-    bmi: 25.9,
-    bmr_kcal: 1835,
-    tdee_kcal: 2523,
-    waist_hip_ratio: 0.85,
-    body_fat_percentage: 19.5,
-    fat_mass_kg: 16.4,
-    fat_free_mass_kg: 67.6,
-    cardiovascular_risk_level: 'bajo',
-    clinical_notes: 'Evaluación durante rehabilitación de esguince de tobillo. Deportista amateur. Se busca preservar masa muscular mientras está con carga física reducida.',
-    created_at: '2025-01-08T15:00:00Z',
-  },
-  {
-    id: 'antropo_diego_02',
-    tenant_id: DEFAULT_TENANT_ID,
-    patient_id: 'pat_diego_04',
-    nutritionist_id: 'prof_nutri_01',
-    evaluation_date: '2025-02-10',
-    age: 34,
-    gender: 'male',
-    weight_kg: 82.3,
-    height_cm: 180,
-    activity_factor: 1.55,
-    skinfold_triceps_mm: 13.0,
-    skinfold_subscapular_mm: 15.0,
-    skinfold_suprailiac_mm: 16.5,
-    skinfold_abdominal_mm: 18.5,
-    skinfold_biceps_mm: 7.5,
-    skinfold_thigh_mm: 15.0,
-    skinfold_calf_mm: 11.0,
-    waist_cm: 83.5,
-    hip_cm: 99.5,
-    relaxed_arm_cm: 34.2,
-    contracted_arm_cm: 36.8,
-    thigh_cm: 58.5,
-    calf_cm: 39.0,
-    neck_cm: 39.8,
-    bmi: 25.4,
-    bmr_kcal: 1818,
-    tdee_kcal: 2818,
-    waist_hip_ratio: 0.84,
-    body_fat_percentage: 18.2,
-    fat_mass_kg: 15.0,
-    fat_free_mass_kg: 67.3,
-    cardiovascular_risk_level: 'bajo',
-    clinical_notes: 'Alta kine y retorno a entrenamientos completos. Masa muscular intacta con reducción de 1.4 kg de tejido graso.',
-    created_at: '2025-02-10T16:30:00Z',
-  },
-];
-
-// Initial Professional Profiles (Bio, Alma Mater, Graduation Year, Social Links)
-export const INITIAL_PROFESSIONAL_PROFILES: ProfessionalProfile[] = [
-  {
-    id: 'prof_profile_mateo',
-    user_id: 'prof_mateo_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    bio: 'Kinesiólogo y Fisioterapeuta especialista en rehabilitación biomecánica, terapia manual ortopédica (OMT) y readaptación funcional deportiva. Con más de 11 años de experiencia guiando a deportistas profesionales y personas con patologías musculoesqueléticas complejas (columna, rodilla y hombro) a recuperar su máxima funcionalidad.',
-    alma_mater: 'Universidad Nacional de Colombia',
-    graduation_year: 2014,
-    years_of_experience: 11,
-    social_links: {
-      instagram: 'https://instagram.com/klgo.mateogomez',
-      linkedin: 'https://linkedin.com/in/mateo-gomez-kine',
-      x: 'https://x.com/mateog_kine',
-      website: 'https://kinesys.health/prof/mateo',
-      whatsapp: '+56991234567',
-    },
-    languages: ['Español (Nativo)', 'Inglés (Fluido C1)'],
-    certifications: [
-      'Certificación FIFA en Medicina del Fútbol y Prevención de Lesiones',
-      'Especialista en Terapia Manual Ortopédica (OMT - Kaltenborn)',
-      'Certificación Internacional en Punción Seca y Neuromodulación',
-      'Protocolos Avanzados de Readaptación Post-Cirugía de Ligamento Cruzado Anterior (LCA)',
-    ],
-    consultation_fee: 45000,
-    currency: 'COP',
-    rating_average: 4.9,
-    reviews_count: 5,
-    is_verified: true,
-    created_at: '2025-01-01T00:00:00Z',
-  },
-  {
-    id: 'prof_profile_valeria',
-    user_id: 'prof_nutri_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    bio: 'Nutricionista clínica y deportiva con certificación internacional ISAK Nivel 2 en cineantropometría. Especializada en recomposición corporal, planes metabólicos personalizados para alto rendimiento y abordaje terapéutico integral de patologías cardiovasculares y digestivas.',
-    alma_mater: 'Pontificia Universidad Javeriana',
-    graduation_year: 2017,
-    years_of_experience: 8,
-    social_links: {
-      instagram: 'https://instagram.com/valerianutri.fit',
-      linkedin: 'https://linkedin.com/in/valeria-benitez-nutri',
-      website: 'https://valerianutricion.co',
-      whatsapp: '+56982345678',
-    },
-    languages: ['Español (Nativo)', 'Inglés (Avanzado)', 'Portugués (Intermedio)'],
-    certifications: [
-      'Certificación Internacional en Antropometría ISAK Nivel 2',
-      'Diplomado en Nutrición Clínica y Metabolismo Energético Humano',
-      'Especialista en Protocolos FODMAP y Salud de la Microbiota Intestinal',
-      'Prescripción de Dieta DASH para Manejo de Hipertensión Arterial',
-    ],
-    consultation_fee: 42000,
-    currency: 'COP',
-    rating_average: 4.8,
-    reviews_count: 4,
-    is_verified: true,
-    created_at: '2025-01-05T00:00:00Z',
-  },
-  {
-    id: 'prof_profile_fernando',
-    user_id: 'prof_doctor_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    bio: 'Médico Cirujano con sólida formación en medicina preventiva del adulto, control de enfermedades crónicas no transmisibles (hipertensión, dislipidemia, diabetes mellitus) y chequeos ejecutivos. Práctica clínica rigurosa, basada en la evidencia y caracterizada por la empatía y la escucha activa.',
-    alma_mater: 'Universidad de Antioquia',
-    graduation_year: 2012,
-    years_of_experience: 13,
-    social_links: {
-      linkedin: 'https://linkedin.com/in/dr-fernando-castillo',
-      website: 'https://drfernandocastillo.com',
-      twitter: 'https://twitter.com/dr_castillo_salud',
-      whatsapp: '+56973456789',
-    },
-    languages: ['Español (Nativo)', 'Inglés (Profesional B2)'],
-    certifications: [
-      'Diplomado en Medicina Cardiovascular Preventiva y Riesgo Global',
-      'Soporte Vital Cardiovascular Avanzado (ACLS - American Heart Association)',
-      'Auditoría Médica y Gestión de Calidad en Atención Primaria',
-      'Receta Médica Electrónica y Buenas Prácticas Farmacológicas',
-    ],
-    consultation_fee: 50000,
-    currency: 'COP',
-    rating_average: 5.0,
-    reviews_count: 4,
-    is_verified: true,
-    created_at: '2025-01-08T00:00:00Z',
-  },
-  {
-    id: 'prof_profile_marcela',
-    user_id: 'user_admin_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    bio: 'Médica especialista en Administración de Salud y Dirección Clínica. Lidera equipos interdisciplinarios orientados a la excelencia asistencial, medicina centrada en el paciente y transformación digital de servicios médicos.',
-    alma_mater: 'Universidad del Rosario',
-    graduation_year: 2008,
-    years_of_experience: 17,
-    social_links: {
-      linkedin: 'https://linkedin.com/in/dra-marcela-lagos',
-      website: 'https://kinesys-salud.co',
-    },
-    languages: ['Español', 'Inglés', 'Francés'],
-    certifications: [
-      'Magíster en Gestión y Administración de Instituciones de Salud',
-      'Especialista en Seguridad del Paciente y Calidad Asistencial',
-    ],
-    consultation_fee: 55000,
-    currency: 'COP',
-    rating_average: 5.0,
-    reviews_count: 2,
-    is_verified: true,
-    created_at: '2025-01-01T00:00:00Z',
-  },
-];
-
-// Initial Patient Reviews (rating 1-5, moderated status 'approved', privacy formatted)
-export const INITIAL_REVIEWS: Review[] = [
-  // --- RESEÑAS MATEO GÓMEZ (prof_mateo_01) ---
-  {
-    id: 'rev_mateo_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_mateo_01',
-    patient_id: 'pat_camila_01',
-    patient_name: 'Camila Soto Valenzuela',
-    rating: 5,
-    comment: '¡Un profesional extraordinario! Llegué con una rotura de ligamento cruzado anterior y mucho temor de no volver a trotar. Mateo estructuró un plan con mapa de dolor sesión a sesión y hoy, 8 semanas después, me siento fuerte, estable y sin molestias. Muy agradecida.',
-    status: 'approved',
-    consultation_date: '2025-02-10',
-    treatment_category: 'Kinesiología Deportiva / Post-Op LCA',
-    helpful_votes: 12,
-    created_at: '2025-02-11T14:20:00Z',
-  },
-  {
-    id: 'rev_mateo_02',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_mateo_01',
-    patient_id: 'pat_rodrigo_02',
-    patient_name: 'Rodrigo Mendoza Tapia',
-    rating: 5,
-    comment: 'Padecía un dolor lumbar con irradiación por hernia L4-L5 que me impedía estar más de 20 minutos sentado en la oficina. Mateo aplicó técnicas de descompresión y ejercicios que me devolvieron la calidad de vida. Excelente trato y puntualidad.',
-    status: 'approved',
-    consultation_date: '2025-02-05',
-    treatment_category: 'Terapia Manual Lumbar',
-    helpful_votes: 8,
-    created_at: '2025-02-06T18:30:00Z',
-  },
-  {
-    id: 'rev_mateo_03',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_mateo_01',
-    patient_id: 'pat_diego_04',
-    patient_name: 'Diego Alarcón Herrera',
-    rating: 5,
-    comment: 'Me recuperó de un esguince grado II en el tobillo en tiempo récord. El trabajo en gimnasio fue súper completo y me dio mucha confianza para volver a entrenar fútbol.',
-    status: 'approved',
-    consultation_date: '2025-01-28',
-    treatment_category: 'Rehabilitación Tobillo',
-    helpful_votes: 5,
-    created_at: '2025-01-29T10:15:00Z',
-  },
-  {
-    id: 'rev_mateo_04',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_mateo_01',
-    patient_name: 'Andrés Morales Castro',
-    rating: 4,
-    comment: 'Muy dedicado, metódico y cordial. Las instalaciones son excelentes y el seguimiento por la plataforma digital facilita mucho agendar los controles.',
-    status: 'approved',
-    consultation_date: '2025-01-15',
-    treatment_category: 'Fisioterapia General',
-    helpful_votes: 3,
-    created_at: '2025-01-16T16:45:00Z',
-  },
-  {
-    id: 'rev_mateo_05',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_mateo_01',
-    patient_id: 'pat_valentina_03',
-    patient_name: 'Valentina Ríos Castro',
-    rating: 5,
-    comment: 'Su paciencia para explicar el origen anatómico del dolor de hombro y cómo corregir la postura me cambió por completo el día a día. Súper recomendado.',
-    status: 'approved',
-    consultation_date: '2025-01-10',
-    treatment_category: 'Hombro / Pinzamiento',
-    helpful_votes: 7,
-    created_at: '2025-01-11T11:00:00Z',
-  },
-
-  // --- RESEÑAS VALERIA BENÍTEZ (prof_nutri_01) ---
-  {
-    id: 'rev_nutri_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_nutri_01',
-    patient_id: 'pat_valentina_03',
-    patient_name: 'Valentina Ríos Castro',
-    rating: 5,
-    comment: 'La mejor experiencia con una nutricionista. La medición con pliegues ISAK fue muy minuciosa y la pauta de comidas es variada, fácil de preparar y adaptada a mis horarios. ¡Bajé grasa ganando músculo!',
-    status: 'approved',
-    consultation_date: '2025-02-14',
-    treatment_category: 'Composición Corporal ISAK',
-    helpful_votes: 9,
-    created_at: '2025-02-15T09:30:00Z',
-  },
-  {
-    id: 'rev_nutri_02',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_nutri_01',
-    patient_id: 'pat_rodrigo_02',
-    patient_name: 'Rodrigo Mendoza Tapia',
-    rating: 5,
-    comment: 'Reduje 4.5 kg en 3 meses siguiendo su plan DASH para hipertensión y mis niveles de presión se normalizaron. El informe clínico en PDF que entrega es completísimo.',
-    status: 'approved',
-    consultation_date: '2025-02-12',
-    treatment_category: 'Nutrición Clínica / DASH',
-    helpful_votes: 6,
-    created_at: '2025-02-13T12:00:00Z',
-  },
-  {
-    id: 'rev_nutri_03',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_nutri_01',
-    patient_id: 'pat_camila_01',
-    patient_name: 'Camila Soto Valenzuela',
-    rating: 4,
-    comment: 'Excelente apoyo nutricional durante mi recuperación de rodilla. Ajustó mis requerimientos de proteína para no perder masa muscular durante el reposo. Muy empática.',
-    status: 'approved',
-    consultation_date: '2025-01-20',
-    treatment_category: 'Nutrición Deportiva',
-    helpful_votes: 4,
-    created_at: '2025-01-21T15:20:00Z',
-  },
-  {
-    id: 'rev_nutri_04',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_nutri_01',
-    patient_name: 'Lucía Pardo Silva',
-    rating: 5,
-    comment: 'Valeria te enseña a comer sin culpas ni restricciones absurdas. Las recetas sugeridas son deliciosas y los resultados se notan desde el primer mes.',
-    status: 'approved',
-    consultation_date: '2025-01-18',
-    treatment_category: 'Recomposición Corporal',
-    helpful_votes: 5,
-    created_at: '2025-01-19T17:10:00Z',
-  },
-
-  // --- RESEÑAS DR. FERNANDO CASTILLO (prof_doctor_01) ---
-  {
-    id: 'rev_doc_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_doctor_01',
-    patient_id: 'pat_diego_04',
-    patient_name: 'Diego Alarcón Herrera',
-    rating: 5,
-    comment: 'Un médico con verdadera vocación. Se tomó el tiempo de revisar todos mis exámenes de laboratorio, escuchar mis síntomas y explicarme con manzanitas el diagnóstico. 10 de 10.',
-    status: 'approved',
-    consultation_date: '2025-02-10',
-    treatment_category: 'Chequeo Preventivo',
-    helpful_votes: 11,
-    created_at: '2025-02-11T10:00:00Z',
-  },
-  {
-    id: 'rev_doc_02',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_doctor_01',
-    patient_id: 'pat_rodrigo_02',
-    patient_name: 'Rodrigo Mendoza Tapia',
-    rating: 5,
-    comment: 'Atención médica impecable. El control de mi hipertensión fue riguroso y me coordinó directamente con el área de kinesiología y nutrición para un manejo integral.',
-    status: 'approved',
-    consultation_date: '2025-02-15',
-    treatment_category: 'Medicina General / HTA',
-    helpful_votes: 8,
-    created_at: '2025-02-16T08:45:00Z',
-  },
-  {
-    id: 'rev_doc_03',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_doctor_01',
-    patient_name: 'Carlos Gutiérrez Salgado',
-    rating: 5,
-    comment: 'Puntual, atento y muy asertivo en sus diagnósticos y recetas. La receta electrónica con firma digital es muy cómoda para comprar en farmacias.',
-    status: 'approved',
-    consultation_date: '2025-01-25',
-    treatment_category: 'Consulta General',
-    helpful_votes: 6,
-    created_at: '2025-01-26T14:30:00Z',
-  },
-  {
-    id: 'rev_doc_04',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_doctor_01',
-    patient_name: 'Marcela Lagos',
-    rating: 5,
-    comment: 'Destaco la rigurosidad científica y la calidez en el trato. Un profesional de primer nivel para toda la familia.',
-    status: 'approved',
-    consultation_date: '2025-01-12',
-    treatment_category: 'Salud Familiar',
-    helpful_votes: 4,
-    created_at: '2025-01-13T19:00:00Z',
-  },
-
-  // --- RESEÑA EN REVISIÓN (PENDING) PARA TESTEAR FILTRADO DE MODERACIÓN ---
-  {
-    id: 'rev_pending_01',
-    tenant_id: DEFAULT_TENANT_ID,
-    professional_id: 'prof_mateo_01',
-    patient_name: 'Usuario Anónimo Prueba',
-    rating: 5,
-    comment: 'Comentario recién enviado en proceso de moderación por el equipo clínico.',
-    status: 'pending',
-    treatment_category: 'En Moderación',
-    helpful_votes: 0,
-    created_at: '2025-02-20T10:00:00Z',
-  },
-];
-
-// Multi-tenant demo list for Super Admin
-export const ALL_DEMO_TENANTS: Tenant[] = [
-  INITIAL_TENANT,
-  {
-    id: 'tenant_clinica_norte',
-    name: 'Clínica KinesioNorte',
-    slug: 'kinesio-norte',
-    timezone: 'America/Bogota (UTC-5)',
-    cancellation_window_hours: 12,
-    email: 'contacto@kinesionorte.co',
-    phone: '+57 310 999 8811',
-    address: 'Av. El Poblado # 5A-110, Medellín',
-    currency: 'COP',
-    subscription_plan: 'enterprise',
-    subscription_status: 'active',
-    max_users: 15,
-    trial_ends_at: '2025-01-15T00:00:00Z',
-    created_at: '2025-01-01T00:00:00Z',
-  },
-  {
-    id: 'tenant_rehab_sur',
-    name: 'Centro de Rehabilitación Integral Sur',
-    slug: 'rehab-sur',
-    timezone: 'America/Bogota (UTC-5)',
-    cancellation_window_hours: 24,
-    email: 'admin@rehabsur.co',
-    phone: '+57 320 234 5678',
-    address: 'Calle 53 # 45-80, Cali',
-    currency: 'COP',
-    subscription_plan: 'starter',
-    subscription_status: 'past_due',
-    max_users: 1,
-    trial_ends_at: '2025-02-10T00:00:00Z',
-    created_at: '2025-01-10T00:00:00Z',
-  },
-];
-
-// Initial RBAC Roles
-export const INITIAL_APP_ROLES: AppRole[] = [
-  { id: 'super_admin', name: 'Super Administrador SaaS', description: 'Control total multi-tenant y configuración global de la plataforma.' },
-  { id: 'clinic_admin', name: 'Administrador de Clínica', description: 'Gestión integral de profesionales, agenda, finanzas y control de accesos.' },
-  { id: 'fisioterapeuta', name: 'Kinesiólogo / Fisioterapeuta', description: 'Atención clínica kinésica, mapa de dolor corporal, prescripción y rehabilitación.' },
-  { id: 'nutricionista', name: 'Nutricionista', description: 'Evaluaciones antropométricas ISAK, pautas nutricionales y bioimpedancia.' },
-  { id: 'medico_general', name: 'Médico General', description: 'Consultas SOAP, emisión de recetas con firma digital y antecedentes médicos.' },
-  { id: 'patient', name: 'Paciente', description: 'Acceso a portal de paciente, citas, recetas y pautas de tratamiento.' },
-  { id: 'receptionist', name: 'Recepcionista', description: 'Gestión de agenda, asignación de box y recepción de pacientes.' },
-];
-
-// Initial App Modules (Screens)
-export const INITIAL_APP_MODULES: AppModule[] = [
-  { id: 'mod_calendario', name: 'Agenda & Citas', path_route: '/calendario', icon: 'calendar_month', badge: 'Hoy', display_order: 1 },
-  { id: 'mod_pacientes', name: 'Pacientes', path_route: '/pacientes', icon: 'group', badge: 'Activos', display_order: 2 },
-  { id: 'mod_mapa_dolor', name: 'Mapa de Dolor', path_route: '/mapa-dolor', icon: 'accessibility_new', badge: 'Fisio', display_order: 3 },
-  { id: 'mod_nutricion', name: 'Nutrición & InBody', path_route: '/nutricion', icon: 'nutrition', badge: 'Nutri', display_order: 4 },
-  { id: 'mod_medicina_general', name: 'Medicina General', path_route: '/medicina-general', icon: 'stethoscope', badge: 'Médico', display_order: 5 },
-  { id: 'mod_portal_paciente', name: 'Portal del Paciente', path_route: '/portal-paciente', icon: 'person', badge: 'B2C', display_order: 6 },
-  { id: 'mod_configuracion', name: 'Gestión de Clínica', path_route: '/configuracion', icon: 'settings', badge: 'Admin', display_order: 7 },
-  { id: 'mod_admin_access', name: 'Control de Accesos RBAC', path_route: '/admin-access', icon: 'security', badge: 'Seguridad', display_order: 8 },
-  { id: 'mod_super_admin', name: 'Super Admin SaaS', path_route: '/super-admin', icon: 'shield_person', badge: 'SaaS', display_order: 9 },
-];
-
-// Initial Role Permissions (Role <-> Module mapping)
-export const INITIAL_ROLE_PERMISSIONS: RolePermission[] = [
-  // super_admin
-  { role_id: 'super_admin', module_id: 'mod_super_admin' },
-  { role_id: 'super_admin', module_id: 'mod_admin_access' },
-  { role_id: 'super_admin', module_id: 'mod_configuracion' },
-  { role_id: 'super_admin', module_id: 'mod_calendario' },
-  { role_id: 'super_admin', module_id: 'mod_pacientes' },
-  { role_id: 'super_admin', module_id: 'mod_mapa_dolor' },
-  { role_id: 'super_admin', module_id: 'mod_nutricion' },
-  { role_id: 'super_admin', module_id: 'mod_medicina_general' },
-  { role_id: 'super_admin', module_id: 'mod_portal_paciente' },
-
-  // clinic_admin
-  { role_id: 'clinic_admin', module_id: 'mod_configuracion' },
-  { role_id: 'clinic_admin', module_id: 'mod_admin_access' },
-  { role_id: 'clinic_admin', module_id: 'mod_calendario' },
-  { role_id: 'clinic_admin', module_id: 'mod_pacientes' },
-  { role_id: 'clinic_admin', module_id: 'mod_mapa_dolor' },
-  { role_id: 'clinic_admin', module_id: 'mod_nutricion' },
-  { role_id: 'clinic_admin', module_id: 'mod_medicina_general' },
-
-  // fisioterapeuta
-  { role_id: 'fisioterapeuta', module_id: 'mod_calendario' },
-  { role_id: 'fisioterapeuta', module_id: 'mod_pacientes' },
-  { role_id: 'fisioterapeuta', module_id: 'mod_mapa_dolor' },
-  { role_id: 'fisioterapeuta', module_id: 'mod_nutricion' },
-  { role_id: 'fisioterapeuta', module_id: 'mod_medicina_general' },
-  { role_id: 'fisioterapeuta', module_id: 'mod_configuracion' },
-
-  // nutricionista
-  { role_id: 'nutricionista', module_id: 'mod_nutricion' },
-  { role_id: 'nutricionista', module_id: 'mod_calendario' },
-  { role_id: 'nutricionista', module_id: 'mod_pacientes' },
-  { role_id: 'nutricionista', module_id: 'mod_portal_paciente' },
-
-  // medico_general
-  { role_id: 'medico_general', module_id: 'mod_medicina_general' },
-  { role_id: 'medico_general', module_id: 'mod_calendario' },
-  { role_id: 'medico_general', module_id: 'mod_pacientes' },
-  { role_id: 'medico_general', module_id: 'mod_portal_paciente' },
-
-  // patient
-  { role_id: 'patient', module_id: 'mod_portal_paciente' },
-  { role_id: 'patient', module_id: 'mod_calendario' },
-
-  // receptionist
-  { role_id: 'receptionist', module_id: 'mod_calendario' },
-  { role_id: 'receptionist', module_id: 'mod_pacientes' },
-  { role_id: 'receptionist', module_id: 'mod_portal_paciente' },
-];
-
-// Local storage keys
-const STORAGE_KEYS = {
-  TENANT: 'kinesys_tenant_v2',
-  ALL_TENANTS: 'kinesys_all_tenants_v2',
-  USERS: 'kinesys_users_v2',
-  APPOINTMENTS: 'kinesys_appointments_v2',
-  PAIN_OBSERVATIONS: 'kinesys_pain_obs_v2',
-  BODY_COMPOSITIONS: 'kinesys_body_comp_v2',
-  MEDICAL_RECORDS: 'kinesys_med_rec_v2',
-  PACIENTES_CLINICOS: 'kinesys_pacientes_clinicos_v2',
-  CONSULTAS_SOAP: 'kinesys_consultas_soap_v2',
-  PRESCRIPCIONES: 'kinesys_prescripciones_v2',
-  EVALUACIONES_ANTROPOMETRICAS: 'kinesys_evaluaciones_antropometricas_v2',
-  PLANES_NUTRICIONALES: 'kinesys_planes_nutricionales_v2',
-  ORDENES_NUTRICION_FHIR: 'kinesys_ordenes_nutricion_fhir_v2',
-  PROFESSIONAL_PROFILES: 'kinesys_professional_profiles_v2',
-  REVIEWS: 'kinesys_reviews_v2',
-  INVITATIONS: 'kinesys_invitations_v2',
-  PRICING_PLANS: 'kinesys_pricing_plans_v2',
-  APP_ROLES: 'kinesys_app_roles_v2',
-  APP_MODULES: 'kinesys_app_modules_v2',
-  ROLE_PERMISSIONS: 'kinesys_role_permissions_v2',
-  PROFESSIONAL_AVAILABILITY: 'kinesys_professional_availability_v1',
-  PROFESSIONAL_AVAILABILITY_EXCEPTIONS: 'kinesys_professional_availability_exceptions_v1',
-  ACTIVE_USER_ID: 'kinesys_active_user_id_v2',
-  SUPABASE_URL: 'kinesys_supabase_url',
-  SUPABASE_KEY: 'kinesys_supabase_key',
-};
-
-class LocalStore {
-  static get<T>(key: string, defaultVal: T): T {
-    try {
-      const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : defaultVal;
-    } catch {
-      return defaultVal;
-    }
-  }
-
-  static set<T>(key: string, val: T): void {
-    try {
-      localStorage.setItem(key, JSON.stringify(val));
-    } catch (e) {
-      console.warn('LocalStorage error:', e);
-    }
-  }
+export async function createPatient(
+  tenantId: string,
+  patient: Omit<PacienteClinico, 'id' | 'tenant_id' | 'created_at' | 'updated_at'>
+): Promise<PacienteClinico> {
+  const { data, error } = await supabase
+    .from('pacientes_clinicos')
+    .insert([{ ...patient, tenant_id: tenantId }])
+    .select()
+    .single();
+  return assertSupabaseOk({ data, error }) as PacienteClinico;
 }
 
-class LocalQueryBuilder {
-  private tableName: string;
-  private filters: ((item: any) => boolean)[] = [];
-  private exactFilters: Record<string, any> = {};
-  private orderField?: string;
-  private orderAscending: boolean = true;
-  private limitCount?: number;
-  private isDeleteOperation: boolean = false;
+// ─── CRUD Citas ────────────────────────────────────────────────────────────────
 
-  constructor(tableName: string) {
-    this.tableName = tableName;
-  }
+export async function getAppointments(
+  tenantId: string,
+  filters?: { professionalId?: string; patientId?: string }
+): Promise<Appointment[]> {
+  let query = supabase
+    .from('appointments')
+    .select('*, paciente:pacientes_clinicos(id, first_name, last_name, telecom_email, telecom_phone)')
+    .eq('tenant_id', tenantId)
+    .order('start_time', { ascending: true });
 
-  select(columns: string = '*') {
-    return this;
-  }
+  if (filters?.professionalId) query = query.eq('professional_id', filters.professionalId);
+  if (filters?.patientId) query = query.eq('patient_id', filters.patientId);
 
-  eq(column: string, value: any) {
-    this.filters.push((item) => item[column] === value);
-    this.exactFilters[column] = value;
-    return this;
-  }
+  const { data, error } = await query;
+  if (error) throw error;
 
-  neq(column: string, value: any) {
-    this.filters.push((item) => item[column] !== value);
-    return this;
-  }
-
-  ilike(column: string, pattern: string) {
-    const cleanPattern = pattern.replace(/%/g, '').toLowerCase();
-    this.filters.push((item) => {
-      const val = item[column];
-      if (typeof val !== 'string') return false;
-      return val.toLowerCase().includes(cleanPattern);
-    });
-    return this;
-  }
-
-  like(column: string, pattern: string) {
-    return this.ilike(column, pattern);
-  }
-
-  or(filtersString: string) {
-    const subFilters = filtersString.split(',').map((f) => f.trim());
-    this.filters.push((item) => {
-      return subFilters.some((sub) => {
-        const parts = sub.split('.');
-        if (parts.length >= 3) {
-          const col = parts[0];
-          const op = parts[1];
-          const val = parts.slice(2).join('.').replace(/%/g, '').toLowerCase();
-          const itemVal = (item[col] || '').toString().toLowerCase();
-          if (op === 'ilike' || op === 'like') {
-            return itemVal.includes(val);
+  return ((data as Record<string, unknown>[]) || []).map((row) => {
+    const paciente = row.paciente as { first_name?: string; last_name?: string; telecom_email?: string; telecom_phone?: string } | null;
+    return {
+      ...row,
+      patient: paciente
+        ? {
+            full_name: `${paciente.first_name || ''} ${paciente.last_name || ''}`.trim(),
+            email: paciente.telecom_email || '',
+            phone: paciente.telecom_phone,
           }
-          if (op === 'eq') {
-            return itemVal === val;
-          }
-        }
-        return false;
-      });
-    });
-    return this;
-  }
-
-  limit(count: number) {
-    this.limitCount = count;
-    return this;
-  }
-
-  gte(column: string, value: string) {
-    this.filters.push((item) => {
-      if (!item[column]) return false;
-      return new Date(item[column]) >= new Date(value);
-    });
-    return this;
-  }
-
-  lte(column: string, value: string) {
-    this.filters.push((item) => {
-      if (!item[column]) return false;
-      return new Date(item[column]) <= new Date(value);
-    });
-    return this;
-  }
-
-  order(column: string, { ascending = true }: { ascending?: boolean } = {}) {
-    this.orderField = column;
-    this.orderAscending = ascending;
-    return this;
-  }
-
-  async single() {
-    const { data, error } = await this.executeSelect();
-    if (error) return { data: null, error };
-    return { data: (data && data.length > 0) ? data[0] : null, error: null };
-  }
-
-  async then(resolve: (val: { data: any; error: any }) => void) {
-    if (this.isDeleteOperation) {
-      const result = await this.executeDelete();
-      resolve(result);
-      return;
-    }
-    const result = await this.executeSelect();
-    resolve(result);
-  }
-
-  private async executeSelect(): Promise<{ data: any; error: any }> {
-    // ─── DUAL MODE / API FALLBACK ───
-    try {
-      const API_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
-      const token = await LocalStore.get('sb-access-token', '');
-      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-
-      if (this.tableName === 'users' && this.exactFilters['role'] === 'patient') {
-        const res = await fetch(`${API_URL}/api/v1/patients`, { headers });
-        if (res.ok) return { data: await res.json(), error: null };
-      }
-      if (this.tableName === 'consultas_soap' && this.exactFilters['patient_id']) {
-        const res = await fetch(`${API_URL}/api/v1/patients/${this.exactFilters['patient_id']}/encounters`, { headers });
-        if (res.ok) return { data: await res.json(), error: null };
-      }
-      if (this.tableName === 'evaluaciones_antropometricas' && this.exactFilters['patient_id']) {
-        const res = await fetch(`${API_URL}/api/v1/patients/${this.exactFilters['patient_id']}/anthropometry`, { headers });
-        if (res.ok) return { data: await res.json(), error: null };
-      }
-      if (this.tableName === 'planes_nutricionales' && this.exactFilters['patient_id']) {
-        const res = await fetch(`${API_URL}/api/v1/patients/${this.exactFilters['patient_id']}/nutrition`, { headers });
-        if (res.ok) return { data: await res.json(), error: null };
-      }
-    } catch (e) {
-      console.warn('Backend no disponible, usando mocks locales (LocalStore).');
-    }
-
-    try {
-      let rawData: any[] = [];
-      const users = LocalStore.get<User[]>(STORAGE_KEYS.USERS, INITIAL_USERS);
-
-      if (this.tableName === 'appointments') {
-        const appointments = LocalStore.get<Appointment[]>(STORAGE_KEYS.APPOINTMENTS, INITIAL_APPOINTMENTS);
-        rawData = appointments.map((appt) => {
-          const patientUser = users.find((u) => u.id === appt.patient_id);
-          const profUser = users.find((u) => u.id === appt.professional_id);
-          return {
-            ...appt,
-            patient: patientUser ? {
-              full_name: patientUser.full_name,
-              email: patientUser.email,
-              phone: patientUser.phone,
-              avatar_url: patientUser.avatar_url,
-              rut_or_dni: patientUser.rut_or_dni,
-            } : appt.patient,
-            professional: profUser ? {
-              full_name: profUser.full_name,
-              email: profUser.email,
-              role: profUser.role,
-              specialty: profUser.specialty,
-            } : appt.professional,
-          };
-        });
-      } else if (this.tableName === 'users') {
-        const profiles = LocalStore.get<ProfessionalProfile[]>(STORAGE_KEYS.PROFESSIONAL_PROFILES, INITIAL_PROFESSIONAL_PROFILES);
-        const reviews = LocalStore.get<Review[]>(STORAGE_KEYS.REVIEWS, INITIAL_REVIEWS);
-        rawData = users.map((u) => {
-          const userProfile = profiles.find((p) => p.user_id === u.id);
-          const userReviews = reviews.filter((r) => r.professional_id === u.id && r.status === 'approved');
-          return {
-            ...u,
-            professional_profiles: userProfile ? [userProfile] : [],
-            reviews: userReviews,
-          };
-        });
-      } else if (this.tableName === 'tenants') {
-        rawData = LocalStore.get<Tenant[]>(STORAGE_KEYS.ALL_TENANTS, ALL_DEMO_TENANTS);
-      } else if (this.tableName === 'pain_observations') {
-        rawData = LocalStore.get<PainObservation[]>(STORAGE_KEYS.PAIN_OBSERVATIONS, INITIAL_PAIN_OBSERVATIONS);
-      } else if (this.tableName === 'body_compositions') {
-        rawData = LocalStore.get<BodyCompositionRecord[]>(STORAGE_KEYS.BODY_COMPOSITIONS, INITIAL_BODY_COMPOSITIONS);
-      } else if (this.tableName === 'general_medical_records') {
-        rawData = LocalStore.get<GeneralMedicalRecord[]>(STORAGE_KEYS.MEDICAL_RECORDS, INITIAL_MEDICAL_RECORDS);
-      } else if (this.tableName === 'pacientes_clinicos') {
-        rawData = LocalStore.get<PacienteClinico[]>(STORAGE_KEYS.PACIENTES_CLINICOS, INITIAL_PACIENTES_CLINICOS);
-      } else if (this.tableName === 'consultas_soap') {
-        rawData = LocalStore.get<ConsultaSOP[]>(STORAGE_KEYS.CONSULTAS_SOAP, INITIAL_CONSULTAS_SOAP);
-      } else if (this.tableName === 'prescripciones') {
-        rawData = LocalStore.get<PrescripcionMedica[]>(STORAGE_KEYS.PRESCRIPCIONES, INITIAL_PRESCRIPCIONES);
-      } else if (this.tableName === 'evaluaciones_antropometricas') {
-        rawData = LocalStore.get<EvaluacionAntropometrica[]>(STORAGE_KEYS.EVALUACIONES_ANTROPOMETRICAS, INITIAL_EVALUACIONES_ANTROPOMETRICAS);
-      } else if (this.tableName === 'planes_nutricionales') {
-        rawData = LocalStore.get<PlanNutricional[]>(STORAGE_KEYS.PLANES_NUTRICIONALES, INITIAL_NUTRITION_PLANS);
-      } else if (this.tableName === 'ordenes_nutricion_fhir' || this.tableName === 'nutrition_orders') {
-        rawData = LocalStore.get<OrdenNutricionFHIR[]>(STORAGE_KEYS.ORDENES_NUTRICION_FHIR, INITIAL_FHIR_NUTRITION_ORDERS);
-      } else if (this.tableName === 'team_invitations') {
-        rawData = LocalStore.get<TeamInvitation[]>(STORAGE_KEYS.INVITATIONS, INITIAL_INVITATIONS);
-      } else if (this.tableName === 'pricing_plans') {
-        rawData = LocalStore.get<PricingPlanConfig[]>(STORAGE_KEYS.PRICING_PLANS, PRICING_PLANS);
-      } else if (this.tableName === 'professional_profiles') {
-        rawData = LocalStore.get<ProfessionalProfile[]>(STORAGE_KEYS.PROFESSIONAL_PROFILES, INITIAL_PROFESSIONAL_PROFILES);
-      } else if (this.tableName === 'reviews') {
-        rawData = LocalStore.get<Review[]>(STORAGE_KEYS.REVIEWS, INITIAL_REVIEWS);
-      } else if (this.tableName === 'app_roles') {
-        rawData = LocalStore.get<AppRole[]>(STORAGE_KEYS.APP_ROLES, INITIAL_APP_ROLES);
-      } else if (this.tableName === 'app_modules') {
-        rawData = LocalStore.get<AppModule[]>(STORAGE_KEYS.APP_MODULES, INITIAL_APP_MODULES);
-      } else if (this.tableName === 'role_permissions') {
-        rawData = LocalStore.get<RolePermission[]>(STORAGE_KEYS.ROLE_PERMISSIONS, INITIAL_ROLE_PERMISSIONS);
-      } else if (this.tableName === 'professional_availability') {
-        rawData = LocalStore.get<ProfessionalAvailability[]>(
-          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY,
-          INITIAL_PROFESSIONAL_AVAILABILITY
-        );
-      } else if (this.tableName === 'professional_availability_exceptions') {
-        rawData = LocalStore.get<ProfessionalAvailabilityException[]>(
-          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS,
-          INITIAL_PROFESSIONAL_AVAILABILITY_EXCEPTIONS
-        );
-      }
-
-      let filtered = rawData;
-      for (const fn of this.filters) {
-        filtered = filtered.filter(fn);
-      }
-
-      if (this.orderField) {
-        const field = this.orderField;
-        filtered.sort((a, b) => {
-          const valA = a[field];
-          const valB = b[field];
-          if (valA < valB) return this.orderAscending ? -1 : 1;
-          if (valA > valB) return this.orderAscending ? 1 : -1;
-          return 0;
-        });
-      }
-
-      if (this.limitCount && this.limitCount > 0) {
-        filtered = filtered.slice(0, this.limitCount);
-      }
-
-      return { data: filtered, error: null };
-    } catch (err: any) {
-      return { data: null, error: err };
-    }
-  }
-
-  async insert(data: any | any[]) {
-    const items = Array.isArray(data) ? data : [data];
-
-    // ─── DUAL MODE / API FALLBACK ───
-    try {
-      const API_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
-      const token = await LocalStore.get('sb-access-token', '');
-      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-
-      if (this.tableName === 'users' && items[0]?.role === 'patient') {
-        const res = await fetch(`${API_URL}/api/v1/patients`, { method: 'POST', headers, body: JSON.stringify(items[0]) });
-        if (res.ok) return { data: [await res.json()], error: null };
-      }
-      if (this.tableName === 'consultas_soap') {
-        const res = await fetch(`${API_URL}/api/v1/encounters`, { method: 'POST', headers, body: JSON.stringify(items[0]) });
-        if (res.ok) return { data: [await res.json()], error: null };
-      }
-      if (this.tableName === 'evaluaciones_antropometricas') {
-        const res = await fetch(`${API_URL}/api/v1/anthropometry`, { method: 'POST', headers, body: JSON.stringify(items[0]) });
-        if (res.ok) return { data: [await res.json()], error: null };
-      }
-      if (this.tableName === 'planes_nutricionales') {
-        const res = await fetch(`${API_URL}/api/v1/nutrition`, { method: 'POST', headers, body: JSON.stringify(items[0]) });
-        if (res.ok) return { data: [await res.json()], error: null };
-      }
-    } catch (e) {
-      console.warn('Backend no disponible, usando mocks locales (LocalStore).');
-    }
-
-    try {
-      const users = LocalStore.get<User[]>(STORAGE_KEYS.USERS, INITIAL_USERS);
-
-      if (this.tableName === 'tenants') {
-        const allTenants = LocalStore.get<Tenant[]>(STORAGE_KEYS.ALL_TENANTS, ALL_DEMO_TENANTS);
-        const newTenants: Tenant[] = items.map((item) => ({
-          id: item.id || `tenant_${Date.now()}`,
-          subscription_plan: item.subscription_plan || 'starter',
-          subscription_status: item.subscription_status || 'trialing',
-          max_users: item.max_users || 1,
-          trial_ends_at: item.trial_ends_at || new Date(Date.now() + 7 * 86400000).toISOString(),
-          cancellation_window_hours: item.cancellation_window_hours ?? 24,
-          timezone: item.timezone || 'America/Santiago (UTC-3)',
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.ALL_TENANTS, [...allTenants, ...newTenants]);
-        LocalStore.set(STORAGE_KEYS.TENANT, newTenants[0]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'tenants' } }));
-        return { data: newTenants, error: null };
-      }
-
-      if (this.tableName === 'users') {
-        const newUsers: User[] = items.map((item) => ({
-          id: item.id || `user_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          tenant_id: item.tenant_id || DEFAULT_TENANT_ID,
-          role: item.role || 'patient',
-          is_active: item.is_active ?? true,
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.USERS, [...users, ...newUsers]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'users' } }));
-        return { data: newUsers, error: null };
-      }
-
-      if (this.tableName === 'appointments') {
-        const current = LocalStore.get<Appointment[]>(STORAGE_KEYS.APPOINTMENTS, INITIAL_APPOINTMENTS);
-        const newAppts: Appointment[] = items.map((item) => ({
-          id: item.id || `appt_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-          tenant_id: item.tenant_id || DEFAULT_TENANT_ID,
-          status: item.status || 'booked',
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.APPOINTMENTS, [...newAppts, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'appointments' } }));
-        return { data: newAppts, error: null };
-      }
-
-      if (this.tableName === 'pain_observations') {
-        const current = LocalStore.get<PainObservation[]>(STORAGE_KEYS.PAIN_OBSERVATIONS, INITIAL_PAIN_OBSERVATIONS);
-        const newObs: PainObservation[] = items.map((item) => ({
-          id: item.id || `pain_obs_${Date.now()}`,
-          created_at: item.created_at || new Date().toISOString(),
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.PAIN_OBSERVATIONS, [newObs[0], ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'pain_observations' } }));
-        return { data: newObs, error: null };
-      }
-
-      if (this.tableName === 'body_compositions') {
-        const current = LocalStore.get<BodyCompositionRecord[]>(STORAGE_KEYS.BODY_COMPOSITIONS, INITIAL_BODY_COMPOSITIONS);
-        const newRecs: BodyCompositionRecord[] = items.map((item) => ({
-          id: item.id || `body_comp_${Date.now()}`,
-          created_at: item.created_at || new Date().toISOString(),
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.BODY_COMPOSITIONS, [newRecs[0], ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'body_compositions' } }));
-        return { data: newRecs, error: null };
-      }
-
-      if (this.tableName === 'general_medical_records') {
-        const current = LocalStore.get<GeneralMedicalRecord[]>(STORAGE_KEYS.MEDICAL_RECORDS, INITIAL_MEDICAL_RECORDS);
-        const newRecs: GeneralMedicalRecord[] = items.map((item) => ({
-          id: item.id || `med_rec_${Date.now()}`,
-          created_at: item.created_at || new Date().toISOString(),
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.MEDICAL_RECORDS, [newRecs[0], ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'general_medical_records' } }));
-        return { data: newRecs, error: null };
-      }
-
-      if (this.tableName === 'pacientes_clinicos') {
-        const current = LocalStore.get<PacienteClinico[]>(STORAGE_KEYS.PACIENTES_CLINICOS, INITIAL_PACIENTES_CLINICOS);
-        const newPatients: PacienteClinico[] = items.map((item) => ({
-          id: item.id || `pat_cli_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          active: item.active ?? true,
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.PACIENTES_CLINICOS, [...newPatients, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'pacientes_clinicos' } }));
-        return { data: newPatients, error: null };
-      }
-
-      if (this.tableName === 'consultas_soap') {
-        const current = LocalStore.get<ConsultaSOP[]>(STORAGE_KEYS.CONSULTAS_SOAP, INITIAL_CONSULTAS_SOAP);
-        const newEncounters: ConsultaSOP[] = items.map((item) => ({
-          id: item.id || `soap_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          status: item.status || 'completed',
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.CONSULTAS_SOAP, [...newEncounters, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'consultas_soap' } }));
-        return { data: newEncounters, error: null };
-      }
-
-      if (this.tableName === 'prescripciones') {
-        const current = LocalStore.get<PrescripcionMedica[]>(STORAGE_KEYS.PRESCRIPCIONES, INITIAL_PRESCRIPCIONES);
-        const newPrescriptions: PrescripcionMedica[] = items.map((item) => ({
-          id: item.id || `rx_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          status: item.status || 'active',
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.PRESCRIPCIONES, [...newPrescriptions, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'prescripciones' } }));
-        return { data: newPrescriptions, error: null };
-      }
-
-      if (this.tableName === 'evaluaciones_antropometricas') {
-        const current = LocalStore.get<EvaluacionAntropometrica[]>(STORAGE_KEYS.EVALUACIONES_ANTROPOMETRICAS, INITIAL_EVALUACIONES_ANTROPOMETRICAS);
-        const newAntropos: EvaluacionAntropometrica[] = items.map((item) => ({
-          id: item.id || `antropo_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.EVALUACIONES_ANTROPOMETRICAS, [...newAntropos, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'evaluaciones_antropometricas' } }));
-        return { data: newAntropos, error: null };
-      }
-
-      if (this.tableName === 'planes_nutricionales') {
-        const current = LocalStore.get<PlanNutricional[]>(STORAGE_KEYS.PLANES_NUTRICIONALES, INITIAL_NUTRITION_PLANS);
-        const newPlans: PlanNutricional[] = items.map((item) => ({
-          id: item.id || `plan_nutri_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          status: item.status || 'active',
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.PLANES_NUTRICIONALES, [...newPlans, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'planes_nutricionales' } }));
-        return { data: newPlans, error: null };
-      }
-
-      if (this.tableName === 'ordenes_nutricion_fhir' || this.tableName === 'nutrition_orders') {
-        const current = LocalStore.get<OrdenNutricionFHIR[]>(STORAGE_KEYS.ORDENES_NUTRICION_FHIR, INITIAL_FHIR_NUTRITION_ORDERS);
-        const newOrders: OrdenNutricionFHIR[] = items.map((item) => ({
-          id: item.id || `fhir_order_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          status: item.status || 'active',
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.ORDENES_NUTRICION_FHIR, [...newOrders, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'ordenes_nutricion_fhir' } }));
-        return { data: newOrders, error: null };
-      }
-
-      if (this.tableName === 'team_invitations') {
-        const current = LocalStore.get<TeamInvitation[]>(STORAGE_KEYS.INVITATIONS, INITIAL_INVITATIONS);
-        const newInvs: TeamInvitation[] = items.map((item) => ({
-          id: item.id || `inv_${Date.now()}`,
-          created_at: item.created_at || new Date().toISOString(),
-          status: 'pending',
-          expires_at: new Date(Date.now() + 7 * 86400000).toISOString(),
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.INVITATIONS, [...newInvs, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'team_invitations' } }));
-        return { data: newInvs, error: null };
-      }
-
-      if (this.tableName === 'professional_profiles') {
-        const current = LocalStore.get<ProfessionalProfile[]>(STORAGE_KEYS.PROFESSIONAL_PROFILES, INITIAL_PROFESSIONAL_PROFILES);
-        const newProfiles: ProfessionalProfile[] = items.map((item) => ({
-          id: item.id || `prof_profile_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          social_links: item.social_links || {},
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.PROFESSIONAL_PROFILES, [...newProfiles, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'professional_profiles' } }));
-        return { data: newProfiles, error: null };
-      }
-
-      if (this.tableName === 'reviews') {
-        const current = LocalStore.get<Review[]>(STORAGE_KEYS.REVIEWS, INITIAL_REVIEWS);
-        const newReviews: Review[] = items.map((item) => ({
-          id: item.id || `rev_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          status: item.status || 'approved', // Auto-approved for patient portal demonstration or per configuration
-          helpful_votes: item.helpful_votes || 0,
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.REVIEWS, [...newReviews, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'reviews' } }));
-        return { data: newReviews, error: null };
-      }
-
-      if (this.tableName === 'role_permissions') {
-        const current = LocalStore.get<RolePermission[]>(STORAGE_KEYS.ROLE_PERMISSIONS, INITIAL_ROLE_PERMISSIONS);
-        const newPerms: RolePermission[] = items.map((item) => ({
-          role_id: item.role_id,
-          module_id: item.module_id,
-          created_at: item.created_at || new Date().toISOString(),
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.ROLE_PERMISSIONS, [...newPerms, ...current]);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'role_permissions' } }));
-        return { data: newPerms, error: null };
-      }
-
-      if (this.tableName === 'professional_availability') {
-        const current = LocalStore.get<ProfessionalAvailability[]>(
-          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY,
-          INITIAL_PROFESSIONAL_AVAILABILITY
-        );
-        const newBlocks: ProfessionalAvailability[] = items.map((item) => ({
-          id: item.id || `avail_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          is_active: item.is_active ?? true,
-          slot_duration: item.slot_duration ?? 45,
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY, [...newBlocks, ...current]);
-        window.dispatchEvent(
-          new CustomEvent('kinesys_data_updated', { detail: { table: 'professional_availability' } })
-        );
-        return { data: newBlocks, error: null };
-      }
-
-      if (this.tableName === 'professional_availability_exceptions') {
-        const current = LocalStore.get<ProfessionalAvailabilityException[]>(
-          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS,
-          INITIAL_PROFESSIONAL_AVAILABILITY_EXCEPTIONS
-        );
-        const newExceptions: ProfessionalAvailabilityException[] = items.map((item) => ({
-          id: item.id || `avail_exc_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-          created_at: item.created_at || new Date().toISOString(),
-          ...item,
-        }));
-        LocalStore.set(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS, [
-          ...newExceptions,
-          ...current,
-        ]);
-        window.dispatchEvent(
-          new CustomEvent('kinesys_data_updated', {
-            detail: { table: 'professional_availability_exceptions' },
-          })
-        );
-        return { data: newExceptions, error: null };
-      }
-
-      return { data: items, error: null };
-    } catch (err: any) {
-      return { data: null, error: err };
-    }
-  }
-
-  async update(updates: any) {
-    try {
-      if (this.tableName === 'users') {
-        const currentUsers = LocalStore.get<User[]>(STORAGE_KEYS.USERS, INITIAL_USERS);
-        const updatedUsers = currentUsers.map((u) => {
-          const matches = this.filters.every((fn) => fn(u));
-          return matches ? { ...u, ...updates } : u;
-        });
-        LocalStore.set(STORAGE_KEYS.USERS, updatedUsers);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'users' } }));
-        return { data: updates, error: null };
-      }
-
-      if (this.tableName === 'tenants') {
-        const allTenants = LocalStore.get<Tenant[]>(STORAGE_KEYS.ALL_TENANTS, ALL_DEMO_TENANTS);
-        const updatedTenants = allTenants.map((t) => {
-          const matches = this.filters.every((fn) => fn(t));
-          return matches ? { ...t, ...updates } : t;
-        });
-        LocalStore.set(STORAGE_KEYS.ALL_TENANTS, updatedTenants);
-        const current = LocalStore.get<Tenant>(STORAGE_KEYS.TENANT, INITIAL_TENANT);
-        if (this.filters.some((fn) => fn(current))) {
-          LocalStore.set(STORAGE_KEYS.TENANT, { ...current, ...updates });
-        }
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'tenants' } }));
-        return { data: updates, error: null };
-      }
-
-      if (this.tableName === 'pricing_plans') {
-        const plans = LocalStore.get<PricingPlanConfig[]>(STORAGE_KEYS.PRICING_PLANS, PRICING_PLANS);
-        const updated = plans.map((p) => {
-          const matches = this.filters.every((fn) => fn(p));
-          return matches ? { ...p, ...updates } : p;
-        });
-        LocalStore.set(STORAGE_KEYS.PRICING_PLANS, updated);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'pricing_plans' } }));
-        return { data: updated, error: null };
-      }
-
-      if (this.tableName === 'appointments') {
-        const current = LocalStore.get<Appointment[]>(STORAGE_KEYS.APPOINTMENTS, INITIAL_APPOINTMENTS);
-        const updated = current.map((appt) => {
-          const matches = this.filters.every((fn) => fn(appt));
-          return matches ? { ...appt, ...updates } : appt;
-        });
-        LocalStore.set(STORAGE_KEYS.APPOINTMENTS, updated);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'appointments' } }));
-        return { data: updated, error: null };
-      }
-
-      return { data: updates, error: null };
-    } catch (err: any) {
-      return { data: null, error: err };
-    }
-  }
-
-  delete() {
-    this.isDeleteOperation = true;
-    return this;
-  }
-
-  private async executeDelete(): Promise<{ data: any; error: any }> {
-    try {
-      if (this.tableName === 'appointments') {
-        const current = LocalStore.get<Appointment[]>(STORAGE_KEYS.APPOINTMENTS, INITIAL_APPOINTMENTS);
-        const updated = current.filter((appt) => !this.filters.every((fn) => fn(appt)));
-        LocalStore.set(STORAGE_KEYS.APPOINTMENTS, updated);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'appointments' } }));
-        return { data: null, error: null };
-      }
-
-      if (this.tableName === 'pain_observations') {
-        const current = LocalStore.get<PainObservation[]>(STORAGE_KEYS.PAIN_OBSERVATIONS, INITIAL_PAIN_OBSERVATIONS);
-        const updated = current.filter((obs) => !this.filters.every((fn) => fn(obs)));
-        LocalStore.set(STORAGE_KEYS.PAIN_OBSERVATIONS, updated);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'pain_observations' } }));
-        return { data: null, error: null };
-      }
-
-      if (this.tableName === 'role_permissions') {
-        const current = LocalStore.get<RolePermission[]>(STORAGE_KEYS.ROLE_PERMISSIONS, INITIAL_ROLE_PERMISSIONS);
-        const updated = current.filter((perm) => !this.filters.every((fn) => fn(perm)));
-        LocalStore.set(STORAGE_KEYS.ROLE_PERMISSIONS, updated);
-        window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'role_permissions' } }));
-        return { data: null, error: null };
-      }
-
-      if (this.tableName === 'professional_availability') {
-        const current = LocalStore.get<ProfessionalAvailability[]>(
-          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY,
-          INITIAL_PROFESSIONAL_AVAILABILITY
-        );
-        const updated = current.filter((row) => !this.filters.every((fn) => fn(row)));
-        LocalStore.set(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY, updated);
-        window.dispatchEvent(
-          new CustomEvent('kinesys_data_updated', { detail: { table: 'professional_availability' } })
-        );
-        return { data: null, error: null };
-      }
-
-      if (this.tableName === 'professional_availability_exceptions') {
-        const current = LocalStore.get<ProfessionalAvailabilityException[]>(
-          STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS,
-          INITIAL_PROFESSIONAL_AVAILABILITY_EXCEPTIONS
-        );
-        const updated = current.filter((row) => !this.filters.every((fn) => fn(row)));
-        LocalStore.set(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS, updated);
-        window.dispatchEvent(
-          new CustomEvent('kinesys_data_updated', {
-            detail: { table: 'professional_availability_exceptions' },
-          })
-        );
-        return { data: null, error: null };
-      }
-
-      return { data: null, error: null };
-    } catch (err: any) {
-      return { data: null, error: err };
-    }
-  }
+        : undefined,
+    } as Appointment;
+  });
 }
 
-function createSupabaseProxy() {
-  // Auth is now handled by supabaseAuth.ts
-  // Data operations use LocalQueryBuilder (mock) until Go backend is live
-  // When backend is ready, pages will use apiClient.ts directly
-
-  return {
-    from: (table: string) => {
-      return new LocalQueryBuilder(table);
-    },
-    auth: {
-      getUser: authGetUser,
-      getSession: authGetSession,
-      signInWithOAuth: authSignInWithOAuth,
-      signInWithOtp: authSignInWithOtp,
-      verifyOtp: authVerifyOtp,
-      signOut: authSignOut,
-      onAuthStateChange: authOnAuthStateChange,
-    },
-    storage: {
-      from: (bucketId: string) => {
-        // Supabase Storage — uses real client if available, otherwise localStorage mock
-        if (supabaseAuthClient && (supabaseAuthClient as any).storage) {
-          return (supabaseAuthClient as any).storage.from(bucketId);
-        }
-        return {
-          upload: async (filePath: string, file: File | Blob, _options?: any) => {
-            try {
-              const reader = new FileReader();
-              const base64Promise = new Promise<string>((resolve, reject) => {
-                reader.onload = () => resolve(reader.result as string);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-              });
-              const dataUrl = await base64Promise;
-              const storageKey = `kinesys_storage_${bucketId}_${filePath}`;
-              try {
-                localStorage.setItem(storageKey, dataUrl);
-              } catch (e) {
-                console.warn('LocalStorage image quota reached, using in-memory reference:', e);
-              }
-              return {
-                data: { path: filePath, fullPath: `${bucketId}/${filePath}` },
-                error: null,
-              };
-            } catch (err: any) {
-              return { data: null, error: err };
-            }
-          },
-          getPublicUrl: (filePath: string) => {
-            const storageKey = `kinesys_storage_${bucketId}_${filePath}`;
-            const stored = localStorage.getItem(storageKey);
-            if (stored) {
-              return { data: { publicUrl: stored } };
-            }
-            return {
-              data: {
-                publicUrl: `https://images.unsplash.com/photo-1629909613654-28e377c37b09?w=300&auto=format&fit=crop&q=80`,
-              },
-            };
-          },
-          remove: async (paths: string[]) => {
-            paths.forEach((p) => {
-              localStorage.removeItem(`kinesys_storage_${bucketId}_${p}`);
-            });
-            return { data: paths, error: null };
-          },
-          list: async () => {
-            return { data: [], error: null };
-          },
-        };
-      },
-    },
-    functions: {
-      invoke: async (functionName: string, options?: { body?: any; headers?: Record<string, string> }) => {
-        // Supabase Edge Functions — uses real client if available
-        if (supabaseAuthClient && (supabaseAuthClient as any).functions) {
-          return (supabaseAuthClient as any).functions.invoke(functionName, options);
-        }
-
-        // Local simulation / fallback for Edge Functions (e.g. send-patient-document)
-        await new Promise((resolve) => setTimeout(resolve, 750));
-        const body = options?.body || {};
-
-        if (functionName === 'send-patient-document') {
-          const toEmail = body.to_email || 'paciente@ejemplo.com';
-          const filename = body.filename || 'Documento_Clinico.pdf';
-          const patientName = body.patient_name || 'Paciente';
-
-          console.log(`[Supabase Edge Function Mock: ${functionName}] Email successfully dispatched to ${toEmail} with attachment "${filename}" for ${patientName}`);
-
-          return {
-            data: {
-              success: true,
-              messageId: `eco_msg_${Date.now()}`,
-              recipient: toEmail,
-              document_type: body.document_type || 'Plan Nutricional',
-              eco_saved: { paper_sheets: 2, water_liters: 20 },
-              message: `El documento fue enviado exitosamente al correo ${toEmail}.`,
-            },
-            error: null,
-          };
-        }
-
-        return {
-          data: { success: true, message: `Function ${functionName} executed successfully.` },
-          error: null,
-        };
-      },
-    },
-    resetLocalDatabase: () => {
-      localStorage.removeItem(STORAGE_KEYS.TENANT);
-      localStorage.removeItem(STORAGE_KEYS.ALL_TENANTS);
-      localStorage.removeItem(STORAGE_KEYS.USERS);
-      localStorage.removeItem(STORAGE_KEYS.APPOINTMENTS);
-      localStorage.removeItem(STORAGE_KEYS.PAIN_OBSERVATIONS);
-      localStorage.removeItem(STORAGE_KEYS.BODY_COMPOSITIONS);
-      localStorage.removeItem(STORAGE_KEYS.MEDICAL_RECORDS);
-      localStorage.removeItem(STORAGE_KEYS.PLANES_NUTRICIONALES);
-      localStorage.removeItem(STORAGE_KEYS.ORDENES_NUTRICION_FHIR);
-      localStorage.removeItem(STORAGE_KEYS.PROFESSIONAL_PROFILES);
-      localStorage.removeItem(STORAGE_KEYS.REVIEWS);
-      localStorage.removeItem(STORAGE_KEYS.INVITATIONS);
-      localStorage.removeItem(STORAGE_KEYS.PRICING_PLANS);
-      localStorage.removeItem(STORAGE_KEYS.APP_ROLES);
-      localStorage.removeItem(STORAGE_KEYS.APP_MODULES);
-      localStorage.removeItem(STORAGE_KEYS.ROLE_PERMISSIONS);
-      localStorage.removeItem(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY);
-      localStorage.removeItem(STORAGE_KEYS.PROFESSIONAL_AVAILABILITY_EXCEPTIONS);
-      window.dispatchEvent(new CustomEvent('kinesys_data_updated', { detail: { table: 'all' } }));
-    },
-    isUsingLocalEngine: () => !supabaseAuthClient,
-  };
+export async function createAppointment(
+  data: Omit<Appointment, 'id' | 'created_at' | 'updated_at' | 'patient' | 'professional'>
+): Promise<Appointment> {
+  const { data: row, error } = await supabase.from('appointments').insert([data]).select().single();
+  return assertSupabaseOk({ data: row, error }) as Appointment;
 }
 
-export const supabase = createSupabaseProxy();
+export async function updateAppointment(
+  id: string,
+  updates: Partial<Appointment>
+): Promise<Appointment> {
+  const { data, error } = await supabase.from('appointments').update(updates).eq('id', id).select().single();
+  return assertSupabaseOk({ data, error }) as Appointment;
+}
 
-/**
- * Formats patient full name for privacy on public review lists (e.g. "Camila Soto Valenzuela" -> "Camila S.")
- */
+export async function deleteAppointment(id: string): Promise<void> {
+  const { error } = await supabase.from('appointments').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ─── Clínico ───────────────────────────────────────────────────────────────────
+
+export async function saveSoapEncounter(data: Omit<ConsultaSOP, 'id' | 'created_at' | 'updated_at'>): Promise<ConsultaSOP> {
+  const { data: row, error } = await supabase.from('consultas_soap').insert([data]).select().single();
+  return assertSupabaseOk({ data: row, error }) as ConsultaSOP;
+}
+
+export async function saveAnthropometry(
+  tenantId: string,
+  patientId: string,
+  nutritionistId: string,
+  record: Record<string, unknown>
+): Promise<void> {
+  const { error } = await supabase.from('evaluaciones_antropometricas').insert([
+    { tenant_id: tenantId, patient_id: patientId, nutritionist_id: nutritionistId, data: record },
+  ]);
+  if (error) throw error;
+}
+
+export async function saveNutritionalPlan(
+  tenantId: string,
+  patientId: string,
+  nutritionistId: string,
+  planName: string,
+  planType: string,
+  data: Record<string, unknown>
+): Promise<void> {
+  const { error } = await supabase.from('planes_nutricionales').insert([
+    {
+      tenant_id: tenantId,
+      patient_id: patientId,
+      nutritionist_id: nutritionistId,
+      plan_name: planName,
+      plan_type: planType,
+      data,
+    },
+  ]);
+  if (error) throw error;
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
 export function formatPatientNameForPrivacy(fullName?: string): string {
   if (!fullName || typeof fullName !== 'string') return 'Paciente KineSys';
   const parts = fullName.trim().split(/\s+/);
   if (parts.length === 1) return parts[0];
-  const firstName = parts[0];
-  const lastInitial = parts[1].charAt(0).toUpperCase();
-  return `${firstName} ${lastInitial}.`;
+  return `${parts[0]} ${parts[1].charAt(0).toUpperCase()}.`;
 }
 
-/**
- * Fetches all active professionals with joined profiles and moderated reviews
- */
-export async function fetchProfessionalsWithFullDetails(): Promise<ProfessionalWithDetails[]> {
-  try {
-    const { data: usersData, error: usersErr } = await supabase.from('users').select('*');
-    if (usersErr || !usersData) throw usersErr || new Error('Failed to fetch users');
+export async function fetchProfessionalsWithFullDetails(tenantId?: string): Promise<ProfessionalWithDetails[]> {
+  let query = supabase.from('users').select('*');
+  if (tenantId) query = query.eq('tenant_id', tenantId);
 
-    const professionals = usersData.filter((u: User) =>
-      ['fisioterapeuta', 'nutricionista', 'medico_general', 'professional', 'clinic_admin'].includes(u.role)
-    );
+  const { data: usersData, error: usersErr } = await query;
+  if (usersErr) throw usersErr;
 
-    const { data: profilesData } = await supabase.from('professional_profiles').select('*');
-    const { data: reviewsData } = await supabase.from('reviews').select('*');
+  const professionals = (usersData as User[]).filter((u) =>
+    ['fisioterapeuta', 'nutricionista', 'medico_general', 'professional', 'clinic_admin'].includes(u.role)
+  );
 
-    const approvedReviews = (reviewsData || []).filter((r: Review) => r.status === 'approved');
+  const { data: profilesData } = await supabase.from('professional_profiles').select('*');
+  const { data: reviewsData } = await supabase.from('reviews').select('*');
 
-    return professionals.map((prof: User) => {
-      const profile = (profilesData || []).find((p: ProfessionalProfile) => p.user_id === prof.id);
-      const profReviews = approvedReviews.filter((r: Review) => r.professional_id === prof.id);
-      
-      const totalRatings = profReviews.reduce((sum: number, r: Review) => sum + r.rating, 0);
-      const ratingAverage = profReviews.length > 0 ? Number((totalRatings / profReviews.length).toFixed(1)) : (profile?.rating_average || 5.0);
-      const reviewsCount = profReviews.length > 0 ? profReviews.length : (profile?.reviews_count || 0);
+  const approvedReviews = (reviewsData as Review[] || []).filter((r) => r.status === 'approved');
 
-      return {
-        ...prof,
-        profile: profile || undefined,
-        reviews: profReviews,
-        rating_average: ratingAverage,
-        reviews_count: reviewsCount,
-      };
-    });
-  } catch (e) {
-    console.error('Error fetching professionals with details:', e);
-    return [];
-  }
-}
-
-/**
- * Fetches a single professional's full profile and approved reviews
- */
-export async function fetchProfessionalDetails(userId: string): Promise<ProfessionalWithDetails | null> {
-  try {
-    const { data: userData } = await supabase.from('users').select('*').eq('id', userId).single();
-    if (!userData) return null;
-
-    const { data: profileData } = await supabase.from('professional_profiles').select('*').eq('user_id', userId).single();
-    const { data: reviewsData } = await supabase.from('reviews').select('*').eq('professional_id', userId);
-
-    const approvedReviews = (reviewsData || []).filter((r: Review) => r.status === 'approved');
-    const totalRatings = approvedReviews.reduce((sum: number, r: Review) => sum + r.rating, 0);
-    const ratingAverage = approvedReviews.length > 0 ? Number((totalRatings / approvedReviews.length).toFixed(1)) : (profileData?.rating_average || 5.0);
+  return professionals.map((prof) => {
+    const profile = (profilesData as ProfessionalProfile[] || []).find((p) => p.user_id === prof.id);
+    const profReviews = approvedReviews.filter((r) => r.professional_id === prof.id);
+    const totalRatings = profReviews.reduce((sum, r) => sum + r.rating, 0);
+    const ratingAverage =
+      profReviews.length > 0 ? Number((totalRatings / profReviews.length).toFixed(1)) : profile?.rating_average || 5.0;
 
     return {
-      ...userData,
-      profile: profileData || undefined,
-      reviews: approvedReviews,
+      ...prof,
+      profile: profile || undefined,
+      reviews: profReviews,
       rating_average: ratingAverage,
-      reviews_count: approvedReviews.length,
+      reviews_count: profReviews.length || profile?.reviews_count || 0,
     };
-  } catch (e) {
-    console.error('Error fetching single professional details:', e);
-    return null;
-  }
+  });
 }
 
-/**
- * Submits a new review from a patient
- */
-/**
- * Lee la disponibilidad semanal publicada de un profesional.
- */
-export async function fetchProfessionalAvailability(
-  userId: string
-): Promise<ProfessionalAvailability[]> {
-  try {
-    const { data, error } = await supabase
-      .from('professional_availability')
-      .select('*')
-      .eq('user_id', userId)
-      .order('day_of_week', { ascending: true });
-    if (error) throw error;
-    return (data as ProfessionalAvailability[]) || [];
-  } catch (e) {
-    console.error('Error fetching professional availability:', e);
-    return [];
-  }
+export async function fetchProfessionalDetails(userId: string): Promise<ProfessionalWithDetails | null> {
+  const { data: userData, error } = await supabase.from('users').select('*').eq('id', userId).single();
+  if (error || !userData) return null;
+
+  const { data: profileData } = await supabase.from('professional_profiles').select('*').eq('user_id', userId).single();
+  const { data: reviewsData } = await supabase.from('reviews').select('*').eq('professional_id', userId);
+
+  const approvedReviews = (reviewsData as Review[] || []).filter((r) => r.status === 'approved');
+  const totalRatings = approvedReviews.reduce((sum, r) => sum + r.rating, 0);
+
+  return {
+    ...(userData as User),
+    profile: (profileData as ProfessionalProfile) || undefined,
+    reviews: approvedReviews,
+    rating_average:
+      approvedReviews.length > 0
+        ? Number((totalRatings / approvedReviews.length).toFixed(1))
+        : (profileData as ProfessionalProfile)?.rating_average || 5.0,
+    reviews_count: approvedReviews.length,
+  };
 }
 
-/**
- * Reemplaza la disponibilidad semanal del profesional en sesión.
- */
+export async function fetchProfessionalAvailability(userId: string): Promise<ProfessionalAvailability[]> {
+  const { data, error } = await supabase
+    .from('professional_availability')
+    .select('*')
+    .eq('user_id', userId)
+    .order('day_of_week', { ascending: true });
+  if (error) throw error;
+  return (data as ProfessionalAvailability[]) || [];
+}
+
 export async function saveProfessionalWeeklyAvailability(
   userId: string,
   blocks: Omit<ProfessionalAvailability, 'id' | 'user_id' | 'created_at' | 'updated_at'>[]
 ): Promise<{ success: boolean; error?: string }> {
   try {
     await supabase.from('professional_availability').delete().eq('user_id', userId);
-
-    if (blocks.length === 0) {
-      window.dispatchEvent(
-        new CustomEvent('kinesys_data_updated', { detail: { table: 'professional_availability' } })
-      );
-      return { success: true };
-    }
+    if (blocks.length === 0) return { success: true };
 
     const payload = blocks.map((block) => ({
       ...block,
@@ -2560,150 +331,92 @@ export async function saveProfessionalWeeklyAvailability(
 
     const { error } = await supabase.from('professional_availability').insert(payload);
     if (error) throw error;
-
     return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'No se pudo guardar la disponibilidad' };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'No se pudo guardar la disponibilidad' };
   }
 }
 
-/**
- * Lee excepciones (días bloqueados / vacaciones) del profesional.
- */
 export async function fetchProfessionalAvailabilityExceptions(
   userId: string
 ): Promise<ProfessionalAvailabilityException[]> {
-  try {
-    const { data, error } = await supabase
-      .from('professional_availability_exceptions')
-      .select('*')
-      .eq('user_id', userId)
-      .order('exception_date', { ascending: true });
-    if (error) throw error;
-    return (data as ProfessionalAvailabilityException[]) || [];
-  } catch (e) {
-    console.error('Error fetching availability exceptions:', e);
-    return [];
-  }
+  const { data, error } = await supabase
+    .from('professional_availability_exceptions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('exception_date', { ascending: true });
+  if (error) throw error;
+  return (data as ProfessionalAvailabilityException[]) || [];
 }
 
-/**
- * Guarda el listado completo de excepciones del profesional.
- */
 export async function saveProfessionalAvailabilityExceptions(
   userId: string,
   exceptions: Omit<ProfessionalAvailabilityException, 'id' | 'user_id' | 'created_at'>[]
 ): Promise<{ success: boolean; error?: string }> {
   try {
     await supabase.from('professional_availability_exceptions').delete().eq('user_id', userId);
+    if (exceptions.length === 0) return { success: true };
 
-    if (exceptions.length === 0) {
-      window.dispatchEvent(
-        new CustomEvent('kinesys_data_updated', {
-          detail: { table: 'professional_availability_exceptions' },
-        })
-      );
-      return { success: true };
-    }
-
-    const payload = exceptions.map((exc) => ({
-      ...exc,
-      user_id: userId,
-    }));
-
+    const payload = exceptions.map((exc) => ({ ...exc, user_id: userId }));
     const { error } = await supabase.from('professional_availability_exceptions').insert(payload);
     if (error) throw error;
-
     return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'No se pudieron guardar las excepciones' };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'No se pudieron guardar las excepciones' };
   }
 }
 
-/**
- * Calcula slots disponibles para agendar (publicados y sin conflicto con citas activas).
- */
 export async function fetchAvailableTimeSlots(
   professionalId: string,
   dateStr: string,
+  tenantId?: string,
   excludeAppointmentId?: string
 ): Promise<AvailabilityTimeSlot[]> {
-  try {
-    const [availability, exceptions, appointmentsResult] = await Promise.all([
-      fetchProfessionalAvailability(professionalId),
-      fetchProfessionalAvailabilityExceptions(professionalId),
-      supabase.from('appointments').select('*'),
-    ]);
+  const [availability, exceptions, appointmentsResult] = await Promise.all([
+    fetchProfessionalAvailability(professionalId),
+    fetchProfessionalAvailabilityExceptions(professionalId),
+    tenantId
+      ? supabase.from('appointments').select('*').eq('tenant_id', tenantId)
+      : supabase.from('appointments').select('*'),
+  ]);
 
-    const appointments = (appointmentsResult.data as Appointment[]) || [];
-    return computeAvailableSlots(
-      availability,
-      exceptions,
-      appointments,
-      dateStr,
-      professionalId,
-      excludeAppointmentId
-    );
-  } catch (e) {
-    console.error('Error computing available slots:', e);
-    return [];
-  }
+  const appointments = (appointmentsResult.data as Appointment[]) || [];
+  return computeAvailableSlots(availability, exceptions, appointments, dateStr, professionalId, excludeAppointmentId);
 }
 
-/**
- * Valida que un horario esté dentro de bloques publicados y libre de conflictos.
- */
 export async function validateAppointmentSlot(params: {
   professionalId: string;
   dateStr: string;
   startTime: string;
   durationMinutes: number;
+  tenantId?: string;
   excludeAppointmentId?: string;
 }): Promise<{ valid: boolean; error?: string }> {
-  const { professionalId, dateStr, startTime, durationMinutes, excludeAppointmentId } = params;
+  const { professionalId, dateStr, startTime, durationMinutes, tenantId, excludeAppointmentId } = params;
 
   const [availability, exceptions, appointmentsResult] = await Promise.all([
     fetchProfessionalAvailability(professionalId),
     fetchProfessionalAvailabilityExceptions(professionalId),
-    supabase.from('appointments').select('*'),
+    tenantId
+      ? supabase.from('appointments').select('*').eq('tenant_id', tenantId)
+      : supabase.from('appointments').select('*'),
   ]);
 
   const appointments = (appointmentsResult.data as Appointment[]) || [];
   const profAppts = appointments.filter((a) => a.professional_id === professionalId);
 
-  if (
-    !isTimeWithinPublishedAvailability(
-      availability,
-      exceptions,
-      dateStr,
-      startTime,
-      durationMinutes,
-      professionalId
-    )
-  ) {
-    return {
-      valid: false,
-      error: 'El horario seleccionado no está dentro de la disponibilidad publicada del profesional.',
-    };
+  if (!isTimeWithinPublishedAvailability(availability, exceptions, dateStr, startTime, durationMinutes, professionalId)) {
+    return { valid: false, error: 'El horario seleccionado no está dentro de la disponibilidad publicada del profesional.' };
   }
 
   if (isSlotBooked(profAppts, dateStr, startTime, durationMinutes, excludeAppointmentId)) {
-    return {
-      valid: false,
-      error: 'Ya existe una cita reservada en ese horario.',
-    };
+    return { valid: false, error: 'Ya existe una cita reservada en ese horario.' };
   }
 
   return { valid: true };
 }
 
-/** Roles gestionables desde el panel de profesionales de la clínica */
-export const CLINIC_STAFF_ROLES: UserRole[] = [
-  'fisioterapeuta',
-  'nutricionista',
-  'medico_general',
-  'clinic_admin',
-];
+export const CLINIC_STAFF_ROLES: UserRole[] = ['fisioterapeuta', 'nutricionista', 'medico_general', 'clinic_admin'];
 
 export interface CreateProfessionalInput {
   full_name: string;
@@ -2740,26 +453,14 @@ export function getProfessionalRoleLabel(role: UserRole | string): string {
   }
 }
 
-/**
- * Lista profesionales y administradores del tenant activo.
- */
 export async function fetchClinicProfessionals(tenantId: string): Promise<User[]> {
-  try {
-    const { data, error } = await supabase.from('users').select('*').eq('tenant_id', tenantId);
-    if (error) throw error;
-    const users = (data as User[]) || [];
-    return users
-      .filter((u) => CLINIC_STAFF_ROLES.includes(u.role))
-      .sort((a, b) => a.full_name.localeCompare(b.full_name));
-  } catch (e) {
-    console.error('Error fetching clinic professionals:', e);
-    return [];
-  }
+  const { data, error } = await supabase.from('users').select('*').eq('tenant_id', tenantId);
+  if (error) throw error;
+  return ((data as User[]) || [])
+    .filter((u) => CLINIC_STAFF_ROLES.includes(u.role))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
 }
 
-/**
- * Crea un profesional en la tabla users y registra invitación pendiente.
- */
 export async function createProfessional(
   tenantId: string,
   input: CreateProfessionalInput,
@@ -2767,117 +468,238 @@ export async function createProfessional(
 ): Promise<{ success: boolean; data?: User; error?: string }> {
   try {
     const normalizedEmail = input.email.trim().toLowerCase();
-    const { data: allUsers } = await supabase.from('users').select('*');
-    const duplicate = (allUsers as User[] | null)?.some(
-      (u) => u.email?.trim().toLowerCase() === normalizedEmail
-    );
-    if (duplicate) {
+
+    const { data: existing } = await supabase.from('users').select('id').eq('email', normalizedEmail).maybeSingle();
+    if (existing) {
       return { success: false, error: 'Ya existe un usuario registrado con ese correo electrónico.' };
     }
 
-    const newUser: Partial<User> = {
-      full_name: input.full_name.trim(),
-      email: normalizedEmail,
-      role: input.role,
-      tenant_id: tenantId,
-      phone: input.phone?.trim(),
-      license_number: input.license_number?.trim(),
-      specialty: input.specialty?.trim() || ROLE_SPECIALTY_MAP[input.role] || '',
-      is_active: true,
-      avatar_url:
-        'https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=150&auto=format&fit=crop&q=80',
-      created_at: new Date().toISOString(),
+    const supabaseUrl = (import.meta as { env?: { VITE_SUPABASE_URL?: string } }).env?.VITE_SUPABASE_URL;
+    if (supabaseUrl) {
+      const { data: inviteData, error: inviteError } = await supabaseDataClient.functions.invoke(
+        'invite-professional',
+        {
+          body: {
+            email: normalizedEmail,
+            full_name: input.full_name.trim(),
+            role: input.role,
+            tenant_id: tenantId,
+            phone: input.phone?.trim(),
+            license_number: input.license_number?.trim(),
+            specialty: input.specialty?.trim() || ROLE_SPECIALTY_MAP[input.role] || '',
+            invited_by: invitedBy,
+          },
+        }
+      );
+      if (!inviteError && inviteData?.user) {
+        return { success: true, data: inviteData.user as User };
+      }
+    }
+
+    return {
+      success: false,
+      error:
+        'No se pudo invitar al profesional. Verifique que la Edge Function invite-professional esté desplegada.',
     };
-
-    const { data, error } = await supabase.from('users').insert(newUser);
-    if (error) throw error;
-
-    const created = Array.isArray(data) ? data[0] : (newUser as User);
-
-    await supabase.from('team_invitations').insert({
-      tenant_id: tenantId,
-      email: normalizedEmail,
-      role: input.role,
-      status: 'pending',
-      invited_by: invitedBy || 'clinic_admin',
-    });
-
-    return { success: true, data: created as User };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'No se pudo crear el profesional.' };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'No se pudo crear el profesional.' };
   }
 }
 
-/**
- * Actualiza el rol de un profesional de la clínica.
- */
 export async function updateProfessionalRole(
   userId: string,
   newRole: UserRole
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await supabase
+    const { error: userErr } = await supabase
       .from('users')
-      .eq('id', userId)
-      .update({
-        role: newRole,
-        specialty: ROLE_SPECIALTY_MAP[newRole] || undefined,
-      });
-    if (error) throw error;
+      .update({ role: newRole, specialty: ROLE_SPECIALTY_MAP[newRole] || undefined })
+      .eq('id', userId);
+    if (userErr) throw userErr;
+
+    const { error: profileErr } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+    if (profileErr) throw profileErr;
+
     return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'No se pudo actualizar el rol.' };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'No se pudo actualizar el rol.' };
   }
 }
 
-/**
- * Revoca el acceso de un profesional (soft-delete).
- */
-export async function deactivateProfessional(
-  userId: string
-): Promise<{ success: boolean; error?: string }> {
+export async function deactivateProfessional(userId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await supabase
-      .from('users')
-      .eq('id', userId)
-      .update({ is_active: false });
-    if (error) throw error;
+    const { error: userErr } = await supabase.from('users').update({ is_active: false }).eq('id', userId);
+    if (userErr) throw userErr;
+    const { error: profileErr } = await supabase.from('profiles').update({ is_active: false }).eq('id', userId);
+    if (profileErr) throw profileErr;
     return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'No se pudo revocar el acceso.' };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'No se pudo revocar el acceso.' };
   }
 }
 
-/**
- * Reactiva un profesional previamente inhabilitado.
- */
-export async function reactivateProfessional(
-  userId: string
-): Promise<{ success: boolean; error?: string }> {
+export async function reactivateProfessional(userId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await supabase
-      .from('users')
-      .eq('id', userId)
-      .update({ is_active: true });
-    if (error) throw error;
+    const { error: userErr } = await supabase.from('users').update({ is_active: true }).eq('id', userId);
+    if (userErr) throw userErr;
+    const { error: profileErr } = await supabase.from('profiles').update({ is_active: true }).eq('id', userId);
+    if (profileErr) throw profileErr;
     return { success: true };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'No se pudo reactivar el acceso.' };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'No se pudo reactivar el acceso.' };
   }
 }
 
-export async function submitProfessionalReview(review: Omit<Review, 'id' | 'created_at'>): Promise<{ success: boolean; data?: Review; error?: string }> {
+export async function submitProfessionalReview(
+  review: Omit<Review, 'id' | 'created_at'>
+): Promise<{ success: boolean; data?: Review; error?: string }> {
   try {
-    const newRev: Partial<Review> = {
-      ...review,
-      status: review.status || 'approved',
-      created_at: new Date().toISOString(),
-    };
-    const { data, error } = await supabase.from('reviews').insert(newRev);
-    if (error) return { success: false, error: error.message || 'Error al guardar la reseña' };
-    return { success: true, data: Array.isArray(data) ? data[0] : data };
-  } catch (err: any) {
-    return { success: false, error: err?.message || 'Error inesperado' };
+    const { data, error } = await supabase.from('reviews').insert([review]).select().single();
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: data as Review };
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Error inesperado' };
   }
 }
 
+/** Onboarding: crea tenant + users + profiles tras signUp */
+export async function completeOnboarding(params: {
+  clinicName: string;
+  slug: string;
+  adminEmail: string;
+  adminName: string;
+  adminPhone?: string;
+  adminLicense?: string;
+  adminRut?: string;
+  clinicPhone?: string;
+  clinicAddress?: string;
+  subscriptionPlan: string;
+  maxUsers: number;
+  password: string;
+}): Promise<{ tenant: Tenant; user: User }> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase no está configurado. Configure VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
+  }
+
+  const trialEnds = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: signUpData, error: signUpError } = await supabaseDataClient.auth.signUp({
+    email: params.adminEmail.trim().toLowerCase(),
+    password: params.password,
+    options: { data: { full_name: params.adminName.trim() } },
+  });
+  if (signUpError) throw signUpError;
+  if (!signUpData.user?.id) throw new Error('No se pudo crear el usuario de autenticación.');
+
+  const authUserId = signUpData.user.id;
+
+  const { data: tenant, error: tenantError } = await supabase
+    .from('tenants')
+    .insert([
+      {
+        name: params.clinicName.trim(),
+        slug: params.slug,
+        timezone: 'America/Bogota',
+        email: params.adminEmail.trim(),
+        phone: params.clinicPhone,
+        address: params.clinicAddress,
+        subscription_plan: params.subscriptionPlan,
+        subscription_status: 'trialing',
+        max_users: params.maxUsers,
+        trial_ends_at: trialEnds,
+        is_wompi_sandbox: true,
+      },
+    ])
+    .select()
+    .single();
+
+  if (tenantError) {
+    await supabaseDataClient.auth.signOut();
+    throw tenantError;
+  }
+
+  const tenantId = (tenant as Tenant).id;
+
+  const { error: userError } = await supabase.from('users').insert([
+    {
+      id: authUserId,
+      tenant_id: tenantId,
+      email: params.adminEmail.trim().toLowerCase(),
+      full_name: params.adminName.trim(),
+      role: 'clinic_admin',
+      phone: params.adminPhone,
+      license_number: params.adminLicense,
+      rut_or_dni: params.adminRut,
+      is_active: true,
+    },
+  ]);
+
+  if (userError) {
+    await supabase.from('tenants').delete().eq('id', tenantId);
+    await supabaseDataClient.auth.signOut();
+    throw userError;
+  }
+
+  const { error: profileError } = await supabase.from('profiles').insert([
+    {
+      id: authUserId,
+      tenant_id: tenantId,
+      email: params.adminEmail.trim().toLowerCase(),
+      full_name: params.adminName.trim(),
+      role: 'clinic_admin',
+      is_active: true,
+    },
+  ]);
+
+  if (profileError) {
+    await supabase.from('users').delete().eq('id', authUserId);
+    await supabase.from('tenants').delete().eq('id', tenantId);
+    await supabaseDataClient.auth.signOut();
+    throw profileError;
+  }
+
+  const user: User = {
+    id: authUserId,
+    email: params.adminEmail.trim().toLowerCase(),
+    full_name: params.adminName.trim(),
+    role: 'clinic_admin',
+    phone: params.adminPhone,
+    tenant_id: tenantId,
+    license_number: params.adminLicense,
+    rut_or_dni: params.adminRut,
+    is_active: true,
+    created_at: new Date().toISOString(),
+  };
+
+  return { tenant: tenant as Tenant, user };
+}
+
+export async function loadUserByAuthId(authUserId: string): Promise<User | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', authUserId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as User;
+}
+
+export async function loadUserByEmail(email: string): Promise<User | null> {
+  const normalized = email.trim().toLowerCase();
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .ilike('email', normalized)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as User;
+}
+
+export async function loadTenantById(tenantId: string): Promise<Tenant | null> {
+  const { data, error } = await supabase.from('tenants').select('*').eq('id', tenantId).maybeSingle();
+  if (error || !data) return null;
+  return data as Tenant;
+}
+
+export type { PainObservation, PrescripcionMedica, EvaluacionAntropometrica, PlanNutricional, OrdenNutricionFHIR };

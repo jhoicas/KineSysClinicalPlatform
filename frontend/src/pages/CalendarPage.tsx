@@ -170,6 +170,7 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
       let query = supabase
         .from('appointments')
         .select('*')
+        .eq('tenant_id', tenantId)
         .gte('start_time', startOfRange)
         .lte('start_time', endOfRange)
         .order('start_time', { ascending: true });
@@ -213,8 +214,8 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
     try {
       const { error } = await supabase
         .from('appointments')
-        .eq('id', apptId)
-        .update({ status: newStatus });
+        .update({ status: newStatus })
+        .eq('id', apptId);
 
       if (error) throw error;
       addToast(
@@ -251,9 +252,17 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
     let patientData: any = null;
 
     if (appt.patient_id) {
-      const { data } = await supabase.from('users').select('*').eq('id', appt.patient_id).single();
+      const { data } = await supabase.from('pacientes_clinicos').select('*').eq('id', appt.patient_id).single();
       if (data) {
-        patientData = data;
+        patientData = {
+          id: data.id,
+          full_name: `${data.first_name} ${data.last_name}`.trim(),
+          email: data.telecom_email,
+          phone: data.telecom_phone,
+          role: 'patient',
+          tenant_id: data.tenant_id,
+          created_at: data.created_at,
+        };
       }
     }
 
@@ -297,9 +306,17 @@ export function CalendarPage({ onNavigate }: { onNavigate?: (path: string) => vo
 
   const handleOpenPatientHistory = async (patientId?: string, fallbackPatient?: any) => {
     if (patientId) {
-      const { data } = await supabase.from('users').select('*').eq('id', patientId).single();
+      const { data } = await supabase.from('pacientes_clinicos').select('*').eq('id', patientId).single();
       if (data) {
-        setActivePatient(data);
+        setActivePatient({
+          id: data.id,
+          full_name: `${data.first_name} ${data.last_name}`.trim(),
+          email: data.telecom_email,
+          phone: data.telecom_phone,
+          role: 'patient',
+          tenant_id: data.tenant_id,
+          created_at: data.created_at,
+        });
         setSelectedPatientForHistory(data);
         setIsHistoryModalOpen(true);
         return;

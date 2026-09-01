@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../services/supabaseClient';
+import { supabase, loadUserByEmail } from '../services/supabaseClient';
 import { LanguageSelector } from '../components/common/LanguageSelector';
 import { 
   Mail, 
@@ -55,11 +55,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       // Opción A: Validación previa si el usuario ya escribió un email en el formulario
       if (email && email.includes('@')) {
         const normalizedEmail = email.trim().toLowerCase();
-        const { data: dbUsers } = await supabase.from('users').select('*');
-        const allUsers = dbUsers || [];
-        const exists = allUsers.some(
-          (u: any) => u.email?.trim().toLowerCase() === normalizedEmail
-        );
+        const exists = await loadUserByEmail(normalizedEmail);
         if (!exists) {
           setErrorMessage(
             `El correo ${email.trim()} no está registrado en la plataforma. Contacta al administrador para habilitar tu cuenta.`
@@ -82,10 +78,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       }
 
       const providerLabel = provider === 'google' ? 'Google Workspace' : 'Microsoft Azure AD';
-      setSuccessMessage(`¡Conectando con ${providerLabel}! Redirigiendo al espacio clínico...`);
-      setTimeout(() => {
-        onNavigate('/calendario');
-      }, 1200);
+      setSuccessMessage(`¡Conectando con ${providerLabel}! Serás redirigido al espacio clínico...`);
     } catch (err: any) {
       console.error(`Error in ${provider} OAuth:`, err);
       const providerLabel = provider === 'google' ? 'Google' : 'Microsoft Azure';
@@ -155,9 +148,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       }
 
       setSuccessMessage('¡Código verificado con éxito! Accediendo a la clínica...');
-      setTimeout(() => {
+      if (data?.session) {
         onNavigate('/calendario');
-      }, 1000);
+      }
     } catch (err: any) {
       console.error('Error verifying OTP:', err);
       setErrorMessage(err?.message || 'Código inválido o expirado. Por favor solicite uno nuevo.');

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useI18n } from '../app/providers/I18nProvider';
-import { supabase } from '../services/supabaseClient';
+import { getPatients, createPatient } from '../services/supabaseClient';
+import { PacienteClinico } from '../types';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
 import { MedicalHistoryModal } from '../components/patients/MedicalHistoryModal';
@@ -37,7 +38,7 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
     fetchPatients();
 
     const handleDataUpdate = (e: any) => {
-      if (e.detail?.table === 'users' || e.detail?.table === 'all') {
+      if (e.detail?.table === 'pacientes_clinicos' || e.detail?.table === 'all') {
         fetchPatients();
       }
     };
@@ -45,33 +46,27 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
     return () => window.removeEventListener('kinesys_data_updated', handleDataUpdate);
   }, [tenantId]);
 
+  const mapPatientToUser = (p: PacienteClinico): User => ({
+    id: p.id,
+    full_name: `${p.first_name} ${p.last_name}`.trim(),
+    email: p.telecom_email,
+    phone: p.telecom_phone,
+    role: 'patient',
+    tenant_id: p.tenant_id,
+    rut_or_dni: p.identifier_number,
+    gender: p.gender,
+    birth_date: p.birth_date,
+    medical_conditions: p.chronic_conditions,
+    allergies: p.known_allergies,
+    emergency_contact: p.emergency_contact,
+    created_at: p.created_at,
+  });
+
   const fetchPatients = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select(`
-          id,
-          full_name,
-          email,
-          phone,
-          role,
-          tenant_id,
-          avatar_url,
-          rut_or_dni,
-          birth_date,
-          gender,
-          medical_conditions,
-          allergies,
-          emergency_contact,
-          created_at
-        `)
-        .eq('role', 'patient')
-        .eq('tenant_id', tenantId)
-        .order('full_name', { ascending: true });
-
-      if (error) throw error;
-      setPatients(data || []);
+      const data = await getPatients(tenantId);
+      setPatients(data.map(mapPatientToUser));
     } catch (error) {
       console.error('Error fetching patients:', error);
       addToast('error', t('common.error', 'Error al cargar pacientes'), 'No se pudieron obtener los pacientes.');
@@ -82,23 +77,30 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
 
   const handleCreatePatientValidated = async (formData: PatientRegistrationFormData) => {
     try {
-      const { error } = await supabase.from('users').insert({
-        full_name: formData.full_name,
-        email: formData.email,
-        phone: formData.phone,
-        role: 'patient',
-        tenant_id: tenantId,
-        rut_or_dni: formData.rut_or_dni,
-        gender: formData.gender,
-        birth_date: formData.birth_date || null,
-        avatar_url: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80`,
-        medical_conditions: formData.medical_conditions
-          ? [formData.medical_conditions]
-          : ['Evaluación Kinésica Inicial'],
-        allergies: formData.allergies ? [formData.allergies] : ['Sin alergias declaradas'],
-      });
+      const nameParts = formData.full_name.trim().split(/\s+/);
+      const firstName = nameParts[0] || formData.full_name;
+      const lastName = nameParts.slice(1).join(' ') || firstName;
 
-      if (error) throw error;
+      await createPatient(tenantId, {
+        identifier_type: 'CC',
+        identifier_number: formData.rut_or_dni,
+        first_name: firstName,
+        last_name: lastName,
+        gender: (formData.gender as PacienteClinico['gender']) || 'unknown',
+        birth_date: formData.birth_date || '',
+        telecom_phone: formData.phone,
+        telecom_email: formData.email,
+        known_allergies: formData.allergies ? [formData.allergies] : [],
+        chronic_conditions: formData.medical_conditions ? [formData.medical_conditions] : [],
+        emergency_contact: formData.emergency_contact_name
+          ? {
+              name: formData.emergency_contact_name,
+              phone: formData.emergency_contact_phone || '',
+              relationship: 'contacto',
+            }
+          : undefined,
+        active: true,
+      });
 
       addToast(
         'success',

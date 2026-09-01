@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useI18n } from '../app/providers/I18nProvider';
-import { supabase, INITIAL_TENANT } from '../services/supabaseClient';
+import { supabase } from '../services/supabaseClient';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
 import { PhoneInputWithCountry } from '../components/common/PhoneInputWithCountry';
@@ -68,7 +68,11 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
         throw error;
       }
 
-      const tenantData: Tenant = data || INITIAL_TENANT;
+      if (!data) {
+        setLoading(false);
+        return;
+      }
+      const tenantData: Tenant = data;
       setTenant(tenantData);
       setClinicName(tenantData.name || '');
       setTimezone(tenantData.timezone || 'America/Bogota (UTC-5)');
@@ -105,8 +109,10 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
 
       const { data, error } = await supabase
         .from('tenants')
+        .update(updates)
         .eq('id', tenantId)
-        .update(updates);
+        .select()
+        .single();
 
       if (error) throw error;
 

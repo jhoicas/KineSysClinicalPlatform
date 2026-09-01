@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, AppointmentStatus, Appointment } from '../../types';
-import { supabase } from '../../services/supabaseClient';
-import { fetchAvailableTimeSlots, validateAppointmentSlot } from '../../services/dataService';
+import { supabase, getPatients, fetchClinicProfessionals, createAppointment, updateAppointment, deleteAppointment, fetchAvailableTimeSlots, validateAppointmentSlot } from '../../services/supabaseClient';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useI18n } from '../../app/providers/I18nProvider';
 
@@ -145,6 +144,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       const slots = await fetchAvailableTimeSlots(
         professionalId,
         date,
+        tenantId || undefined,
         appointmentToEdit?.id
       );
       setAvailableSlots(slots);
@@ -172,55 +172,27 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const fetchPatientsAndProfessionals = async () => {
     setLoadingLists(true);
     try {
-      // 1. Fetch patients
-      const { data: dbUsers } = await supabase.from('users').select('*');
-      const allUsers: User[] = dbUsers || [];
+      const [clinicPatients, profs] = await Promise.all([
+        tenantId ? getPatients(tenantId) : Promise.resolve([]),
+        tenantId ? fetchClinicProfessionals(tenantId) : Promise.resolve([]),
+      ]);
 
-      // Filter patients
-      const patientUsers = allUsers.filter(
-        (u) => u.role === 'patient' || (!u.role && u.email?.includes('paciente'))
-      );
+      const formattedPatients: User[] = clinicPatients.map((cp) => ({
+        id: cp.id,
+        full_name: `${cp.first_name} ${cp.last_name}`.trim(),
+        email: cp.telecom_email,
+        phone: cp.telecom_phone,
+        rut_or_dni: cp.identifier_number,
+        role: 'patient' as const,
+        tenant_id: cp.tenant_id,
+        created_at: cp.created_at,
+      }));
 
-      // Also try fetching from pacientes_clinicos table if available
-      const { data: clinicPatients } = await supabase.from('pacientes_clinicos').select('*');
-      if (clinicPatients && clinicPatients.length > 0) {
-        const formattedFromClinic: User[] = clinicPatients.map((cp: any) => ({
-          id: cp.id,
-          full_name: cp.full_name || cp.nombre_completo || 'Paciente Clínico',
-          email: cp.email || 'paciente@clinica.com',
-          phone: cp.phone || cp.telefono || '',
-          rut_or_dni: cp.rut_or_dni || cp.documento_identidad || '',
-          role: 'patient',
-          tenant_id: tenantId || 'tenant_kine_001',
-          created_at: cp.created_at || new Date().toISOString(),
-        }));
-
-        const mergedMap = new Map<string, User>();
-        patientUsers.forEach((p) => mergedMap.set(p.id, p));
-        formattedFromClinic.forEach((p) => {
-          if (!mergedMap.has(p.id)) mergedMap.set(p.id, p);
-        });
-        const mergedPatients = Array.from(mergedMap.values());
-        setPatients(mergedPatients);
-        if (!isEditing && mergedPatients.length > 0 && !patientId) {
-          setPatientId(mergedPatients[0].id);
-        }
-      } else {
-        setPatients(patientUsers);
-        if (!isEditing && patientUsers.length > 0 && !patientId) {
-          setPatientId(patientUsers[0].id);
-        }
+      setPatients(formattedPatients);
+      if (!isEditing && formattedPatients.length > 0 && !patientId) {
+        setPatientId(formattedPatients[0].id);
       }
 
-      // 2. Filter clinical professionals
-      const profs = allUsers.filter(
-        (u) =>
-          u.role === 'fisioterapeuta' ||
-          u.role === 'nutricionista' ||
-          u.role === 'medico_general' ||
-          u.role === 'clinic_admin' ||
-          u.role === 'super_admin'
-      );
       setProfessionals(profs);
       if (!isEditing && !professionalId) {
         setProfessionalId(user?.id || (profs.length > 0 ? profs[0].id : ''));
@@ -248,6 +220,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         dateStr: date,
         startTime: time,
         durationMinutes,
+        tenantId: tenantId || undefined,
         excludeAppointmentId: appointmentToEdit?.id,
       });
 
@@ -266,26 +239,19 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       const endDateTime = endDate.toISOString();
 
       if (isEditing && appointmentToEdit?.id) {
-        // UPDATE existing appointment
-        const { error } = await supabase
-          .from('appointments')
-          .eq('id', appointmentToEdit.id)
-          .update({
-            patient_id: patientId,
-            professional_id: professionalId || user.id,
-            start_time: startDateTime,
-            end_time: endDateTime,
-            status,
-            reason: finalReason,
-            notes,
-            room_or_box: finalRoom,
-          });
-
-        if (error) throw error;
+        await updateAppointment(appointmentToEdit.id, {
+          patient_id: patientId,
+          professional_id: professionalId || user.id,
+          start_time: startDateTime,
+          end_time: endDateTime,
+          status,
+          reason: finalReason,
+          notes,
+          room_or_box: finalRoom,
+        });
       } else {
-        // INSERT new appointment
-        const { error } = await supabase.from('appointments').insert({
-          tenant_id: tenantId || 'tenant_kine_001',
+        await createAppointment({
+          tenant_id: tenantId || '',
           professional_id: professionalId || user.id,
           patient_id: patientId,
           start_time: startDateTime,
@@ -295,8 +261,6 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           notes,
           room_or_box: finalRoom,
         });
-
-        if (error) throw error;
       }
 
       onSuccess();
@@ -316,12 +280,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
     setDeleting(true);
     try {
-      const { error } = await supabase
-        .from('appointments')
-        .delete()
-        .eq('id', appointmentToEdit.id);
-
-      if (error) throw error;
+      await deleteAppointment(appointmentToEdit.id);
 
       onSuccess();
       onClose();

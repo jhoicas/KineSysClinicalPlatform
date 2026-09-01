@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../app/providers/AuthProvider';
-import { supabase, ALL_DEMO_TENANTS, PRICING_PLANS } from '../services/supabaseClient';
+import { supabase, PRICING_PLANS } from '../services/supabaseClient';
 import { Tenant, PricingPlanConfig } from '../types';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
@@ -12,7 +12,7 @@ interface SuperAdminPageProps {
 
 export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onNavigate }) => {
   const { tenant, updateTenant } = useAuth();
-  const [tenantsList, setTenantsList] = useState<Tenant[]>(ALL_DEMO_TENANTS);
+  const [tenantsList, setTenantsList] = useState<Tenant[]>([]);
   const [plans, setPlans] = useState<PricingPlanConfig[]>(PRICING_PLANS);
   const [globalWompiPublicKey, setGlobalWompiPublicKey] = useState('pub_prod_wompi_superadmin_master99');
   const [globalWompiPrivateKey, setGlobalWompiPrivateKey] = useState('prv_prod_wompi_secret_master00');
@@ -33,7 +33,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onNavigate }) =>
   const handleUpdatePrice = async (planId: string, newPriceCop: number) => {
     const updated = plans.map((p) => (p.id === planId ? { ...p, price_cop: newPriceCop } : p));
     setPlans(updated);
-    await supabase.from('pricing_plans').eq('id', planId).update({ price_cop: newPriceCop });
+    // pricing_plans es configuración estática en frontend (PRICING_PLANS)
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
   };

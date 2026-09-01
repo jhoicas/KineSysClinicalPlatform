@@ -2,7 +2,6 @@ import React from 'react';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { useI18n } from '../../app/providers/I18nProvider';
 import { useTheme } from '../../app/providers/ThemeProvider';
-import { supabase } from '../../services/supabaseClient';
 
 import { useAppStore } from '../../store/useAppStore';
 
@@ -16,7 +15,6 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendar
   const storeAllowedModules = useAppStore((state) => state.allowedModules);
   const { activeLogoUrl } = useTheme();
   const { t } = useI18n();
-  const isLocal = supabase.isUsingLocalEngine();
 
   // Dynamic modules list from Store/Auth
   const activeModules = storeAllowedModules.length > 0 ? storeAllowedModules : authAllowedModules;
@@ -154,8 +152,8 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendar
       <div className="px-4 py-2 border-t border-outline-variant/20 bg-surface-container-low/40">
         <div className="flex items-center justify-between text-[11px] font-bold text-on-surface-variant px-1 py-1">
           <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${isLocal ? 'bg-teal-500 animate-pulse' : 'bg-emerald-500'}`}></span>
-            <span>{isLocal ? 'Supabase Local Sync' : 'Supabase Conectado'}</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>Supabase Conectado</span>
           </div>
           <span className="text-[10px] uppercase font-bold text-outline">DB Sync</span>
         </div>

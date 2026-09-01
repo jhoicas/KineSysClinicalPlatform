@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PRICING_PLANS, supabase } from '../services/supabaseClient';
+import { PRICING_PLANS, completeOnboarding } from '../services/supabaseClient';
 import { PricingPlanConfig, SubscriptionPlan, User, Tenant } from '../types';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useI18n } from '../app/providers/I18nProvider';
@@ -11,7 +11,7 @@ interface OnboardingPageProps {
 }
 
 export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) => {
-  const { createTenantAndAdmin } = useAuth();
+  const { refreshAuth } = useAuth();
   const { t } = useI18n();
 
   // Wizard Step: 1: Datos Clínica, 2: Selección de Plan, 3: Registro Admin, 4: Éxito
@@ -103,8 +103,6 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
 
     setIsSubmitting(true);
     try {
-      const newTenantId = `tenant_${Date.now()}`;
-      const trialEnds = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const generatedSlug =
         clinicName
           .toLowerCase()
@@ -114,53 +112,29 @@ export const OnboardingPage: React.FC<OnboardingPageProps> = ({ onNavigate }) =>
           .replace(/-+/g, '-')
           .replace(/^-|-$/g, '') || 'clinica';
 
-      const newTenant: Tenant = {
-        id: newTenantId,
-        name: clinicName.trim(),
+      const { tenant: newTenant, user: newAdminUser } = await completeOnboarding({
+        clinicName: clinicName.trim(),
         slug: generatedSlug,
-        timezone: 'America/Bogota (UTC-5)',
-        cancellation_window_hours: 24,
-        email: adminEmail.trim(),
-        phone: clinicPhone.trim(),
-        address: clinicAddress.trim(),
-        currency: 'COP',
-        appointment_duration_minutes: 45,
-        subscription_plan: selectedPlanId,
-        subscription_status: 'trialing',
-        max_users: selectedPlan.max_users,
-        trial_ends_at: trialEnds,
-        is_wompi_sandbox: true,
-        created_at: new Date().toISOString(),
-      };
+        adminEmail: adminEmail.trim(),
+        adminName: adminName.trim(),
+        adminPhone: adminPhone.trim(),
+        adminLicense: adminLicense.trim(),
+        adminRut: adminRut.trim() || clinicNit.trim(),
+        clinicPhone: clinicPhone.trim(),
+        clinicAddress: clinicAddress.trim(),
+        subscriptionPlan: selectedPlanId,
+        maxUsers: selectedPlan.max_users,
+        password: adminPassword,
+      });
 
-      const newAdminUser: User = {
-        id: `user_admin_${Date.now()}`,
-        email: adminEmail.trim(),
-        full_name: adminName.trim(),
-        role: 'clinic_admin', // role admin / clinic_admin in Supabase
-        phone: adminPhone.trim(),
-        tenant_id: newTenantId,
-        rut_or_dni: adminRut.trim() || clinicNit.trim(),
-        license_number: adminLicense.trim(),
-        avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        created_at: new Date().toISOString(),
-      };
-
-      // 1. Insert into Supabase 'tenants' and 'users'
-      await supabase.from('tenants').insert(newTenant);
-      await supabase.from('users').insert(newAdminUser);
-
-      // 2. Set in Context for immediate active session
-      if (createTenantAndAdmin) {
-        await createTenantAndAdmin(newTenant, newAdminUser);
-      }
-
+      refreshAuth();
       setCreatedTenant(newTenant);
       setCreatedUser(newAdminUser);
       setCurrentStep(4);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error creating tenant & admin in Supabase:', err);
-      setErrorMessage(err?.message || 'Ocurrió un error al registrar la clínica. Intenta nuevamente.');
+      const message = err instanceof Error ? err.message : 'Ocurrió un error al registrar la clínica. Intenta nuevamente.';
+      setErrorMessage(message);
     } finally {
       setIsSubmitting(false);
     }

@@ -259,13 +259,16 @@ export class PatientPortalService {
         created_at: new Date().toISOString(),
       };
 
-      const { data, error } = await supabase.from('reviews').insert(newReview);
+      const { data, error } = await supabase.from('reviews').insert(newReview).select().single();
       if (error) {
         return { success: false, error: error.message || 'Error al guardar la reseña' };
       }
 
-      const inserted = Array.isArray(data) ? data[0] : data;
-      return { success: true, data: inserted };
+      if (!data) {
+        return { success: false, error: 'No se recibió respuesta al guardar la reseña' };
+      }
+
+      return { success: true, data };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Error inesperado al publicar la reseña' };
     }

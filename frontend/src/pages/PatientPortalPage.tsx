@@ -89,7 +89,12 @@ export const PatientPortalPage: React.FC<PatientPortalPageProps> = ({ onNavigate
   };
 
   const loadAppointments = async () => {
-    const { data } = await supabase.from('appointments').select('*').order('start_time', { ascending: true });
+    if (!tenant?.id) return;
+    const { data } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('tenant_id', tenant.id)
+      .order('start_time', { ascending: true });
     if (data) {
       setPatientAppointments(data);
     }
@@ -176,8 +181,8 @@ export const PatientPortalPage: React.FC<PatientPortalPageProps> = ({ onNavigate
       },
     };
 
-    const { data } = await supabase.from('appointments').insert(newAppt);
-    const created = Array.isArray(data) ? data[0] : (newAppt as Appointment);
+    const { data } = await supabase.from('appointments').insert(newAppt).select().single();
+    const created = (data as Appointment) || (newAppt as Appointment);
     setLastBookedAppointment(created);
     setBookedSuccess(true);
     loadAppointments();

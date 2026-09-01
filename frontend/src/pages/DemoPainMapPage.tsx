@@ -74,19 +74,21 @@ export function DemoPainMapPage({ onNavigate }: DemoPainMapPageProps) {
           .limit(8);
 
         if (usersData) {
-          const mapped: PacienteClinico[] = usersData.map((u: any) => ({
-            id: u.id,
-            tenant_id: u.tenant_id || tenantId || 'tenant_kine_001',
-            identifier_type: 'CC',
-            identifier_number: u.rut_or_dni || '12345678',
-            first_name: u.full_name?.split(' ')[0] || 'Paciente',
-            last_name: u.full_name?.split(' ').slice(1).join(' ') || 'Clínico',
-            gender: u.gender || 'unknown',
-            birth_date: u.birth_date || '1990-01-01',
-            telecom_phone: u.phone,
-            telecom_email: u.email,
+          const mapped: PacienteClinico[] = usersData.map((u: Record<string, unknown>) => ({
+            id: String(u.id),
+            tenant_id: String(u.tenant_id || tenantId || ''),
+            identifier_type: 'CC' as const,
+            identifier_number: String(u.rut_or_dni || '12345678'),
+            first_name: String((u.full_name as string)?.split(' ')[0] || 'Paciente'),
+            last_name: String((u.full_name as string)?.split(' ').slice(1).join(' ') || 'Clínico'),
+            gender: (u.gender as PacienteClinico['gender']) || 'unknown',
+            birth_date: String(u.birth_date || '1990-01-01'),
+            telecom_phone: String(u.phone || ''),
+            telecom_email: String(u.email || ''),
+            known_allergies: (u.allergies as string[]) || [],
+            chronic_conditions: (u.medical_conditions as string[]) || [],
             active: true,
-            created_at: u.created_at || new Date().toISOString(),
+            created_at: String(u.created_at || new Date().toISOString()),
           }));
           setAvailablePatients(mapped);
         }

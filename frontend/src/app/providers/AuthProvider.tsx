@@ -1,4 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { User, Tenant, UserRole, AppModule, RolePermission } from '../../types';
 import {
   supabase,
@@ -9,7 +17,7 @@ import {
   completeOnboarding,
 } from '../../services/supabaseClient';
 import { useAppStore } from '../../store/useAppStore';
-import { isAuthConfigured } from '../../services/supabaseAuth';
+import { isAuthConfigured, supabaseAuthClient } from '../../services/supabaseAuth';
 
 interface AuthContextType {
   user: User | null;
@@ -36,6 +44,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function usersEqual(a: User | null, b: User | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.id === b.id && a.role === b.role && a.tenant_id === b.tenant_id && a.is_active === b.is_active;
+}
+
+function tenantsEqual(a: Tenant | null, b: Tenant | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.id === b.id;
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [usersList, setUsersList] = useState<User[]>([]);
   const [user, setUser] = useState<User | null>(null);
@@ -44,6 +64,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(true);
 
   const setStoreAllowedModules = useAppStore((state) => state.setAllowedModules);
+
+  const userRef = useRef<User | null>(null);
+  const syncingRef = useRef(false);
+  const lastSyncedAuthIdRef = useRef<string | null>(null);
+  const isSigningOutRef = useRef(false);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   const loadPermissionsForRole = useCallback(
     async (activeRole: UserRole) => {
@@ -70,7 +99,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .filter((mod) => grantedModuleIds.includes(mod.id))
           .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
 
-        setAllowedModulesState(filtered);
+        setAllowedModulesState((prev) => {
+          const prevIds = prev.map((m) => m.id).join(',');
+          const nextIds = filtered.map((m) => m.id).join(',');
+          if (prevIds === nextIds) return prev;
+          return filtered;
+        });
         setStoreAllowedModules(filtered);
       } catch (err) {
         console.warn('Could not load permissions from DB:', err);
@@ -81,13 +115,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [setStoreAllowedModules]
   );
 
-  const loadTenantAndUsers = useCallback(async (currentUser?: User | null) => {
-    const activeUser = currentUser ?? user;
-    if (!activeUser?.tenant_id) return;
+  const loadTenantAndUsers = useCallback(async (activeUser: User) => {
+    if (!activeUser.tenant_id) return;
 
     try {
       const tenantData = await loadTenantById(activeUser.tenant_id);
-      if (tenantData) setTenant(tenantData);
+      if (tenantData) {
+        setTenant((prev) => (tenantsEqual(prev, tenantData) ? prev : tenantData));
+      }
 
       const { data: fetchedUsers, error } = await supabase
         .from('users')
@@ -99,15 +134,76 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('Could not load tenant/users from db:', err);
     }
-  }, [user]);
+  }, []);
 
-  const verifyAndSyncAuthSession = useCallback(
-    async (sessionUserId?: string | null, sessionUserEmail?: string | null) => {
-      if (!isAuthConfigured()) {
-        setLoading(false);
-        return false;
+  const clearAuthState = useCallback(() => {
+    setUser((prev) => (prev === null ? prev : null));
+    setTenant((prev) => (prev === null ? prev : null));
+    setAllowedModulesState((prev) => (prev.length === 0 ? prev : []));
+    setStoreAllowedModules([]);
+    lastSyncedAuthIdRef.current = null;
+  }, [setStoreAllowedModules]);
+
+  const denyAccess = useCallback(
+    async (denialMessage: string) => {
+      sessionStorage.setItem('kinesys_auth_error', denialMessage);
+      clearAuthState();
+      if (!isSigningOutRef.current) {
+        isSigningOutRef.current = true;
+        try {
+          await supabaseAuthClient?.auth.signOut();
+        } catch {
+          /* ignore */
+        } finally {
+          isSigningOutRef.current = false;
+        }
+      }
+      if (window.location.hash !== '#/login') {
+        window.location.hash = '#/login';
+      }
+    },
+    [clearAuthState]
+  );
+
+  const applyRegisteredUser = useCallback(
+    async (registeredUser: User) => {
+      setUser((prev) => (usersEqual(prev, registeredUser) ? prev : registeredUser));
+
+      const tenantData = await loadTenantById(registeredUser.tenant_id);
+      if (tenantData) {
+        setTenant((prev) => (tenantsEqual(prev, tenantData) ? prev : tenantData));
       }
 
+      await loadPermissionsForRole(registeredUser.role);
+      await loadTenantAndUsers(registeredUser);
+      lastSyncedAuthIdRef.current = registeredUser.id;
+    },
+    [loadPermissionsForRole, loadTenantAndUsers]
+  );
+
+  const syncFromSession = useCallback(
+    async (session: Session | null) => {
+      if (!isAuthConfigured()) {
+        setLoading(false);
+        return;
+      }
+
+      if (!session?.user) {
+        clearAuthState();
+        setLoading(false);
+        return;
+      }
+
+      const sessionUserId = session.user.id;
+      const sessionUserEmail = session.user.email ?? null;
+
+      if (syncingRef.current) return;
+      if (lastSyncedAuthIdRef.current === sessionUserId && userRef.current?.id === sessionUserId) {
+        setLoading(false);
+        return;
+      }
+
+      syncingRef.current = true;
       try {
         let registeredUser: User | null = null;
 
@@ -119,117 +215,99 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (!registeredUser) {
-          const denialMessage =
-            'El correo no está registrado en la plataforma. Contacta al administrador para habilitar tu cuenta.';
-          try {
-            await supabase.auth.signOut();
-          } catch {
-            /* ignore */
-          }
-          sessionStorage.setItem('kinesys_auth_error', denialMessage);
-          setUser(null);
-          setTenant(null);
-          setAllowedModulesState([]);
-          setStoreAllowedModules([]);
-          if (window.location.hash !== '#/login') window.location.hash = '#/login';
-          return false;
+          await denyAccess(
+            'El correo no está registrado en la plataforma. Contacta al administrador para habilitar tu cuenta.'
+          );
+          return;
         }
 
         if (registeredUser.is_active === false) {
-          const denialMessage =
-            'Tu acceso ha sido revocado por el administrador de la clínica. Contacta a soporte si crees que es un error.';
-          try {
-            await supabase.auth.signOut();
-          } catch {
-            /* ignore */
-          }
-          sessionStorage.setItem('kinesys_auth_error', denialMessage);
-          setUser(null);
-          setTenant(null);
-          setAllowedModulesState([]);
-          setStoreAllowedModules([]);
-          if (window.location.hash !== '#/login') window.location.hash = '#/login';
-          return false;
+          await denyAccess(
+            'Tu acceso ha sido revocado por el administrador de la clínica. Contacta a soporte si crees que es un error.'
+          );
+          return;
         }
 
-        setUser(registeredUser);
-        const tenantData = await loadTenantById(registeredUser.tenant_id);
-        if (tenantData) setTenant(tenantData);
-        await loadPermissionsForRole(registeredUser.role);
-        await loadTenantAndUsers(registeredUser);
-        return true;
+        await applyRegisteredUser(registeredUser);
       } catch (err) {
         console.error('[KineSys Security] Error verifying auth session:', err);
-        return false;
+        clearAuthState();
       } finally {
+        syncingRef.current = false;
         setLoading(false);
       }
     },
-    [loadPermissionsForRole, loadTenantAndUsers, setStoreAllowedModules]
+    [applyRegisteredUser, clearAuthState, denyAccess]
   );
 
+  // Suscripción auth: una sola vez. Usar `session` del callback, nunca getSession() aquí.
   useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      const { data } = await supabase.auth.getSession();
-      const session = data?.session;
-      if (session?.user) {
-        await verifyAndSyncAuthSession(session.user.id, session.user.email);
-      } else {
-        setLoading(false);
-      }
-    };
-    init();
+    if (!isAuthConfigured() || !supabaseAuthClient) {
+      setLoading(false);
+      return;
+    }
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event: string, session: { user?: { id?: string; email?: string } } | null) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        if (session?.user) {
-          await verifyAndSyncAuthSession(session.user.id, session.user.email);
-        }
-      }
+    const {
+      data: { subscription },
+    } = supabaseAuthClient.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setTenant(null);
-        setAllowedModulesState([]);
-        setStoreAllowedModules([]);
+        clearAuthState();
+        setLoading(false);
+        return;
+      }
+
+      if (
+        event === 'INITIAL_SESSION' ||
+        event === 'SIGNED_IN' ||
+        event === 'TOKEN_REFRESHED' ||
+        event === 'USER_UPDATED'
+      ) {
+        void syncFromSession(session);
       }
     });
 
+    return () => {
+      subscription.unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- suscripción única al montar
+  }, []);
+
+  // Eventos de datos de la app (independiente de auth)
+  useEffect(() => {
     const handleDataUpdate = (e: Event) => {
       const detail = (e as CustomEvent).detail;
+      const currentUser = userRef.current;
+
       if (detail?.table === 'tenants' || detail?.table === 'users' || detail?.table === 'all') {
-        loadTenantAndUsers();
+        if (currentUser) void loadTenantAndUsers(currentUser);
       }
       if (
         detail?.table === 'role_permissions' ||
         detail?.table === 'app_modules' ||
         detail?.table === 'all'
       ) {
-        if (user?.role) loadPermissionsForRole(user.role);
+        if (currentUser?.role) void loadPermissionsForRole(currentUser.role);
       }
     };
-    window.addEventListener('kinesys_data_updated', handleDataUpdate);
 
-    return () => {
-      window.removeEventListener('kinesys_data_updated', handleDataUpdate);
-      authListener?.subscription?.unsubscribe();
-    };
-  }, [verifyAndSyncAuthSession, loadTenantAndUsers, loadPermissionsForRole, user?.role, setStoreAllowedModules]);
+    window.addEventListener('kinesys_data_updated', handleDataUpdate);
+    return () => window.removeEventListener('kinesys_data_updated', handleDataUpdate);
+  }, [loadTenantAndUsers, loadPermissionsForRole]);
 
   const setUserAndRole = (selectedUserId: string) => {
     if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV && user?.role === 'super_admin') {
       const found = usersList.find((u) => u.id === selectedUserId);
-      if (found) {
+      if (found && !usersEqual(user, found)) {
         setUser(found);
-        loadPermissionsForRole(found.role);
+        void loadPermissionsForRole(found.role);
       }
     }
   };
 
   const setRole = (newRole: UserRole) => {
-    if (user) {
+    if (user && user.role !== newRole) {
       setUser({ ...user, role: newRole });
-      loadPermissionsForRole(newRole);
+      void loadPermissionsForRole(newRole);
     }
   };
 
@@ -245,7 +323,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .eq('id', tenant.id)
       .select()
       .single();
-    if (!error && data) setTenant(data as Tenant);
+    if (!error && data) {
+      setTenant((prev) => {
+        const next = data as Tenant;
+        return tenantsEqual(prev, next) ? prev : next;
+      });
+    }
   };
 
   const createTenantAndAdmin = async (
@@ -270,28 +353,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       setTenant(result.tenant);
       setUser(result.user);
+      lastSyncedAuthIdRef.current = result.user.id;
       await loadPermissionsForRole(result.user.role);
+      setLoading(false);
       return result;
     }
     throw new Error('Datos incompletos para crear tenant y administrador.');
   };
 
   const signOut = async () => {
+    isSigningOutRef.current = true;
     try {
-      await supabase.auth.signOut();
+      await supabaseAuthClient?.auth.signOut();
     } catch (err) {
       console.warn('Error during Supabase signOut:', err);
+    } finally {
+      isSigningOutRef.current = false;
     }
-    setUser(null);
-    setTenant(null);
-    setAllowedModulesState([]);
-    setStoreAllowedModules([]);
+    clearAuthState();
     useAppStore.getState().clearActivePatient();
   };
 
   const refreshAuth = () => {
-    loadTenantAndUsers();
-    if (user?.role) loadPermissionsForRole(user.role);
+    const currentUser = userRef.current;
+    if (currentUser) void loadTenantAndUsers(currentUser);
+    if (currentUser?.role) void loadPermissionsForRole(currentUser.role);
   };
 
   const trialEndMs = tenant?.trial_ends_at ? new Date(tenant.trial_ends_at).getTime() : Date.now() + 7 * 86400000;

@@ -50,6 +50,7 @@ export {
   completeOnboarding,
   loadUserByAuthId,
   loadUserByEmail,
+  loadProfileByAuthId,
   loadTenantById,
 } from './dataService';
 

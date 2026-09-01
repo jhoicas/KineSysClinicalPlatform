@@ -674,6 +674,23 @@ export async function completeOnboarding(params: {
   return { tenant: tenant as Tenant, user };
 }
 
+export async function loadProfileByAuthId(authUserId: string): Promise<{
+  id: string;
+  tenant_id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  is_active: boolean;
+} | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, tenant_id, email, full_name, role, is_active')
+    .eq('id', authUserId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data;
+}
+
 export async function loadUserByAuthId(authUserId: string): Promise<User | null> {
   const { data, error } = await supabase
     .from('users')

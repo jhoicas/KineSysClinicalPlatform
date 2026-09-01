@@ -13,6 +13,7 @@ import {
   DEFAULT_APP_MODULES,
   loadUserByAuthId,
   loadUserByEmail,
+  loadProfileByAuthId,
   loadTenantById,
   completeOnboarding,
 } from '../../services/supabaseClient';
@@ -25,6 +26,7 @@ interface AuthContextType {
   tenantId: string;
   tenant: Tenant | null;
   loading: boolean;
+  needsOnboarding: boolean;
   isTrialExpired: boolean;
   trialDaysLeft: number;
   availableUsers: User[];
@@ -47,13 +49,33 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 function usersEqual(a: User | null, b: User | null): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
-  return a.id === b.id && a.role === b.role && a.tenant_id === b.tenant_id && a.is_active === b.is_active;
+  return (
+    a.id === b.id &&
+    a.role === b.role &&
+    a.tenant_id === b.tenant_id &&
+    a.is_active === b.is_active &&
+    a.email === b.email
+  );
 }
 
 function tenantsEqual(a: Tenant | null, b: Tenant | null): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
   return a.id === b.id;
+}
+
+function buildPendingUser(session: Session): User {
+  const authUser = session.user;
+  const meta = authUser.user_metadata as { full_name?: string } | undefined;
+  return {
+    id: authUser.id,
+    email: authUser.email || '',
+    full_name: meta?.full_name || authUser.email?.split('@')[0] || 'Usuario',
+    role: 'pending_onboarding',
+    tenant_id: '',
+    is_active: true,
+    created_at: new Date().toISOString(),
+  };
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -76,6 +98,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loadPermissionsForRole = useCallback(
     async (activeRole: UserRole) => {
+      if (activeRole === 'pending_onboarding') {
+        setAllowedModulesState([]);
+        setStoreAllowedModules([]);
+        return;
+      }
+
       try {
         const { data: allModules, error: modErr } = await supabase
           .from('app_modules')
@@ -144,7 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     lastSyncedAuthIdRef.current = null;
   }, [setStoreAllowedModules]);
 
-  const denyAccess = useCallback(
+  const revokeAccess = useCallback(
     async (denialMessage: string) => {
       sessionStorage.setItem('kinesys_auth_error', denialMessage);
       clearAuthState();
@@ -165,13 +193,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [clearAuthState]
   );
 
+  const applyPendingOnboarding = useCallback((session: Session) => {
+    const pendingUser = buildPendingUser(session);
+    setUser((prev) => (usersEqual(prev, pendingUser) ? prev : pendingUser));
+    setTenant((prev) => (prev === null ? prev : null));
+    setAllowedModulesState([]);
+    setStoreAllowedModules([]);
+    lastSyncedAuthIdRef.current = session.user.id;
+  }, [setStoreAllowedModules]);
+
   const applyRegisteredUser = useCallback(
     async (registeredUser: User) => {
       setUser((prev) => (usersEqual(prev, registeredUser) ? prev : registeredUser));
 
-      const tenantData = await loadTenantById(registeredUser.tenant_id);
-      if (tenantData) {
-        setTenant((prev) => (tenantsEqual(prev, tenantData) ? prev : tenantData));
+      if (registeredUser.tenant_id) {
+        const tenantData = await loadTenantById(registeredUser.tenant_id);
+        if (tenantData) {
+          setTenant((prev) => (tenantsEqual(prev, tenantData) ? prev : tenantData));
+        }
       }
 
       await loadPermissionsForRole(registeredUser.role);
@@ -181,12 +220,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [loadPermissionsForRole, loadTenantAndUsers]
   );
 
-  const syncFromSession = useCallback(
-    async (session: Session | null) => {
-      if (!isAuthConfigured()) {
-        setLoading(false);
-        return;
-      }
+  // Suscripción auth: una sola vez. Toda la lógica vive aquí para evitar closures obsoletos.
+  useEffect(() => {
+    if (!isAuthConfigured() || !supabaseAuthClient) {
+      setLoading(false);
+      return;
+    }
+
+    const syncFromSession = async (session: Session | null) => {
+      if (syncingRef.current) return;
 
       if (!session?.user) {
         clearAuthState();
@@ -197,8 +239,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const sessionUserId = session.user.id;
       const sessionUserEmail = session.user.email ?? null;
 
-      if (syncingRef.current) return;
-      if (lastSyncedAuthIdRef.current === sessionUserId && userRef.current?.id === sessionUserId) {
+      // Ya sincronizado (incluye pending_onboarding) — evita re-entradas en TOKEN_REFRESHED
+      if (
+        lastSyncedAuthIdRef.current === sessionUserId &&
+        userRef.current?.id === sessionUserId
+      ) {
         setLoading(false);
         return;
       }
@@ -214,42 +259,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           registeredUser = await loadUserByEmail(sessionUserEmail);
         }
 
-        if (!registeredUser) {
-          await denyAccess(
-            'El correo no está registrado en la plataforma. Contacta al administrador para habilitar tu cuenta.'
-          );
+        if (registeredUser) {
+          if (registeredUser.is_active === false) {
+            // Acceso revocado: limpiar estado local sin signOut (evita bucle onAuthStateChange)
+            revokeAccess(
+              'Tu acceso ha sido revocado por el administrador de la clínica. Contacta a soporte si crees que es un error.'
+            );
+            return;
+          }
+          await applyRegisteredUser(registeredUser);
           return;
         }
 
-        if (registeredUser.is_active === false) {
-          await denyAccess(
+        // Sin fila en kinesys.users — verificar profiles
+        const profile = sessionUserId ? await loadProfileByAuthId(sessionUserId) : null;
+
+        if (!profile) {
+          // Usuario Auth sin perfil/tenant: onboarding pendiente, SIN signOut
+          applyPendingOnboarding(session);
+          return;
+        }
+
+        if (profile.is_active === false) {
+          revokeAccess(
             'Tu acceso ha sido revocado por el administrador de la clínica. Contacta a soporte si crees que es un error.'
           );
           return;
         }
 
-        await applyRegisteredUser(registeredUser);
+        // Perfil existe pero users no — estado intermedio, permitir onboarding
+        const profileUser: User = {
+          id: profile.id,
+          email: profile.email,
+          full_name: profile.full_name,
+          role: (profile.role as UserRole) || 'pending_onboarding',
+          tenant_id: profile.tenant_id || '',
+          is_active: profile.is_active,
+          created_at: new Date().toISOString(),
+        };
+
+        if (!profile.tenant_id) {
+          applyPendingOnboarding(session);
+          return;
+        }
+
+        await applyRegisteredUser(profileUser);
       } catch (err) {
         console.error('[KineSys Security] Error verifying auth session:', err);
-        clearAuthState();
+        // Error de red/DB: mantener sesión Auth y marcar onboarding pendiente
+        applyPendingOnboarding(session);
       } finally {
         syncingRef.current = false;
         setLoading(false);
       }
-    },
-    [applyRegisteredUser, clearAuthState, denyAccess]
-  );
-
-  // Suscripción auth: una sola vez. Usar `session` del callback, nunca getSession() aquí.
-  useEffect(() => {
-    if (!isAuthConfigured() || !supabaseAuthClient) {
-      setLoading(false);
-      return;
-    }
+    };
 
     const {
       data: { subscription },
     } = supabaseAuthClient.auth.onAuthStateChange((event, session) => {
+      if (isSigningOutRef.current) return;
+
       if (event === 'SIGNED_OUT') {
         clearAuthState();
         setLoading(false);
@@ -279,14 +348,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const currentUser = userRef.current;
 
       if (detail?.table === 'tenants' || detail?.table === 'users' || detail?.table === 'all') {
-        if (currentUser) void loadTenantAndUsers(currentUser);
+        if (currentUser?.tenant_id) void loadTenantAndUsers(currentUser);
       }
       if (
         detail?.table === 'role_permissions' ||
         detail?.table === 'app_modules' ||
         detail?.table === 'all'
       ) {
-        if (currentUser?.role) void loadPermissionsForRole(currentUser.role);
+        if (currentUser?.role && currentUser.role !== 'pending_onboarding') {
+          void loadPermissionsForRole(currentUser.role);
+        }
       }
     };
 
@@ -312,7 +383,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshPermissions = async () => {
-    if (user?.role) await loadPermissionsForRole(user.role);
+    if (user?.role && user.role !== 'pending_onboarding') {
+      await loadPermissionsForRole(user.role);
+    }
   };
 
   const updateTenant = async (tenantUpdates: Partial<Tenant>) => {
@@ -376,9 +449,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshAuth = () => {
     const currentUser = userRef.current;
-    if (currentUser) void loadTenantAndUsers(currentUser);
-    if (currentUser?.role) void loadPermissionsForRole(currentUser.role);
+    if (currentUser?.tenant_id) void loadTenantAndUsers(currentUser);
+    if (currentUser?.role && currentUser.role !== 'pending_onboarding') {
+      void loadPermissionsForRole(currentUser.role);
+    }
   };
+
+  const needsOnboarding = user?.role === 'pending_onboarding' || !user?.tenant_id;
 
   const trialEndMs = tenant?.trial_ends_at ? new Date(tenant.trial_ends_at).getTime() : Date.now() + 7 * 86400000;
   const trialDaysLeft = Math.max(0, Math.ceil((trialEndMs - Date.now()) / (1000 * 60 * 60 * 24)));
@@ -392,6 +469,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         tenantId: user?.tenant_id || tenant?.id || '',
         tenant,
         loading,
+        needsOnboarding,
         isTrialExpired,
         trialDaysLeft,
         availableUsers: usersList,

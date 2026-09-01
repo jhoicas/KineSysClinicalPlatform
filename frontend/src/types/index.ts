@@ -6,7 +6,8 @@ export type UserRole =
   | 'medico_general' 
   | 'patient' 
   | 'receptionist'
-  | 'professional'; // backwards compatibility
+  | 'professional' // backwards compatibility
+  | 'pending_onboarding';
 
 export interface AppRole {
   id: UserRole | string;

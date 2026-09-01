@@ -9,21 +9,29 @@ interface ProtectedRouteProps {
   fallbackPath?: string;
 }
 
+const ONBOARDING_PATHS = new Set(['/onboarding', '/registro']);
+
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   path,
   onNavigate,
   children,
   fallbackPath = '/calendario',
 }) => {
-  const { user, loading, role, allowedModules } = useAuth();
+  const { user, loading, role, allowedModules, needsOnboarding } = useAuth();
   const isRouteAllowed = useAppStore((state) => state.isRouteAllowed);
 
-  // Auto-redirect if not authenticated
   useEffect(() => {
-    if (!loading && !user) {
+    if (loading) return;
+
+    if (!user) {
       onNavigate('/login');
+      return;
     }
-  }, [loading, user, onNavigate]);
+
+    if (needsOnboarding && !ONBOARDING_PATHS.has(path)) {
+      onNavigate('/onboarding');
+    }
+  }, [loading, user, needsOnboarding, path, onNavigate]);
 
   if (loading) {
     return (
@@ -36,7 +44,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  // 1. Verificación Estricta de Autenticación (Bloqueo Inmediato)
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-background text-on-background">
@@ -62,7 +69,31 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  // 2. Verificación de Permisos Dinámicos RBAC
+  if (needsOnboarding) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-background text-on-background">
+        <div className="max-w-md w-full p-8 rounded-3xl bg-surface-container-low border border-primary/20 text-center space-y-5 shadow-2xl animate-fadeIn">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center mx-auto">
+            <span className="material-symbols-outlined text-3xl">domain_add</span>
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-black tracking-tight text-on-surface">Configura tu Clínica</h2>
+            <p className="text-xs text-on-surface-variant leading-relaxed">
+              Tu cuenta está autenticada pero aún no tiene una clínica asociada. Completa el onboarding para continuar.
+            </p>
+          </div>
+          <button
+            onClick={() => onNavigate('/onboarding')}
+            className="w-full py-3 bg-primary text-on-primary font-bold text-xs rounded-xl shadow-md hover:bg-primary/90 transition-all cursor-pointer flex items-center justify-center gap-2"
+          >
+            <span>Ir al Onboarding</span>
+            <span className="material-symbols-outlined text-base">arrow_forward</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const hasAccess = isRouteAllowed(path);
 
   if (!hasAccess) {
@@ -74,17 +105,16 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
           <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 flex items-center justify-center mx-auto">
             <span className="material-symbols-outlined text-3xl">gpp_bad</span>
           </div>
-          
+
           <div className="space-y-2">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 text-rose-700 text-[11px] font-black uppercase tracking-wider border border-rose-500/20">
               <span className="material-symbols-outlined text-xs">shield_lock</span>
               Acceso Restringido (RBAC)
             </div>
-            <h2 className="text-2xl font-black tracking-tight text-on-surface">
-              Módulo No Autorizado
-            </h2>
+            <h2 className="text-2xl font-black tracking-tight text-on-surface">Módulo No Autorizado</h2>
             <p className="text-xs text-on-surface-variant leading-relaxed max-w-sm mx-auto">
-              Tu rol actual (<strong className="text-primary uppercase">{role}</strong>) no cuenta con permisos asignados para visualizar la ruta <code className="px-1.5 py-0.5 rounded bg-surface-container font-mono text-[11px] text-on-surface">{path}</code>.
+              Tu rol actual (<strong className="text-primary uppercase">{role}</strong>) no cuenta con permisos asignados para visualizar la ruta{' '}
+              <code className="px-1.5 py-0.5 rounded bg-surface-container font-mono text-[11px] text-on-surface">{path}</code>.
             </p>
           </div>
 

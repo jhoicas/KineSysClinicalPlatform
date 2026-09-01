@@ -179,7 +179,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!isSigningOutRef.current) {
         isSigningOutRef.current = true;
         try {
-          await supabaseAuthClient?.auth.signOut();
+          await supabaseAuthClient.auth.signOut();
         } catch {
           /* ignore */
         } finally {
@@ -220,9 +220,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [loadPermissionsForRole, loadTenantAndUsers]
   );
 
-  // Suscripción auth: una sola vez. Toda la lógica vive aquí para evitar closures obsoletos.
+  // Suscripción auth: una sola vez, directamente en el SDK (sin wrappers recursivos).
   useEffect(() => {
-    if (!isAuthConfigured() || !supabaseAuthClient) {
+    if (!supabaseAuthClient) {
       setLoading(false);
       return;
     }

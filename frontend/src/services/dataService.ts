@@ -11,7 +11,8 @@ import {
   onAuthStateChange as authOnAuthStateChange,
   isAuthConfigured,
 } from './supabaseAuth';
-import { supabaseDataClient, isSupabaseConfigured } from './supabaseDataClient';
+import { supabaseDataClient, isSupabaseConfigured, clinicalFrom } from './supabaseDataClient';
+import { getNativeAuth } from './supabaseAuth';
 import { assertSupabaseOk } from '../utils/supabaseErrors';
 import {
   User,
@@ -106,21 +107,44 @@ export const DEFAULT_APP_MODULES: AppModule[] = [
 ];
 
 // ─── Cliente Supabase (real) ───────────────────────────────────────────────────
+// Proxy: NO mutar supabaseDataClient.auth con Object.assign (causa recursión en onAuthStateChange).
 
-export const supabase = Object.assign(supabaseDataClient, {
-  auth: {
-    getUser: authGetUser,
-    getSession: authGetSession,
-    signInWithOAuth: authSignInWithOAuth,
-    signInWithOtp: authSignInWithOtp,
-    verifyOtp: authVerifyOtp,
-    signOut: authSignOut,
-    onAuthStateChange: authOnAuthStateChange,
-    signUp: (credentials: { email: string; password: string; options?: Record<string, unknown> }) =>
-      supabaseDataClient.auth.signUp(credentials),
+const nativeAuthApi = getNativeAuth();
+
+const supabaseAuthFacade = {
+  getUser: authGetUser,
+  getSession: authGetSession,
+  signInWithOAuth: authSignInWithOAuth,
+  signInWithOtp: authSignInWithOtp,
+  verifyOtp: authVerifyOtp,
+  signOut: authSignOut,
+  onAuthStateChange: authOnAuthStateChange,
+  signUp: (credentials: { email: string; password: string; options?: Record<string, unknown> }) => {
+    if (!nativeAuthApi) {
+      return Promise.resolve({ data: { user: null, session: null }, error: { message: 'Supabase Auth no está configurado.' } });
+    }
+    return nativeAuthApi.signUp(credentials);
   },
-  isUsingLocalEngine: () => !isSupabaseConfigured(),
-});
+};
+
+export const supabase = new Proxy(supabaseDataClient, {
+  get(target, prop, receiver) {
+    if (prop === 'from') {
+      return (table: string) => clinicalFrom(table);
+    }
+    if (prop === 'auth') {
+      return supabaseAuthFacade;
+    }
+    if (prop === 'isUsingLocalEngine') {
+      return () => !isSupabaseConfigured();
+    }
+    return Reflect.get(target, prop, receiver);
+  },
+}) as typeof supabaseDataClient & {
+  from: typeof clinicalFrom;
+  auth: typeof supabaseAuthFacade;
+  isUsingLocalEngine: () => boolean;
+};
 
 // ─── CRUD Pacientes ────────────────────────────────────────────────────────────
 
@@ -583,7 +607,7 @@ export async function completeOnboarding(params: {
 
   const trialEnds = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: signUpData, error: signUpError } = await supabaseDataClient.auth.signUp({
+  const { data: signUpData, error: signUpError } = await nativeAuthApi!.signUp({
     email: params.adminEmail.trim().toLowerCase(),
     password: params.password,
     options: { data: { full_name: params.adminName.trim() } },
@@ -614,7 +638,7 @@ export async function completeOnboarding(params: {
     .single();
 
   if (tenantError) {
-    await supabaseDataClient.auth.signOut();
+    await authSignOut();
     throw tenantError;
   }
 
@@ -636,7 +660,7 @@ export async function completeOnboarding(params: {
 
   if (userError) {
     await supabase.from('tenants').delete().eq('id', tenantId);
-    await supabaseDataClient.auth.signOut();
+    await authSignOut();
     throw userError;
   }
 
@@ -654,7 +678,7 @@ export async function completeOnboarding(params: {
   if (profileError) {
     await supabase.from('users').delete().eq('id', authUserId);
     await supabase.from('tenants').delete().eq('id', tenantId);
-    await supabaseDataClient.auth.signOut();
+    await authSignOut();
     throw profileError;
   }
 

@@ -2,7 +2,7 @@
  * KineSys — Cliente Supabase real (datos clínicos + auth compartido)
  */
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { supabaseAuthClient } from './supabaseAuth';
+import { supabaseAuthClient, getNativeAuth } from './supabaseAuth';
 
 const SUPABASE_URL = (import.meta as { env?: { VITE_SUPABASE_URL?: string } }).env?.VITE_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY =
@@ -50,6 +50,9 @@ export const supabaseDataClient = new Proxy(baseClient, {
   get(target, prop, receiver) {
     if (prop === 'from') {
       return (table: string) => clinicalFrom(table);
+    }
+    if (prop === 'auth') {
+      return getNativeAuth() ?? Reflect.get(target, prop, receiver);
     }
     return Reflect.get(target, prop, receiver);
   },

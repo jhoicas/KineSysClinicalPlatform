@@ -1,28 +1,60 @@
 /**
  * KineSys — Supabase Auth Module
+ *
+ * Los wrappers delegan a funciones enlazadas (.bind) capturadas al crear el cliente.
+ * Nunca usar `supabaseClient.auth.*` en wrappers: si otro módulo reemplaza `.auth`
+ * en el cliente compartido, las referencias enlazadas siguen apuntando al SDK real.
  */
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 const SUPABASE_URL = (import.meta as { env?: { VITE_SUPABASE_URL?: string } }).env?.VITE_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY =
   (import.meta as { env?: { VITE_SUPABASE_ANON_KEY?: string } }).env?.VITE_SUPABASE_ANON_KEY || '';
 
-let supabaseClient: SupabaseClient | null = null;
+let rawSupabaseClient: SupabaseClient | null = null;
+let nativeAuth: SupabaseClient['auth'] | null = null;
+
+type AuthStateCallback = (event: AuthChangeEvent, session: Session | null) => void;
+type AuthStateSubscription = ReturnType<SupabaseClient['auth']['onAuthStateChange']>;
+
+/** Suscriptor enlazado al GoTrueClient real — inmune a shadowing en `.auth` */
+let subscribeAuthStateChange: ((callback: AuthStateCallback) => AuthStateSubscription) | null = null;
+
+const noopSubscription = { data: { subscription: { unsubscribe: () => {} } } };
 
 if (SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_URL.startsWith('http')) {
   try {
-    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    rawSupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    nativeAuth = rawSupabaseClient.auth;
+    subscribeAuthStateChange = nativeAuth.onAuthStateChange.bind(nativeAuth);
   } catch (e) {
     console.warn('[KineSys Auth] Failed to initialize Supabase client:', e);
   }
 }
 
-export const supabaseAuthClient = supabaseClient;
+/**
+ * Cliente Supabase con `.auth` siempre resuelto al SDK nativo (no al facade de dataService).
+ */
+export const supabaseAuthClient: SupabaseClient | null = rawSupabaseClient
+  ? new Proxy(rawSupabaseClient, {
+      get(target, prop, receiver) {
+        if (prop === 'auth') {
+          return nativeAuth;
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    })
+  : null;
+
+/** Acceso directo al GoTrueClient nativo */
+export function getNativeAuth(): SupabaseClient['auth'] | null {
+  return nativeAuth;
+}
 
 export async function getAccessToken(): Promise<string | null> {
-  if (!supabaseClient) return null;
+  if (!nativeAuth) return null;
   try {
-    const { data } = await supabaseClient.auth.getSession();
+    const { data } = await nativeAuth.getSession();
     return data?.session?.access_token || null;
   } catch {
     return null;
@@ -30,17 +62,17 @@ export async function getAccessToken(): Promise<string | null> {
 }
 
 export async function getUser() {
-  if (!supabaseClient) {
+  if (!nativeAuth) {
     return { data: { user: null }, error: { message: 'Supabase Auth no está configurado.' } };
   }
-  return await supabaseClient.auth.getUser();
+  return nativeAuth.getUser();
 }
 
 export async function getSession() {
-  if (!supabaseClient) {
+  if (!nativeAuth) {
     return { data: { session: null }, error: { message: 'Supabase Auth no está configurado.' } };
   }
-  return await supabaseClient.auth.getSession();
+  return nativeAuth.getSession();
 }
 
 export async function signInWithOAuth({
@@ -50,7 +82,7 @@ export async function signInWithOAuth({
   provider: string;
   options?: Record<string, unknown>;
 }) {
-  if (!supabaseClient) {
+  if (!nativeAuth) {
     return {
       data: { provider, url: null },
       error: {
@@ -59,7 +91,7 @@ export async function signInWithOAuth({
       },
     };
   }
-  return await supabaseClient.auth.signInWithOAuth({ provider: provider as 'google', options });
+  return nativeAuth.signInWithOAuth({ provider: provider as 'google', options });
 }
 
 export async function signInWithOtp({
@@ -69,13 +101,13 @@ export async function signInWithOtp({
   email: string;
   options?: Record<string, unknown>;
 }) {
-  if (!supabaseClient) {
+  if (!nativeAuth) {
     return {
       data: { user: null, session: null },
       error: { message: 'Supabase Auth no está configurado.' },
     };
   }
-  return await supabaseClient.auth.signInWithOtp({ email, options });
+  return nativeAuth.signInWithOtp({ email, options });
 }
 
 export async function verifyOtp({
@@ -87,29 +119,30 @@ export async function verifyOtp({
   token: string;
   type: string;
 }) {
-  if (!supabaseClient) {
+  if (!nativeAuth) {
     return {
       data: { user: null, session: null },
       error: { message: 'Supabase Auth no está configurado.' },
     };
   }
-  return await supabaseClient.auth.verifyOtp({ email, token, type: type as 'email' });
+  return nativeAuth.verifyOtp({ email, token, type: type as 'email' });
 }
 
 export async function signOut() {
-  if (!supabaseClient) {
+  if (!nativeAuth) {
     return { error: { message: 'Supabase Auth no está configurado.' } };
   }
-  return await supabaseClient.auth.signOut();
+  return nativeAuth.signOut();
 }
 
-export function onAuthStateChange(callback?: Parameters<SupabaseClient['auth']['onAuthStateChange']>[0]) {
-  if (!supabaseClient) {
-    return { data: { subscription: { unsubscribe: () => {} } } };
+/** Wrapper seguro: delega al método .bind() capturado al inicio, nunca se llama a sí mismo */
+export function onAuthStateChange(callback: AuthStateCallback): AuthStateSubscription {
+  if (!subscribeAuthStateChange) {
+    return noopSubscription as AuthStateSubscription;
   }
-  return supabaseClient.auth.onAuthStateChange(callback!);
+  return subscribeAuthStateChange(callback);
 }
 
 export function isAuthConfigured(): boolean {
-  return supabaseClient !== null;
+  return subscribeAuthStateChange !== null;
 }

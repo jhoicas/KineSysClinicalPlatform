@@ -4,6 +4,7 @@
 
 export {
   supabaseAuthClient,
+  getNativeAuth,
   getAccessToken,
   getUser,
   getSession,

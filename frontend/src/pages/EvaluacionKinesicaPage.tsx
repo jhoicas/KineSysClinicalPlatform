@@ -24,6 +24,9 @@ import {
   createEmptyStrength,
 } from '../data/kinesiologyCatalog';
 import { formatDateTime } from '../utils/dateUtils';
+import { StrengthDashboard } from '../components/medical/StrengthDashboard';
+import { MobilityDashboard } from '../components/medical/MobilityDashboard';
+import { PostureDashboard } from '../components/medical/PostureDashboard';
 
 interface EvaluacionKinesicaPageProps {
   onNavigate?: (path: string) => void;
@@ -305,7 +308,7 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
             </div>
           ) : (
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6 animate-fadeIn">
-              <form onSubmit={handleSave} className="space-y-4">
+              <form onSubmit={handleSave} className="space-y-4 min-w-0">
                 {readOnly && (
                   <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-on-surface">
                     Vista de solo lectura de una evaluación histórica. Usa <strong>Nueva Evaluación</strong> para
@@ -331,9 +334,10 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
                   ))}
                 </div>
 
-                <section className="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow space-y-5">
-                  {tab === 'postura' && (
-                    <>
+                {/* ── Postura: form + dashboard side-by-side ── */}
+                {tab === 'postura' && (
+                  <div className="grid grid-cols-1 2xl:grid-cols-2 gap-5">
+                    <section className="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow space-y-5">
                       {renderPostureView('Vista anterior', 'anterior')}
                       {renderPostureView('Vista lateral', 'lateral')}
                       {renderPostureView('Vista posterior', 'posterior')}
@@ -353,105 +357,121 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
                           placeholder="Síntesis de hallazgos posturales..."
                         />
                       </label>
-                    </>
-                  )}
+                    </section>
+                    <PostureDashboard data={form.postura} />
+                  </div>
+                )}
 
-                  {tab === 'movilidad' && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-[11px] uppercase tracking-wider text-on-surface-variant">
-                            <th className="pb-3">Segmento</th>
-                            <th className="pb-3">Limitación izquierda</th>
-                            <th className="pb-3">Limitación derecha</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {form.movilidad.map((row, index) => (
-                            <tr key={row.estructura} className="border-t border-outline-variant/20">
-                              <td className="py-3 font-semibold">{row.estructura}</td>
-                              <td className="py-3 pr-2">
-                                <input
-                                  disabled={readOnly}
-                                  className={inputClass}
-                                  value={row.limitacion_izq}
-                                  onChange={(e) => updateMobility(index, 'limitacion_izq', e.target.value)}
-                                  placeholder="Ej. −20° FLX"
-                                />
-                              </td>
-                              <td className="py-3">
-                                <input
-                                  disabled={readOnly}
-                                  className={inputClass}
-                                  value={row.limitacion_der}
-                                  onChange={(e) => updateMobility(index, 'limitacion_der', e.target.value)}
-                                  placeholder="Ej. Completa"
-                                />
-                              </td>
+                {/* ── Movilidad: form + dashboard ── */}
+                {tab === 'movilidad' && (
+                  <div className="grid grid-cols-1 2xl:grid-cols-2 gap-5">
+                    <section className="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-[11px] uppercase tracking-wider text-on-surface-variant">
+                              <th className="pb-3">Segmento</th>
+                              <th className="pb-3">Limitación izquierda</th>
+                              <th className="pb-3">Limitación derecha</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
+                          </thead>
+                          <tbody>
+                            {form.movilidad.map((row, index) => (
+                              <tr key={row.estructura} className="border-t border-outline-variant/20">
+                                <td className="py-3 font-semibold">{row.estructura}</td>
+                                <td className="py-3 pr-2">
+                                  <input
+                                    disabled={readOnly}
+                                    className={inputClass}
+                                    value={row.limitacion_izq}
+                                    onChange={(e) => updateMobility(index, 'limitacion_izq', e.target.value)}
+                                    placeholder="Ej. −20° FLX"
+                                  />
+                                </td>
+                                <td className="py-3">
+                                  <input
+                                    disabled={readOnly}
+                                    className={inputClass}
+                                    value={row.limitacion_der}
+                                    onChange={(e) => updateMobility(index, 'limitacion_der', e.target.value)}
+                                    placeholder="Ej. Completa"
+                                  />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                    <MobilityDashboard data={form.movilidad} />
+                  </div>
+                )}
 
-                  {tab === 'fuerza' && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-[11px] uppercase tracking-wider text-on-surface-variant">
-                            <th className="pb-3">Estructura</th>
-                            <th className="pb-3">Izq (kg)</th>
-                            <th className="pb-3">Der (kg)</th>
-                            <th className="pb-3">Asimetría %</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {form.fuerza.map((row, index) => (
-                            <tr key={row.estructura} className="border-t border-outline-variant/20">
-                              <td className="py-3 font-semibold">{row.estructura}</td>
-                              <td className="py-3 pr-2">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={0.1}
-                                  disabled={readOnly}
-                                  className={inputClass}
-                                  value={row.fuerza_izq_kg ?? ''}
-                                  onChange={(e) => updateStrength(index, 'fuerza_izq_kg', e.target.value)}
-                                />
-                              </td>
-                              <td className="py-3 pr-2">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step={0.1}
-                                  disabled={readOnly}
-                                  className={inputClass}
-                                  value={row.fuerza_der_kg ?? ''}
-                                  onChange={(e) => updateStrength(index, 'fuerza_der_kg', e.target.value)}
-                                />
-                              </td>
-                              <td className="py-3">
-                                <span
-                                  className={`inline-flex min-w-[3.5rem] justify-center rounded-xl px-2 py-2 text-xs font-black ${
-                                    (row.asimetria_porcentaje ?? 0) >= 15
-                                      ? 'bg-error/10 text-error'
-                                      : 'bg-surface-container-low text-on-surface'
-                                  }`}
-                                >
-                                  {row.asimetria_porcentaje == null ? '—' : `${row.asimetria_porcentaje}%`}
-                                </span>
-                              </td>
+                {/* ── Fuerza: form + dashboard ── */}
+                {tab === 'fuerza' && (
+                  <div className="grid grid-cols-1 2xl:grid-cols-2 gap-5">
+                    <section className="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-[11px] uppercase tracking-wider text-on-surface-variant">
+                              <th className="pb-3">Estructura</th>
+                              <th className="pb-3">Izq (kg)</th>
+                              <th className="pb-3">Der (kg)</th>
+                              <th className="pb-3">Asimetría %</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <p className="text-[11px] text-on-surface-variant mt-3">
-                        Asimetría = |Izq − Der| / mayor valor × 100. Se destaca si es ≥ 15%.
-                      </p>
-                    </div>
-                  )}
+                          </thead>
+                          <tbody>
+                            {form.fuerza.map((row, index) => (
+                              <tr key={row.estructura} className="border-t border-outline-variant/20">
+                                <td className="py-3 font-semibold">{row.estructura}</td>
+                                <td className="py-3 pr-2">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={0.1}
+                                    disabled={readOnly}
+                                    className={inputClass}
+                                    value={row.fuerza_izq_kg ?? ''}
+                                    onChange={(e) => updateStrength(index, 'fuerza_izq_kg', e.target.value)}
+                                  />
+                                </td>
+                                <td className="py-3 pr-2">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={0.1}
+                                    disabled={readOnly}
+                                    className={inputClass}
+                                    value={row.fuerza_der_kg ?? ''}
+                                    onChange={(e) => updateStrength(index, 'fuerza_der_kg', e.target.value)}
+                                  />
+                                </td>
+                                <td className="py-3">
+                                  <span
+                                    className={`inline-flex min-w-[3.5rem] justify-center rounded-xl px-2 py-2 text-xs font-black ${
+                                      (row.asimetria_porcentaje ?? 0) >= 15
+                                        ? 'bg-error/10 text-error'
+                                        : 'bg-surface-container-low text-on-surface'
+                                    }`}
+                                  >
+                                    {row.asimetria_porcentaje == null ? '—' : `${row.asimetria_porcentaje}%`}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <p className="text-[11px] text-on-surface-variant mt-3">
+                          Asimetría = |Izq − Der| / mayor valor × 100. Se destaca si es ≥ 15%.
+                        </p>
+                      </div>
+                    </section>
+                    <StrengthDashboard data={form.fuerza} />
+                  </div>
+                )}
+
+                <section className={`bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow space-y-5 ${(tab === 'postura' || tab === 'movilidad' || tab === 'fuerza') ? 'hidden' : ''}`}>
 
                   {tab === 'control' && (
                     <div className="space-y-4">

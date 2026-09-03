@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AuthProvider } from './app/providers/AuthProvider';
+import { AuthProvider, useAuth } from './app/providers/AuthProvider';
 import { I18nProvider } from './app/providers/I18nProvider';
 import { ThemeProvider } from './app/providers/ThemeProvider';
 import { CalendarPage } from './pages/CalendarPage';
@@ -16,26 +16,24 @@ import { LoginPage } from './pages/LoginPage';
 import { AdminAccessControl } from './pages/AdminAccessControl';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 
-export function App() {
-  const getCleanPath = () => {
-    const hash = window.location.hash.replace(/^#/, '');
-    if (
-      hash.startsWith('access_token=') ||
-      hash.startsWith('access_token') ||
-      hash.includes('access_token=') ||
-      hash.startsWith('error=') ||
-      hash.startsWith('error_description')
-    ) {
-      return 'oauth-callback';
-    }
-    return hash || '/landing';
-  };
+function isOAuthFragment(path: string): boolean {
+  return (
+    path.includes('access_token=') ||
+    path.includes('refresh_token=') ||
+    path.startsWith('error=') ||
+    path.includes('error_description')
+  );
+}
 
-  const [currentPath, setCurrentPath] = useState<string>(getCleanPath);
+function AppRouter() {
+  const { user, needsOnboarding, allowedModules, loading } = useAuth();
+  const [currentPath, setCurrentPath] = useState<string>(
+    () => window.location.hash.replace(/^#/, '') || '/landing'
+  );
 
   useEffect(() => {
     const handleHashChange = () => {
-      setCurrentPath(getCleanPath());
+      setCurrentPath(window.location.hash.replace(/^#/, '') || '/landing');
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -46,18 +44,36 @@ export function App() {
     setCurrentPath(path);
   };
 
+  useEffect(() => {
+    if (loading || !user || isOAuthFragment(currentPath)) return;
+
+    const publicPaths = ['/login', '/landing', '/', ''];
+    if (!publicPaths.includes(currentPath)) return;
+
+    if (needsOnboarding) {
+      handleNavigate('/onboarding');
+      return;
+    }
+    if (allowedModules && allowedModules.length > 0) {
+      handleNavigate(allowedModules[0].path_route);
+    }
+  }, [user, loading, currentPath, needsOnboarding, allowedModules]);
+
+  if (isOAuthFragment(currentPath)) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-on-surface-variant font-bold text-xs">Validando credenciales seguras...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const defaultFallback = allowedModules[0]?.path_route || '/calendario';
+
   const renderCurrentView = () => {
     switch (currentPath) {
-      case 'oauth-callback':
-        return (
-          <div className="flex h-screen items-center justify-center bg-background">
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-              <p className="text-on-surface-variant font-bold text-xs">Validando autenticación segura...</p>
-            </div>
-          </div>
-        );
-      // ─── RUTAS PÚBLICAS (Sin autenticación requerida) ───
       case '/login':
         return <LoginPage onNavigate={handleNavigate} />;
       case '/':
@@ -68,72 +84,74 @@ export function App() {
         return <OnboardingPage onNavigate={handleNavigate} />;
       case '/portal-paciente':
         return <PatientPortalPage onNavigate={handleNavigate} />;
-
-      // ─── RUTAS PRIVADAS (Protegidas por Sesión y RBAC Dinámico) ───
       case '/super-admin':
         return (
-          <ProtectedRoute path="/super-admin" onNavigate={handleNavigate}>
+          <ProtectedRoute path="/super-admin" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
             <SuperAdminPage onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
       case '/nutricion':
         return (
-          <ProtectedRoute path="/nutricion" onNavigate={handleNavigate}>
+          <ProtectedRoute path="/nutricion" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
             <NutricionistaPage onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
       case '/medicina-general':
       case '/doctor-dashboard':
         return (
-          <ProtectedRoute path="/medicina-general" onNavigate={handleNavigate}>
+          <ProtectedRoute path="/medicina-general" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
             <DoctorDashboard onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
       case '/calendario':
         return (
-          <ProtectedRoute path="/calendario" onNavigate={handleNavigate}>
+          <ProtectedRoute path="/calendario" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
             <CalendarPage onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
       case '/pacientes':
         return (
-          <ProtectedRoute path="/pacientes" onNavigate={handleNavigate}>
+          <ProtectedRoute path="/pacientes" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
             <PatientsPage onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
       case '/mapa-dolor':
         return (
-          <ProtectedRoute path="/mapa-dolor" onNavigate={handleNavigate}>
+          <ProtectedRoute path="/mapa-dolor" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
             <DemoPainMapPage onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
       case '/admin-access':
         return (
-          <ProtectedRoute path="/admin-access" onNavigate={handleNavigate}>
+          <ProtectedRoute path="/admin-access" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
             <AdminAccessControl onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
       case '/configuracion':
         return (
-          <ProtectedRoute path="/configuracion" onNavigate={handleNavigate}>
+          <ProtectedRoute path="/configuracion" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
             <SettingsPage onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
       default:
         return (
-          <ProtectedRoute path={currentPath} onNavigate={handleNavigate}>
+          <ProtectedRoute path={currentPath} onNavigate={handleNavigate} fallbackPath={defaultFallback}>
             <CalendarPage onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
     }
   };
 
+  return <>{renderCurrentView()}</>;
+}
+
+export function App() {
   return (
     <I18nProvider>
       <AuthProvider>
         <ThemeProvider>
           <div className="min-h-screen bg-background text-on-background font-sans antialiased selection:bg-primary selection:text-white">
-            {renderCurrentView()}
+            <AppRouter />
           </div>
         </ThemeProvider>
       </AuthProvider>

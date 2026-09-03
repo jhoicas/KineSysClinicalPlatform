@@ -37,6 +37,7 @@ export const KINESYS_TABLES = new Set([
   'historias_clinicas',
   'evaluaciones_kinesicas',
   'food_catalog',
+  'exercise_library',
 ]);
 
 export const CLINICAL_SCHEMA = 'kinesys';

@@ -12,6 +12,7 @@ import {
   PostureAssessment,
   PostureSeverity,
   StrengthAssessment,
+  TreatmentPlan,
 } from '../types';
 import {
   calcStrengthAsymmetry,
@@ -19,38 +20,42 @@ import {
   createEmptyMobility,
   createEmptyPosture,
   createEmptyStrength,
+  createEmptyTreatmentPlan,
+  normalizeTreatmentPlan,
 } from '../data/kinesiologyCatalog';
 import { formatDateTime } from '../utils/dateUtils';
 import { StrengthDashboard } from '../components/medical/StrengthDashboard';
 import { MobilityDashboard } from '../components/medical/MobilityDashboard';
 import { PostureModule } from '../components/medical/PostureModule';
 import { MovementControlModule } from '../components/medical/MovementControlModule';
+import { TreatmentPlanModule } from '../components/medical/TreatmentPlanModule';
 
 interface EvaluacionKinesicaPageProps {
   onNavigate?: (path: string) => void;
 }
 
-type EvalTab = 'postura' | 'movilidad' | 'fuerza' | 'control' | 'diagnostico';
+type EvalTab = 'postura' | 'movilidad' | 'fuerza' | 'control' | 'diagnostico' | 'plan';
 
 const TABS: { id: EvalTab; label: string; icon: string }[] = [
   { id: 'postura', label: 'Postura', icon: 'accessibility_new' },
   { id: 'movilidad', label: 'Movilidad', icon: '360' },
   { id: 'fuerza', label: 'Fuerza', icon: 'fitness_center' },
   { id: 'control', label: 'Control de movimiento', icon: 'directions_run' },
-  { id: 'diagnostico', label: 'Diagnóstico y plan', icon: 'clinical_notes' },
+  { id: 'diagnostico', label: 'Diagnóstico', icon: 'clinical_notes' },
+  { id: 'plan', label: 'Plan de tratamiento', icon: 'assignment' },
 ];
 
 const inputClass =
   'mt-1 w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2 text-sm disabled:opacity-70 disabled:cursor-not-allowed';
 
-function emptyForm() {
+function emptyForm(patientId = '') {
   return {
     postura: createEmptyPosture(),
     movilidad: createEmptyMobility(),
     fuerza: createEmptyStrength(),
     gestos_movimiento: createEmptyGestures(),
     diagnostico_kinesico: '',
-    plan_tratamiento: '',
+    plan_tratamiento: createEmptyTreatmentPlan(patientId),
     observaciones_generales: '',
   };
 }
@@ -128,7 +133,7 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
           }))
         : createEmptyGestures(),
       diagnostico_kinesico: row.diagnostico_kinesico || '',
-      plan_tratamiento: row.plan_tratamiento || '',
+      plan_tratamiento: normalizeTreatmentPlan(row.plan_tratamiento, row.patient_id),
       observaciones_generales: row.observaciones_generales || '',
     });
   };
@@ -136,7 +141,7 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
   const startNewEvaluation = () => {
     setCurrentId(undefined);
     setReadOnly(false);
-    setForm(emptyForm());
+    setForm(emptyForm(activePatient?.id || ''));
     setTab('postura');
   };
 
@@ -187,6 +192,10 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
     }
     setSaving(true);
     try {
+      const planToSave: TreatmentPlan = {
+        ...form.plan_tratamiento,
+        patientId: activePatient.id,
+      };
       const saved = await saveKinesiologyEvaluation({
         id: currentId,
         tenant_id: tenantId,
@@ -197,7 +206,7 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
         fuerza: form.fuerza,
         gestos_movimiento: form.gestos_movimiento,
         diagnostico_kinesico: form.diagnostico_kinesico,
-        plan_tratamiento: form.plan_tratamiento,
+        plan_tratamiento: planToSave,
         observaciones_generales: form.observaciones_generales,
       });
       setCurrentId(saved.id);
@@ -438,7 +447,20 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
                   </div>
                 )}
 
-                <section className={`bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow space-y-5 ${(tab === 'postura' || tab === 'movilidad' || tab === 'fuerza' || tab === 'control') ? 'hidden' : ''}`}>
+                {tab === 'plan' && (
+                  <div className="col-span-full">
+                    <TreatmentPlanModule
+                      planData={form.plan_tratamiento}
+                      onUpdatePlan={(newPlan: TreatmentPlan) =>
+                        setForm((prev) => ({ ...prev, plan_tratamiento: newPlan }))
+                      }
+                      readOnly={readOnly}
+                      tenantId={tenantId}
+                    />
+                  </div>
+                )}
+
+                <section className={`bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow space-y-5 ${(tab === 'postura' || tab === 'movilidad' || tab === 'fuerza' || tab === 'control' || tab === 'plan') ? 'hidden' : ''}`}>
 
                   {tab === 'diagnostico' && (
                     <div className="space-y-4">
@@ -450,16 +472,6 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
                           className={inputClass}
                           value={form.diagnostico_kinesico}
                           onChange={(e) => setForm((prev) => ({ ...prev, diagnostico_kinesico: e.target.value }))}
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="text-xs font-bold text-on-surface-variant">Plan de tratamiento</span>
-                        <textarea
-                          disabled={readOnly}
-                          rows={4}
-                          className={inputClass}
-                          value={form.plan_tratamiento}
-                          onChange={(e) => setForm((prev) => ({ ...prev, plan_tratamiento: e.target.value }))}
                         />
                       </label>
                       <label className="block">

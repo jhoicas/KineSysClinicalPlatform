@@ -313,6 +313,60 @@ export interface MovementGesture {
   comentarios?: string;
 }
 
+export type ExerciseCategory = 'Fuerza' | 'Movilidad' | 'Control Motor' | 'Postura' | 'Propiocepción';
+export type ExerciseDifficulty = 'Bajo' | 'Medio' | 'Avanzado';
+export type TreatmentPhase =
+  | 'Fase 1: Alivio y Reeducación'
+  | 'Fase 2: Fortalecimiento y Control'
+  | 'Fase 3: Readaptación Deportiva';
+
+export interface Exercise {
+  id: string;
+  name: string;
+  category: ExerciseCategory;
+  targetMuscle: string;
+  sets: number;
+  repsOrDuration: string;
+  restSeconds: number;
+  frequencyDaysPerWeek: number;
+  instructions: string;
+  imageUrl?: string;
+  videoPlaceholderUrl?: string;
+  tags?: string[];
+  difficulty?: ExerciseDifficulty;
+  status: 'active' | 'completed' | 'pending';
+}
+
+export interface LibraryExercise {
+  id: string;
+  name: string;
+  category: ExerciseCategory;
+  targetMuscle: string;
+  defaultSets: number;
+  defaultRepsOrDuration: string;
+  defaultRestSeconds: number;
+  defaultFrequencyDaysPerWeek: number;
+  instructions: string;
+  imageUrl?: string;
+  tags: string[];
+  difficulty?: ExerciseDifficulty;
+  equipment?: string;
+  createdAt?: string;
+}
+
+export interface TreatmentPlan {
+  id: string;
+  patientId: string;
+  objective: string;
+  currentPhase: TreatmentPhase;
+  startDate: string;
+  estimatedEndDate: string;
+  sessionsCompleted: number;
+  totalSessionsPlanned: number;
+  exercises: Exercise[];
+  clinicalNotes: string;
+}
+
 export interface KinesiologyEvaluation {
   id: string;
   tenant_id: string;
@@ -323,7 +377,7 @@ export interface KinesiologyEvaluation {
   fuerza: StrengthAssessment[];
   gestos_movimiento: MovementGesture[];
   diagnostico_kinesico?: string;
-  plan_tratamiento?: string;
+  plan_tratamiento?: TreatmentPlan | string | Record<string, unknown>;
   observaciones_generales?: string;
   created_at: string;
   updated_at?: string;

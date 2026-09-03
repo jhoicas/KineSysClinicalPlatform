@@ -37,6 +37,9 @@ import {
   ProfessionalAvailabilityException,
   AvailabilityTimeSlot,
   AppModule,
+  LibraryExercise,
+  ExerciseCategory,
+  ExerciseDifficulty,
 } from '../types';
 import {
   getAvailableSlots as computeAvailableSlots,
@@ -327,6 +330,110 @@ export async function saveKinesiologyEvaluation(
     .select()
     .single();
   return assertSupabaseOk({ data: row, error }) as KinesiologyEvaluation;
+}
+
+type ExerciseLibraryRow = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  category: string;
+  target_muscle: string | null;
+  difficulty: string | null;
+  series: string | null;
+  reps: string | null;
+  rest_time: string | null;
+  frequency: string | null;
+  image_url: string | null;
+  biomechanical_notes: string | null;
+  is_active: boolean | null;
+  created_at: string | null;
+};
+
+function parseIntSafe(value: string | null | undefined, fallback: number) {
+  if (value == null || value === '') return fallback;
+  const n = Number.parseInt(String(value), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function mapLibraryRow(row: ExerciseLibraryRow): LibraryExercise {
+  return {
+    id: row.id,
+    name: row.name,
+    category: (row.category as ExerciseCategory) || 'Fuerza',
+    targetMuscle: row.target_muscle || '',
+    defaultSets: parseIntSafe(row.series, 3),
+    defaultRepsOrDuration: row.reps || '10-12 reps',
+    defaultRestSeconds: parseIntSafe(row.rest_time, 60),
+    defaultFrequencyDaysPerWeek: parseIntSafe(row.frequency, 3),
+    instructions: row.biomechanical_notes || '',
+    imageUrl: row.image_url || undefined,
+    tags: [row.category, row.target_muscle || ''].filter(Boolean),
+    difficulty: (row.difficulty as ExerciseDifficulty) || 'Medio',
+    createdAt: row.created_at || undefined,
+  };
+}
+
+export async function getExerciseLibrary(tenantId: string): Promise<LibraryExercise[]> {
+  const { data, error } = await supabase
+    .from('exercise_library')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true)
+    .order('name', { ascending: true });
+  if (error) throw error;
+  return ((data as ExerciseLibraryRow[]) || []).map(mapLibraryRow);
+}
+
+export async function saveLibraryExercise(
+  tenantId: string,
+  exercise: LibraryExercise
+): Promise<LibraryExercise> {
+  const payload = {
+    tenant_id: tenantId,
+    name: exercise.name,
+    category: exercise.category,
+    target_muscle: exercise.targetMuscle,
+    difficulty: exercise.difficulty || 'Medio',
+    series: String(exercise.defaultSets),
+    reps: exercise.defaultRepsOrDuration,
+    rest_time: String(exercise.defaultRestSeconds),
+    frequency: String(exercise.defaultFrequencyDaysPerWeek),
+    image_url: exercise.imageUrl || null,
+    biomechanical_notes: exercise.instructions || null,
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  };
+
+  const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    exercise.id || ''
+  );
+
+  if (looksLikeUuid) {
+    const { data: row, error } = await supabase
+      .from('exercise_library')
+      .update(payload)
+      .eq('id', exercise.id)
+      .eq('tenant_id', tenantId)
+      .select()
+      .single();
+    return mapLibraryRow(assertSupabaseOk({ data: row, error }) as ExerciseLibraryRow);
+  }
+
+  const { data: row, error } = await supabase
+    .from('exercise_library')
+    .insert([payload])
+    .select()
+    .single();
+  return mapLibraryRow(assertSupabaseOk({ data: row, error }) as ExerciseLibraryRow);
+}
+
+export async function softDeleteLibraryExercise(tenantId: string, id: string): Promise<void> {
+  const { error } = await supabase
+    .from('exercise_library')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('tenant_id', tenantId);
+  if (error) throw error;
 }
 
 function toNullableNumber(value: unknown): number | null {

@@ -1,0 +1,6 @@
+{
+  "name": "Core Body - Software de Fisioterapia",
+  "description": "Software clínico de fisioterapia para valoración postural, movilidad articular, dinamometría de fuerza, control del movimiento y evolución de pacientes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

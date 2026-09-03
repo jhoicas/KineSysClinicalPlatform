@@ -4,6 +4,8 @@ import {
   PostureAssessment,
   PostureSeverity,
   StrengthAssessment,
+  TreatmentPlan,
+  TreatmentPhase,
 } from '../types';
 
 export const POSTURE_SEVERITIES: { value: PostureSeverity; label: string }[] = [
@@ -122,6 +124,71 @@ export function createEmptyStrength(): StrengthAssessment[] {
 
 export function createEmptyGestures(): MovementGesture[] {
   return MOVEMENT_GESTURES.map((gesto) => ({ gesto, alteraciones: [], comentarios: '' }));
+}
+
+export function createEmptyTreatmentPlan(patientId = ''): TreatmentPlan {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    id: `plan-${Date.now()}`,
+    patientId,
+    objective: '',
+    currentPhase: 'Fase 1: Alivio y Reeducación' as TreatmentPhase,
+    startDate: today,
+    estimatedEndDate: today,
+    sessionsCompleted: 0,
+    totalSessionsPlanned: 12,
+    exercises: [],
+    clinicalNotes: '',
+  };
+}
+
+/** Normaliza plan_tratamiento desde BD (objeto, string legado o vacío). */
+export function normalizeTreatmentPlan(
+  raw: TreatmentPlan | string | Record<string, unknown> | null | undefined,
+  patientId = ''
+): TreatmentPlan {
+  const empty = createEmptyTreatmentPlan(patientId);
+  if (raw == null || raw === '') return empty;
+
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return empty;
+    if (trimmed.startsWith('{')) {
+      try {
+        return normalizeTreatmentPlan(JSON.parse(trimmed) as Record<string, unknown>, patientId);
+      } catch {
+        return { ...empty, clinicalNotes: trimmed };
+      }
+    }
+    return { ...empty, clinicalNotes: trimmed };
+  }
+
+  const obj = raw as Partial<TreatmentPlan> & Record<string, unknown>;
+  return {
+    ...empty,
+    id: typeof obj.id === 'string' && obj.id ? obj.id : empty.id,
+    patientId: typeof obj.patientId === 'string' ? obj.patientId : patientId || empty.patientId,
+    objective: typeof obj.objective === 'string' ? obj.objective : empty.objective,
+    currentPhase: (obj.currentPhase as TreatmentPhase) || empty.currentPhase,
+    startDate: typeof obj.startDate === 'string' && obj.startDate ? obj.startDate : empty.startDate,
+    estimatedEndDate:
+      typeof obj.estimatedEndDate === 'string' && obj.estimatedEndDate
+        ? obj.estimatedEndDate
+        : empty.estimatedEndDate,
+    sessionsCompleted:
+      typeof obj.sessionsCompleted === 'number' ? obj.sessionsCompleted : empty.sessionsCompleted,
+    totalSessionsPlanned:
+      typeof obj.totalSessionsPlanned === 'number'
+        ? obj.totalSessionsPlanned
+        : empty.totalSessionsPlanned,
+    exercises: Array.isArray(obj.exercises) ? (obj.exercises as TreatmentPlan['exercises']) : [],
+    clinicalNotes:
+      typeof obj.clinicalNotes === 'string'
+        ? obj.clinicalNotes
+        : typeof obj.clinicalNotes === 'undefined' && typeof obj === 'object'
+          ? empty.clinicalNotes
+          : empty.clinicalNotes,
+  };
 }
 
 export const GESTURE_ICON_MAP: Record<string, string> = {

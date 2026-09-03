@@ -70,21 +70,30 @@ export const PatientPortalPage: React.FC<PatientPortalPageProps> = ({ onNavigate
     const loadSlots = async () => {
       setSlotsLoading(true);
       setBookingError(null);
-      const slots = await fetchAvailableTimeSlots(selectedProfId, selectedDate);
-      setAvailableSlots(slots);
-      if (slots.length > 0) {
-        setSelectedTime(slots[0].startTime);
+      try {
+        const slots = await fetchAvailableTimeSlots(selectedProfId, selectedDate);
+        setAvailableSlots(slots);
+        if (slots.length > 0) {
+          setSelectedTime(slots[0].startTime);
+        }
+      } catch {
+        setAvailableSlots([]);
+      } finally {
+        setSlotsLoading(false);
       }
-      setSlotsLoading(false);
     };
     loadSlots();
   }, [selectedProfId, selectedDate]);
 
   const loadProfessionals = async () => {
-    const profs = await fetchProfessionalsWithJoinedDetails({ tenantId: tenant?.id });
-    setProfessionals(profs);
-    if (profs.length > 0 && !selectedProfId) {
-      setSelectedProfId(profs[0].id);
+    try {
+      const profs = await fetchProfessionalsWithJoinedDetails({ tenantId: tenant?.id });
+      setProfessionals(profs || []);
+      if (profs.length > 0 && !selectedProfId) {
+        setSelectedProfId(profs[0].id);
+      }
+    } catch {
+      setProfessionals([]);
     }
   };
 
@@ -272,20 +281,31 @@ export const PatientPortalPage: React.FC<PatientPortalPageProps> = ({ onNavigate
           </div>
 
           {/* Professionals Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredProfessionals.map((prof) => (
-              <ProfessionalCard
-                key={prof.id}
-                professional={prof}
-                isSelected={selectedProfId === prof.id}
-                onSelect={(id) => {
-                  setSelectedProfId(id);
-                  handleSelectFromModal(id);
-                }}
-                onOpenDetails={handleOpenDetails}
-              />
-            ))}
-          </div>
+          {filteredProfessionals.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 text-center">
+              <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                No hay profesionales disponibles
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                No se encontraron especialistas para los filtros actuales.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filteredProfessionals.map((prof) => (
+                <ProfessionalCard
+                  key={prof.id}
+                  professional={prof}
+                  isSelected={selectedProfId === prof.id}
+                  onSelect={(id) => {
+                    setSelectedProfId(id);
+                    handleSelectFromModal(id);
+                  }}
+                  onOpenDetails={handleOpenDetails}
+                />
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Section 2: Booking Form & Active Professional Summary */}
@@ -386,7 +406,7 @@ export const PatientPortalPage: React.FC<PatientPortalPageProps> = ({ onNavigate
                     </select>
                   ) : (
                     <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-                      No hay bloques disponibles para esta fecha. Prueba otra fecha o profesional.
+                      No hay horarios disponibles para esta fecha. Prueba otra fecha o profesional.
                     </p>
                   )}
                 </div>

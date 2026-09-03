@@ -27,17 +27,10 @@ export const PROFESSIONAL_PORTAL_JOIN_QUERY = `
     user_id,
     tenant_id,
     bio,
-    alma_mater,
-    graduation_year,
-    years_of_experience,
+    specialties,
     social_links,
-    languages,
-    certifications,
-    consultation_fee,
-    currency,
     rating_average,
     reviews_count,
-    is_verified,
     created_at,
     updated_at
   ),
@@ -50,9 +43,6 @@ export const PROFESSIONAL_PORTAL_JOIN_QUERY = `
     rating,
     comment,
     status,
-    consultation_date,
-    treatment_category,
-    helpful_votes,
     created_at
   )
 `;
@@ -315,8 +305,16 @@ export class PatientPortalService {
         professionals = professionals.filter((u: User) => u.role === options.role);
       }
 
-      const { data: profilesData } = await supabase.from('professional_profiles').select('*');
-      const { data: reviewsData } = await supabase.from('reviews').select('*');
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('professional_profiles')
+        .select('id, user_id, tenant_id, bio, specialties, social_links, rating_average, reviews_count, created_at, updated_at');
+      if (profilesError) {
+        console.warn('Perfiles profesionales no disponibles:', profilesError);
+      }
+      const { data: reviewsData, error: reviewsError } = await supabase.from('reviews').select('*');
+      if (reviewsError) {
+        console.warn('Reseñas no disponibles:', reviewsError);
+      }
 
       const approvedReviews = (reviewsData || []).filter((r: Review) => r.status === 'approved');
 

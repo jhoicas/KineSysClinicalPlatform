@@ -328,14 +328,28 @@ export async function fetchProfessionalDetails(userId: string): Promise<Professi
   };
 }
 
+function isMissingRelationError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === 'PGRST205' || (error.message || '').includes('schema cache');
+}
+
 export async function fetchProfessionalAvailability(userId: string): Promise<ProfessionalAvailability[]> {
-  const { data, error } = await supabase
-    .from('professional_availability')
-    .select('*')
-    .eq('user_id', userId)
-    .order('day_of_week', { ascending: true });
-  if (error) throw error;
-  return (data as ProfessionalAvailability[]) || [];
+  try {
+    const { data, error } = await supabase
+      .from('professional_availability')
+      .select('*')
+      .eq('user_id', userId)
+      .order('day_of_week', { ascending: true });
+
+    if (error) {
+      if (isMissingRelationError(error)) return [];
+      throw error;
+    }
+    return (data as ProfessionalAvailability[]) || [];
+  } catch (e) {
+    console.warn('Agenda no disponible:', e);
+    return [];
+  }
 }
 
 export async function saveProfessionalWeeklyAvailability(
@@ -364,13 +378,22 @@ export async function saveProfessionalWeeklyAvailability(
 export async function fetchProfessionalAvailabilityExceptions(
   userId: string
 ): Promise<ProfessionalAvailabilityException[]> {
-  const { data, error } = await supabase
-    .from('professional_availability_exceptions')
-    .select('*')
-    .eq('user_id', userId)
-    .order('exception_date', { ascending: true });
-  if (error) throw error;
-  return (data as ProfessionalAvailabilityException[]) || [];
+  try {
+    const { data, error } = await supabase
+      .from('professional_availability_exceptions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('exception_date', { ascending: true });
+
+    if (error) {
+      if (isMissingRelationError(error)) return [];
+      throw error;
+    }
+    return (data as ProfessionalAvailabilityException[]) || [];
+  } catch (e) {
+    console.warn('Excepciones de agenda no disponibles:', e);
+    return [];
+  }
 }
 
 export async function saveProfessionalAvailabilityExceptions(
@@ -396,16 +419,29 @@ export async function fetchAvailableTimeSlots(
   tenantId?: string,
   excludeAppointmentId?: string
 ): Promise<AvailabilityTimeSlot[]> {
-  const [availability, exceptions, appointmentsResult] = await Promise.all([
-    fetchProfessionalAvailability(professionalId),
-    fetchProfessionalAvailabilityExceptions(professionalId),
-    tenantId
-      ? supabase.from('appointments').select('*').eq('tenant_id', tenantId)
-      : supabase.from('appointments').select('*'),
-  ]);
+  try {
+    const [availability, exceptions, appointmentsResult] = await Promise.all([
+      fetchProfessionalAvailability(professionalId),
+      fetchProfessionalAvailabilityExceptions(professionalId),
+      tenantId
+        ? supabase.from('appointments').select('*').eq('tenant_id', tenantId)
+        : supabase.from('appointments').select('*'),
+    ]);
 
-  const appointments = (appointmentsResult.data as Appointment[]) || [];
-  return computeAvailableSlots(availability, exceptions, appointments, dateStr, professionalId, excludeAppointmentId);
+    if (appointmentsResult.error) {
+      if (isMissingRelationError(appointmentsResult.error)) {
+        return computeAvailableSlots(availability, exceptions, [], dateStr, professionalId, excludeAppointmentId);
+      }
+      console.warn('Citas no disponibles para calcular slots:', appointmentsResult.error);
+      return computeAvailableSlots(availability, exceptions, [], dateStr, professionalId, excludeAppointmentId);
+    }
+
+    const appointments = (appointmentsResult.data as Appointment[]) || [];
+    return computeAvailableSlots(availability, exceptions, appointments, dateStr, professionalId, excludeAppointmentId);
+  } catch (e) {
+    console.warn('Agenda no disponible:', e);
+    return [];
+  }
 }
 
 export async function validateAppointmentSlot(params: {

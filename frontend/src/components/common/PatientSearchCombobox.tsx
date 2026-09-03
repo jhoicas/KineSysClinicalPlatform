@@ -183,18 +183,16 @@ export const PatientSearchCombobox: React.FC<PatientSearchComboboxProps> = ({
   );
 
   // =========================================================================
-  // RENDER 1: BADGE DE PACIENTE ACTIVO (SI YA ESTÁ SELECCIONADO)
+  // RENDER 1: COMPACT PILL BADGE DE PACIENTE ACTIVO (SI YA ESTÁ SELECCIONADO)
   // =========================================================================
   if (activePatient && showActiveBadge) {
     return (
-      <div
-        id="active-patient-badge"
-        className={`inline-flex items-center gap-3 bg-surface-container-lowest border border-primary/30 p-2.5 rounded-2xl clinical-shadow transition-all group ${
-          variant === 'large' ? 'p-4 rounded-3xl w-full max-w-2xl justify-between' : ''
-        } ${className}`}
-      >
-        <div className="flex items-center gap-3 overflow-hidden">
-          {/* Avatar */}
+      <div ref={containerRef} className={`relative ${className}`}>
+        <div
+          id="active-patient-badge"
+          className="inline-flex items-center gap-2 bg-surface-container-lowest border border-primary/30 px-2.5 py-1.5 rounded-full transition-all group h-fit max-h-10 whitespace-nowrap"
+        >
+          {/* Avatar pequeño */}
           <div className="relative shrink-0">
             <img
               src={
@@ -202,65 +200,114 @@ export const PatientSearchCombobox: React.FC<PatientSearchComboboxProps> = ({
                 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
               }
               alt={activePatient.full_name}
-              className="w-10 h-10 rounded-xl object-cover border-2 border-primary/30"
+              className="w-7 h-7 rounded-full object-cover border border-primary/20"
             />
             <span
-              className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-surface-container-lowest rounded-full"
-              title="Paciente Activo en Sesión"
+              className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border border-surface-container-lowest rounded-full"
+              title="Paciente Activo"
             />
           </div>
 
-          {/* Información */}
-          <div className="text-left min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-black uppercase text-primary tracking-wider bg-primary/10 px-2 py-0.5 rounded-md">
-                {t('patient.active_session', 'Paciente Activo')}
-              </span>
-              {activePatient.rut_or_dni && (
-                <span className="text-[11px] font-bold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-md">
-                  {activePatient.rut_or_dni}
-                </span>
-              )}
-            </div>
-
-            <p className="font-extrabold text-sm text-on-surface truncate mt-0.5 group-hover:text-primary transition-colors">
-              {activePatient.full_name}
+          {/* Nombre + RUT compacto */}
+          <div className="text-left min-w-0 flex flex-col gap-0.5">
+            <p className="text-xs font-bold text-on-surface truncate leading-none">
+              {activePatient.full_name?.split(' ').slice(0, 2).join(' ') || 'Paciente'}
             </p>
+            {activePatient.rut_or_dni && (
+              <p className="text-[10px] text-on-surface-variant truncate leading-none">
+                {activePatient.rut_or_dni}
+              </p>
+            )}
+          </div>
 
-            <p className="text-[11px] text-on-surface-variant truncate">
-              {activePatient.email || activePatient.phone || 'Sin contacto registrado'}
-            </p>
+          {/* Botones de acción (compactos) */}
+          <div className="flex items-center gap-0.5 shrink-0 ml-1 pl-1 border-l border-outline-variant/20">
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(true);
+                setQuery('');
+                setHighlightedIndex(-1);
+              }}
+              className="p-1 hover:bg-surface-container-high text-on-surface-variant hover:text-primary rounded-md transition-colors cursor-pointer"
+              title="Cambiar de paciente"
+              aria-label="Cambiar paciente"
+            >
+              <span className="material-symbols-outlined text-sm">swap_horiz</span>
+            </button>
+
+            {allowClear && (
+              <button
+                type="button"
+                id="btn-clear-active-patient"
+                onClick={clearActivePatient}
+                className="p-1 hover:bg-error-container/30 text-on-surface-variant hover:text-error rounded-md transition-colors cursor-pointer"
+                title="Deseleccionar paciente"
+                aria-label="Cerrar sesión"
+              >
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Acciones del Badge */}
-        <div className="flex items-center gap-1.5 shrink-0 pl-2">
-          <button
-            type="button"
-            onClick={() => {
-              clearActivePatient();
-              setTimeout(() => inputRef.current?.focus(), 50);
-            }}
-            className="px-2.5 py-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-primary rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-            title="Cambiar de paciente"
-          >
-            <span className="material-symbols-outlined text-sm">swap_horiz</span>
-            <span className="hidden sm:inline">{t('common.change', 'Cambiar')}</span>
-          </button>
+        {/* Dropdown overlay (posicionado absolutamente) */}
+        {isOpen && (
+          <div className="absolute top-full right-0 mt-1 w-80 max-h-96 bg-surface-container-lowest rounded-2xl border border-outline-variant/30 shadow-lg z-50 overflow-hidden flex flex-col">
+            {/* Search input in dropdown */}
+            <div className="sticky top-0 p-3 border-b border-outline-variant/20 bg-surface-container-lowest">
+              <input
+                ref={inputRef}
+                id={inputId}
+                type="text"
+                autoComplete="off"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={placeholder}
+                autoFocus
+                className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl px-3 py-2 text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+            </div>
 
-          {allowClear && (
-            <button
-              type="button"
-              id="btn-clear-active-patient"
-              onClick={clearActivePatient}
-              className="p-1.5 hover:bg-error-container/40 text-on-surface-variant hover:text-error rounded-xl transition-colors cursor-pointer"
-              title="Deseleccionar paciente"
-              aria-label="Cerrar sesión de paciente"
-            >
-              <span className="material-symbols-outlined text-base">close</span>
-            </button>
-          )}
-        </div>
+            {/* Results list */}
+            <ul className="flex-1 overflow-y-auto">
+              {query.trim() === '' ? (
+                <div className="p-4 text-center text-xs text-on-surface-variant">
+                  Empieza a escribir para buscar
+                </div>
+              ) : isLoading ? (
+                <div className="p-4 flex items-center justify-center gap-2 text-xs text-on-surface-variant">
+                  <span className="material-symbols-outlined animate-spin text-sm">sync</span>
+                  Buscando...
+                </div>
+              ) : results.length === 0 ? (
+                <div className="p-4 text-center text-xs text-on-surface-variant">
+                  Sin resultados
+                </div>
+              ) : (
+                results.map((patient, idx) => (
+                  <li key={patient.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(patient)}
+                      className={`w-full text-left px-4 py-2.5 text-xs border-b border-outline-variant/10 last:border-0 ${
+                        idx === highlightedIndex
+                          ? 'bg-primary/10'
+                          : 'hover:bg-surface-container-low'
+                      }`}
+                    >
+                      <p className="font-semibold text-on-surface">{patient.full_name}</p>
+                      <p className="text-[11px] text-on-surface-variant mt-0.5">
+                        {patient.rut_or_dni || patient.email || patient.phone || '—'}
+                      </p>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        )}
       </div>
     );
   }

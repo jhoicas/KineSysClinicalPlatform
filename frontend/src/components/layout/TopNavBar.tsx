@@ -43,7 +43,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({ onOpenNewAppointment, curr
   return (
     <header
       id="top-nav-bar"
-      className="fixed top-0 right-0 left-0 md:left-72 h-16 bg-surface-container-lowest/90 backdrop-blur-md border-b border-outline-variant/30 z-20 flex items-center justify-between px-4 sm:px-6 transition-all gap-3"
+      className="fixed top-0 right-0 left-0 md:left-72 h-16 bg-surface-container-lowest/90 backdrop-blur-md border-b border-outline-variant/30 z-20 flex items-center justify-between px-4 sm:px-6 transition-all gap-3 max-h-16 overflow-visible"
     >
       {/* Mobile Menu Button & Clinic Title */}
       <div className="flex items-center gap-3 shrink-0">
@@ -67,7 +67,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({ onOpenNewAppointment, curr
       </div>
 
       {/* Global Active Patient Search / Pill (Desktop & Tablet) */}
-      <div className="hidden lg:flex flex-1 max-w-md mx-2">
+      <div className="hidden lg:flex flex-1 max-w-md mx-2 items-center h-full relative z-50">
         <PatientSearchCombobox
           variant="compact"
           placeholder="Buscar o cambiar paciente activo..."
@@ -80,7 +80,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({ onOpenNewAppointment, curr
       </div>
 
       {/* Right Actions */}
-      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0 h-full">
         {/* Multi-language selector */}
         <LanguageSelector variant="compact" />
 

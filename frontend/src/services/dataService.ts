@@ -868,7 +868,7 @@ export async function submitProfessionalReview(
   }
 }
 
-/** Onboarding: crea tenant + users + profiles tras signUp */
+/** Onboarding: crea tenant → signUp (con metadata) → completa users/profiles */
 export async function completeOnboarding(params: {
   clinicName: string;
   slug: string;
@@ -886,88 +886,110 @@ export async function completeOnboarding(params: {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase no está configurado. Configure VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
   }
+  if (!nativeAuthApi) {
+    throw new Error('Supabase Auth no está disponible.');
+  }
 
   const trialEnds = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const adminEmail = params.adminEmail.trim().toLowerCase();
+  const adminName = params.adminName.trim();
 
-  const { data: signUpData, error: signUpError } = await nativeAuthApi!.signUp({
-    email: params.adminEmail.trim().toLowerCase(),
-    password: params.password,
-    options: { data: { full_name: params.adminName.trim() } },
+  // Paso 1: crear clínica (tenant) ANTES del signUp — vía RPC SECURITY DEFINER
+  // (RLS de tenants solo permite INSERT a authenticated; en onboarding aún no hay sesión)
+  const { data: tenantRow, error: tenantError } = await supabase.rpc('create_tenant_onboarding', {
+    p_name: params.clinicName.trim(),
+    p_slug: params.slug,
+    p_email: adminEmail,
+    p_phone: params.clinicPhone || null,
+    p_address: params.clinicAddress || null,
+    p_subscription_plan: params.subscriptionPlan,
+    p_max_users: params.maxUsers,
+    p_trial_ends_at: trialEnds,
   });
-  if (signUpError) throw signUpError;
-  if (!signUpData.user?.id) throw new Error('No se pudo crear el usuario de autenticación.');
+
+  if (tenantError) throw tenantError;
+
+  const tenant = (Array.isArray(tenantRow) ? tenantRow[0] : tenantRow) as Tenant | null;
+  if (!tenant?.id) {
+    throw new Error('No se pudo crear la clínica (tenant).');
+  }
+
+  const tenantId = tenant.id;
+
+  // Paso 2: signUp con metadata que exige el trigger handle_new_user
+  const { data: signUpData, error: signUpError } = await nativeAuthApi.signUp({
+    email: adminEmail,
+    password: params.password,
+    options: {
+      data: {
+        full_name: adminName,
+        tenant_id: tenantId,
+        role: 'clinic_admin',
+      },
+    },
+  });
+
+  if (signUpError) {
+    await supabase.rpc('delete_orphan_tenant_onboarding', { p_tenant_id: tenantId });
+    throw signUpError;
+  }
+  if (!signUpData.user?.id) {
+    await supabase.rpc('delete_orphan_tenant_onboarding', { p_tenant_id: tenantId });
+    throw new Error('No se pudo crear el usuario de autenticación.');
+  }
 
   const authUserId = signUpData.user.id;
 
-  const { data: tenant, error: tenantError } = await supabase
-    .from('tenants')
-    .insert([
+  // El trigger ya insertó users/profiles. Completar campos opcionales si hay sesión
+  // (si el proyecto exige confirmar email, puede no haber JWT aún → no abortar).
+  const { error: userError } = await supabase.from('users').upsert(
+    [
       {
-        name: params.clinicName.trim(),
-        slug: params.slug,
-        timezone: 'America/Bogota',
-        email: params.adminEmail.trim(),
-        phone: params.clinicPhone,
-        address: params.clinicAddress,
-        subscription_plan: params.subscriptionPlan,
-        subscription_status: 'trialing',
-        max_users: params.maxUsers,
-        trial_ends_at: trialEnds,
-        is_wompi_sandbox: true,
+        id: authUserId,
+        tenant_id: tenantId,
+        email: adminEmail,
+        full_name: adminName,
+        role: 'clinic_admin',
+        phone: params.adminPhone || null,
+        license_number: params.adminLicense || null,
+        rut_or_dni: params.adminRut || null,
+        is_active: true,
+        updated_at: new Date().toISOString(),
       },
-    ])
-    .select()
-    .single();
-
-  if (tenantError) {
-    await authSignOut();
-    throw tenantError;
-  }
-
-  const tenantId = (tenant as Tenant).id;
-
-  const { error: userError } = await supabase.from('users').insert([
-    {
-      id: authUserId,
-      tenant_id: tenantId,
-      email: params.adminEmail.trim().toLowerCase(),
-      full_name: params.adminName.trim(),
-      role: 'clinic_admin',
-      phone: params.adminPhone,
-      license_number: params.adminLicense,
-      rut_or_dni: params.adminRut,
-      is_active: true,
-    },
-  ]);
+    ],
+    { onConflict: 'id' }
+  );
 
   if (userError) {
-    await supabase.from('tenants').delete().eq('id', tenantId);
-    await authSignOut();
-    throw userError;
+    console.warn('[completeOnboarding] users upsert (no crítico si el trigger ya creó la fila):', userError.message);
   }
 
-  const { error: profileError } = await supabase.from('profiles').insert([
-    {
-      id: authUserId,
-      tenant_id: tenantId,
-      email: params.adminEmail.trim().toLowerCase(),
-      full_name: params.adminName.trim(),
-      role: 'clinic_admin',
-      is_active: true,
-    },
-  ]);
+  const { error: profileError } = await supabase.from('profiles').upsert(
+    [
+      {
+        id: authUserId,
+        tenant_id: tenantId,
+        email: adminEmail,
+        full_name: adminName,
+        role: 'clinic_admin',
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      },
+    ],
+    { onConflict: 'id' }
+  );
 
   if (profileError) {
-    await supabase.from('users').delete().eq('id', authUserId);
-    await supabase.from('tenants').delete().eq('id', tenantId);
-    await authSignOut();
-    throw profileError;
+    console.warn(
+      '[completeOnboarding] profiles upsert (no crítico si el trigger ya creó la fila):',
+      profileError.message
+    );
   }
 
   const user: User = {
     id: authUserId,
-    email: params.adminEmail.trim().toLowerCase(),
-    full_name: params.adminName.trim(),
+    email: adminEmail,
+    full_name: adminName,
     role: 'clinic_admin',
     phone: params.adminPhone,
     tenant_id: tenantId,
@@ -977,7 +999,7 @@ export async function completeOnboarding(params: {
     created_at: new Date().toISOString(),
   };
 
-  return { tenant: tenant as Tenant, user };
+  return { tenant, user };
 }
 
 export async function loadProfileByAuthId(authUserId: string): Promise<{

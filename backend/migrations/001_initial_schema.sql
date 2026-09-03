@@ -226,21 +226,40 @@ CREATE TRIGGER set_prescriptions_updated_at BEFORE UPDATE ON prescriptions FOR E
 CREATE TRIGGER set_anthropometry_updated_at BEFORE UPDATE ON anthropometric_evaluations FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER set_nutrition_updated_at BEFORE UPDATE ON nutrition_plans FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Function to sync Supabase Auth users to public.profiles
-CREATE OR REPLACE FUNCTION public.handle_new_user() 
-RETURNS TRIGGER AS $$
+-- Function to sync Supabase Auth users to clinical rows (kinesys)
+-- NOTE: tenant_id y role deben venir en raw_user_meta_data en signUp (onboarding de clínica).
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_tenant_id UUID;
+  v_role TEXT;
+  v_full_name TEXT;
 BEGIN
-  INSERT INTO public.profiles (id, email, full_name, role, tenant_id)
-  VALUES (
-    NEW.id, 
-    NEW.email, 
-    COALESCE(NEW.raw_user_meta_data->>'full_name', 'Nuevo Usuario'),
-    COALESCE(NEW.raw_user_meta_data->>'role', 'professional'),
-    (NEW.raw_user_meta_data->>'tenant_id')::UUID
+  BEGIN
+    v_tenant_id := NULLIF(btrim(COALESCE(NEW.raw_user_meta_data->>'tenant_id', '')), '')::uuid;
+  EXCEPTION
+    WHEN invalid_text_representation THEN
+      v_tenant_id := NULL;
+  END;
+
+  v_role := COALESCE(NULLIF(btrim(COALESCE(NEW.raw_user_meta_data->>'role', '')), ''), 'patient');
+  v_full_name := COALESCE(
+    NULLIF(btrim(COALESCE(NEW.raw_user_meta_data->>'full_name', '')), ''),
+    'Nuevo Usuario'
   );
+
+  -- Legacy public.profiles (nullable tenant_id) — no fallar si falta tenant
+  INSERT INTO public.profiles (id, email, full_name, role, tenant_id)
+  VALUES (NEW.id, NEW.email, v_full_name, v_role, v_tenant_id)
+  ON CONFLICT (id) DO NOTHING;
+
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- Trigger on auth.users (runs in Supabase automatically when a user signs up)
 -- NOTE: In Supabase, this trigger is attached to auth.users.

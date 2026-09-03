@@ -1,26 +1,39 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
-};
-
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
+import { corsHeaders, jsonResponse, optionsResponse } from '../_shared/cors.ts';
 
 Deno.serve(async (req) => {
+  // Preflight CORS — debe responder 200 ANTES de cualquier auth/JWT
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return optionsResponse();
   }
 
   try {
+    if (req.method !== 'POST') {
+      return jsonResponse({ error: 'Method not allowed' }, 405);
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+
+    // Validar JWT del invocador (verify_jwt=false en config para no romper OPTIONS)
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
+    }
+
+    const caller = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const {
+      data: { user: callerUser },
+      error: callerError,
+    } = await caller.auth.getUser();
+
+    if (callerError || !callerUser) {
+      return jsonResponse({ error: 'Unauthorized' }, 401);
+    }
+
     const admin = createClient(supabaseUrl, serviceRoleKey);
 
     const body = await req.json();
@@ -36,14 +49,20 @@ Deno.serve(async (req) => {
     } = body;
 
     if (!email || !full_name || !role || !tenant_id) {
-      return jsonResponse({ error: 'Campos requeridos: email, full_name, role, tenant_id' }, 400);
+      return jsonResponse(
+        { error: 'Campos requeridos: email, full_name, role, tenant_id' },
+        400,
+      );
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
 
-    const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(normalizedEmail, {
-      data: { full_name, role, tenant_id },
-    });
+    const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
+      normalizedEmail,
+      {
+        data: { full_name, role, tenant_id },
+      },
+    );
 
     if (inviteError) {
       return jsonResponse({ error: inviteError.message }, 400);
@@ -56,19 +75,23 @@ Deno.serve(async (req) => {
 
     const db = admin.schema('kinesys');
 
-    const { data: userRow, error: userError } = await db.from('users').insert([
-      {
-        id: userId,
-        tenant_id,
-        email: normalizedEmail,
-        full_name,
-        role,
-        phone,
-        license_number,
-        specialty,
-        is_active: true,
-      },
-    ]).select().single();
+    const { data: userRow, error: userError } = await db
+      .from('users')
+      .insert([
+        {
+          id: userId,
+          tenant_id,
+          email: normalizedEmail,
+          full_name,
+          role,
+          phone,
+          license_number,
+          specialty,
+          is_active: true,
+        },
+      ])
+      .select()
+      .single();
 
     if (userError) {
       return jsonResponse({ error: userError.message }, 400);
@@ -88,9 +111,15 @@ Deno.serve(async (req) => {
       ]);
     }
 
-    return jsonResponse({ success: true, user: userRow }, 200);
+    return jsonResponse(
+      { success: true, user: userRow, message: 'Invitación enviada' },
+      200,
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Error interno';
     return jsonResponse({ error: message }, 400);
   }
 });
+
+// Re-export for clarity / tests
+export { corsHeaders };

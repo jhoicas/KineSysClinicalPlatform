@@ -1,0 +1,5 @@
+# Desactiva verify_jwt en el gateway para que el preflight OPTIONS
+# no falle antes de llegar al handler (CORS).
+# La función valida el Authorization header manualmente en POST.
+[functions.invite-professional]
+verify_jwt = false

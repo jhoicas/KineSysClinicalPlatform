@@ -1,0 +1,7 @@
+# KineSys — configuración Supabase CLI (Edge Functions)
+
+# El preflight OPTIONS del navegador no lleva JWT; si verify_jwt=true
+# el gateway puede responder 401 y el browser reporta fallo de CORS.
+# La función valida Authorization manualmente en POST.
+[functions.invite-professional]
+verify_jwt = false

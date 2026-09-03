@@ -61,34 +61,58 @@ export const PatientSearchCombobox: React.FC<PatientSearchComboboxProps> = ({
 
     debounceTimerRef.current = setTimeout(async () => {
       try {
-        // Búsqueda en Supabase filtrando por rol 'patient' y tenant_id
-        // Busca en full_name, email y rut_or_dni
         const { data, error } = await supabase
-          .from('users')
+          .from('pacientes_clinicos')
           .select(`
             id,
-            full_name,
-            email,
-            phone,
-            rut_or_dni,
-            avatar_url,
+            first_name,
+            last_name,
+            telecom_email,
+            telecom_phone,
+            identifier_number,
             birth_date,
             gender,
-            medical_conditions,
-            allergies,
-            role,
+            blood_type,
+            known_allergies,
+            chronic_conditions,
+            emergency_contact,
             tenant_id
           `)
-          .eq('role', 'patient')
-          .eq('tenant_id', tenantId || 'tenant_kine_001')
+          .eq('active', true)
+          .eq('tenant_id', tenantId)
           .or(
-            `full_name.ilike.%${trimmedQuery}%,email.ilike.%${trimmedQuery}%,rut_or_dni.ilike.%${trimmedQuery}%`
+            `first_name.ilike.%${trimmedQuery}%,last_name.ilike.%${trimmedQuery}%,identifier_number.ilike.%${trimmedQuery}%,telecom_email.ilike.%${trimmedQuery}%`
           )
           .limit(8);
 
         if (error) throw error;
-        setResults((data as ActivePatient[]) || []);
-        setHighlightedIndex(data && data.length > 0 ? 0 : -1);
+
+        const mappedPatients: ActivePatient[] = (data || []).map((p: Record<string, unknown>) => {
+          const firstName = String(p.first_name || '');
+          const lastName = String(p.last_name || '');
+          const conditions = Array.isArray(p.chronic_conditions) ? (p.chronic_conditions as string[]) : [];
+          const allergies = Array.isArray(p.known_allergies) ? (p.known_allergies as string[]) : [];
+          const emergency = p.emergency_contact as ActivePatient['emergency_contact'] | undefined;
+
+          return {
+            id: String(p.id),
+            full_name: `${firstName} ${lastName}`.trim(),
+            email: String(p.telecom_email || ''),
+            phone: String(p.telecom_phone || ''),
+            rut_or_dni: String(p.identifier_number || ''),
+            birth_date: p.birth_date ? String(p.birth_date) : undefined,
+            gender: p.gender ? String(p.gender) : undefined,
+            medical_conditions: conditions,
+            allergies,
+            emergency_contact: emergency,
+            role: 'patient',
+            tenant_id: p.tenant_id ? String(p.tenant_id) : tenantId,
+            raw_data: p,
+          };
+        });
+
+        setResults(mappedPatients);
+        setHighlightedIndex(mappedPatients.length > 0 ? 0 : -1);
       } catch (err) {
         console.error('Error buscando pacientes:', err);
         setResults([]);

@@ -194,7 +194,7 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
           </div>
 
           {/* Quick Metrics Bar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             <div className="p-4 rounded-2xl bg-surface-container-lowest border border-outline-variant/20 clinical-shadow flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
                 <span className="material-symbols-outlined text-2xl">how_to_reg</span>
@@ -216,18 +216,6 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
                   {t('patients.active_history', 'Con Ficha Activa')}
                 </p>
                 <p className="text-2xl font-black text-secondary">{patients.length}</p>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-surface-container-lowest border border-outline-variant/20 clinical-shadow flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-primary/5 text-primary flex items-center justify-center">
-                <span className="material-symbols-outlined text-2xl">domain</span>
-              </div>
-              <div>
-                <p className="text-[11px] font-extrabold text-on-surface-variant uppercase tracking-wider">
-                  {t('patients.assigned_tenant', 'Tenant Asignado')}
-                </p>
-                <p className="text-xs font-black text-on-surface truncate">{tenantId}</p>
               </div>
             </div>
           </div>

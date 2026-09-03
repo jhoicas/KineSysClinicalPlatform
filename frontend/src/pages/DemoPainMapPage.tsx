@@ -18,7 +18,7 @@ interface DemoPainMapPageProps {
 export function DemoPainMapPage({ onNavigate }: DemoPainMapPageProps) {
   const { user, tenantId } = useAuth();
   const { t } = useI18n();
-  const { activePatient, setActivePatient, clearActivePatient } = useAppStore();
+  const { activePatient, setActivePatient } = useAppStore();
 
   // Data states from Supabase
   const [painObservations, setPainObservations] = useState<PainObservation[]>([]);
@@ -324,31 +324,6 @@ export function DemoPainMapPage({ onNavigate }: DemoPainMapPageProps) {
                 )}
               </p>
             </div>
-
-            {/* Patient Context / Search */}
-            {activePatient && (
-              <div className="w-full lg:w-auto flex items-center gap-3">
-                <PatientSearchCombobox
-                  variant="standard"
-                  showActiveBadge={true}
-                  onSelectPatient={(p) => {
-                    addToast(
-                      'info',
-                      t('patient.active_session', 'Paciente Activo'),
-                      `${p.full_name} seleccionado.`
-                    );
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => clearActivePatient()}
-                  className="p-2 rounded-2xl bg-surface-container-low hover:bg-surface-container-high text-on-surface-variant hover:text-error border border-outline-variant/30 transition-all cursor-pointer"
-                  title="Cambiar paciente"
-                >
-                  <span className="material-symbols-outlined text-lg">person_cancel</span>
-                </button>
-              </div>
-            )}
           </div>
 
           {/* EMPTY STATE: NO ACTIVE PATIENT */}

@@ -266,20 +266,6 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               </p>
             </div>
           </div>
-
-          {/* Top Patient Context Pill / Search (Visible if activePatient exists) */}
-          {activePatient && (
-            <div className="w-full md:w-auto">
-              <PatientSearchCombobox
-                variant="standard"
-                showActiveBadge={true}
-                allowClear={true}
-                onSelectPatient={(p) => {
-                  setActivePatient(p);
-                }}
-              />
-            </div>
-          )}
         </div>
 
         {/* =========================================================================

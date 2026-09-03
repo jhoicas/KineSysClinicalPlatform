@@ -615,11 +615,12 @@ export interface ProfessionalProfile {
   id: string;
   user_id: string;
   tenant_id: string;
-  bio: string;
-  alma_mater: string;
-  graduation_year: number;
-  years_of_experience: number;
-  social_links: ProfessionalSocialLinks;
+  bio?: string;
+  alma_mater?: string;
+  graduation_year?: number;
+  years_of_experience?: number;
+  specialties?: string[];
+  social_links?: ProfessionalSocialLinks | Record<string, any>;
   languages?: string[];
   certifications?: string[];
   consultation_fee?: number;

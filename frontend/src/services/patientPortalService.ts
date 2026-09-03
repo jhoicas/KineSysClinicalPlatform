@@ -319,7 +319,7 @@ export class PatientPortalService {
       const approvedReviews = (reviewsData || []).filter((r: Review) => r.status === 'approved');
 
       return professionals.map((prof: User) => {
-        const profile = (profilesData || []).find((p: ProfessionalProfile) => p.user_id === prof.id);
+        const profile = (profilesData || []).find((p: any) => p.user_id === prof.id);
         const profReviews = approvedReviews.filter((r: Review) => r.professional_id === prof.id);
 
         const totalRatings = profReviews.reduce((sum: number, r: Review) => sum + r.rating, 0);

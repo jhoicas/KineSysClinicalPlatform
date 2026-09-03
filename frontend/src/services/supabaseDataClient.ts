@@ -36,6 +36,7 @@ export const KINESYS_TABLES = new Set([
   'role_permissions',
   'historias_clinicas',
   'evaluaciones_kinesicas',
+  'food_catalog',
 ]);
 
 export const CLINICAL_SCHEMA = 'kinesys';

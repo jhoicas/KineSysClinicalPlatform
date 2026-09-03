@@ -25,6 +25,7 @@ import {
   HistoriaClinica,
   KinesiologyEvaluation,
   ConsultaSOP,
+  FoodItem,
   PrescripcionMedica,
   EvaluacionAntropometrica,
   PlanNutricional,
@@ -326,6 +327,42 @@ export async function saveKinesiologyEvaluation(
     .select()
     .single();
   return assertSupabaseOk({ data: row, error }) as KinesiologyEvaluation;
+}
+
+function toNullableNumber(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+export async function searchFoodCatalog(query: string, limit = 12): Promise<FoodItem[]> {
+  const trimmed = query.trim().replace(/[%_,]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!trimmed) return [];
+  const { data, error } = await supabase
+    .from('food_catalog')
+    .select(
+      'id, name, energy_kcal, protein_g, lipids_g, carbs_total_g, dietary_fiber_g, calcium_mg, iron_mg, sodium_mg, saturated_fat_g, cholesterol_mg, edible_portion_percentage'
+    )
+    .eq('is_active', true)
+    .ilike('name', `%${trimmed}%`)
+    .order('name', { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return (data || []).map((row) => ({
+    id: String(row.id),
+    name: String(row.name),
+    energy_kcal: toNullableNumber(row.energy_kcal),
+    protein_g: toNullableNumber(row.protein_g),
+    lipids_g: toNullableNumber(row.lipids_g),
+    carbs_total_g: toNullableNumber(row.carbs_total_g),
+    dietary_fiber_g: toNullableNumber(row.dietary_fiber_g),
+    calcium_mg: toNullableNumber(row.calcium_mg),
+    iron_mg: toNullableNumber(row.iron_mg),
+    sodium_mg: toNullableNumber(row.sodium_mg),
+    saturated_fat_g: toNullableNumber(row.saturated_fat_g),
+    cholesterol_mg: toNullableNumber(row.cholesterol_mg),
+    edible_portion_percentage: toNullableNumber(row.edible_portion_percentage),
+  }));
 }
 
 export async function saveSoapEncounter(data: Omit<ConsultaSOP, 'id' | 'created_at' | 'updated_at'>): Promise<ConsultaSOP> {

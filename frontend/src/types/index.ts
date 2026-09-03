@@ -498,6 +498,24 @@ export interface AlimentoItem {
   allergens?: string[];
 }
 
+/** Fila del catálogo maestro TCA (valores por 100 g; null si el alimento no reporta el nutriente). */
+export interface FoodItem {
+  id: string;
+  name: string;
+  energy_kcal: number | null;
+  protein_g: number | null;
+  lipids_g: number | null;
+  carbs_total_g: number | null;
+  dietary_fiber_g: number | null;
+  calcium_mg?: number | null;
+  iron_mg?: number | null;
+  sodium_mg?: number | null;
+  saturated_fat_g?: number | null;
+  cholesterol_mg?: number | null;
+  edible_portion_percentage?: number | null;
+  is_active?: boolean;
+}
+
 export interface TiempoComida {
   id: string;
   name: string; // "Desayuno", "Colación Mañana", "Almuerzo", "Merienda", "Cena", etc.

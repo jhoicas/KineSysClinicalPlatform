@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -8,11 +8,12 @@ import {
   AlimentoItem,
   OrdenNutricionFHIR,
   EvaluacionAntropometrica,
+  FoodItem,
 } from '../../types';
-import { FOOD_DATABASE } from '../../data/nutritionCatalog';
-import { convertMacroPctToGrams } from '../../utils/nutritionCalculations';
+import { convertMacroPctToGrams, scaleNutrientPer100g, roundNutrient, sumMealMacros } from '../../utils/nutritionCalculations';
 import { EcoExportActions } from '../common/EcoExportActions';
 import { dietPlanFormSchema, DietPlanFormData } from '../../schemas/nutritionSchemas';
+import { FoodSearchCombobox } from './FoodSearchCombobox';
 
 interface DietPlannerModuleProps {
   patient: PacienteClinico;
@@ -207,8 +208,6 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
 
   // Food Search & Selection Modal/Drawer state
   const [selectedMealId, setSelectedMealId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Recalculate target macro grams
@@ -248,29 +247,47 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
     setMeals(meals.filter((m) => m.id !== mealId));
   };
 
-  // Add food item to selected meal
-  const handleAddFoodToMeal = (food: Omit<AlimentoItem, 'id'>) => {
+  const inferFoodCategory = (name: string): AlimentoItem['category'] => {
+    const n = name.toLowerCase();
+    if (/pollo|carne|pescado|atún|atun|huevo|res|cerdo|pavo|lenteja|garbanzo/.test(n)) return 'proteina';
+    if (/leche|yogurt|yogur|queso/.test(n)) return 'lacteo';
+    if (/arroz|avena|pan|papa|pasta|maiz|maíz/.test(n)) return 'carbohidrato';
+    if (/aceite|aguacate|nuez|almendra|mantequilla/.test(n)) return 'grasa';
+    if (/manzana|banano|plátano|platano|naranja|fresa|mango/.test(n)) return 'fruta';
+    if (/agua|jugo|té|te /.test(n)) return 'bebida';
+    return 'vegetal';
+  };
+
+  const withMealTotals = (meal: TiempoComida, items: AlimentoItem[]): TiempoComida => ({
+    ...meal,
+    items,
+    ...sumMealMacros(items),
+  });
+
+  const handleAddFoodFromCatalog = (food: FoodItem, grams: number) => {
     if (!selectedMealId) return;
+    const scaled: Omit<AlimentoItem, 'id'> = {
+      food_id: food.id,
+      name: food.name,
+      category: inferFoodCategory(food.name),
+      portion_size: grams,
+      unit: 'g',
+      calories_kcal: Math.round(scaleNutrientPer100g(food.energy_kcal, grams)),
+      protein_g: roundNutrient(scaleNutrientPer100g(food.protein_g, grams)),
+      carbs_g: roundNutrient(scaleNutrientPer100g(food.carbs_total_g, grams)),
+      fats_g: roundNutrient(scaleNutrientPer100g(food.lipids_g, grams)),
+      sodium_mg: Math.round(scaleNutrientPer100g(food.sodium_mg, grams)),
+      fiber_g: roundNutrient(scaleNutrientPer100g(food.dietary_fiber_g, grams)),
+    };
 
     setMeals((prevMeals) =>
       prevMeals.map((meal) => {
         if (meal.id !== selectedMealId) return meal;
-
         const newItem: AlimentoItem = {
-          ...food,
+          ...scaled,
           id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
         };
-
-        const updatedItems = [...meal.items, newItem];
-        return {
-          ...meal,
-          items: updatedItems,
-          total_calories: Math.round(updatedItems.reduce((s, i) => s + i.calories_kcal, 0)),
-          total_protein: parseFloat(updatedItems.reduce((s, i) => s + i.protein_g, 0).toFixed(1)),
-          total_carbs: parseFloat(updatedItems.reduce((s, i) => s + i.carbs_g, 0).toFixed(1)),
-          total_fats: parseFloat(updatedItems.reduce((s, i) => s + i.fats_g, 0).toFixed(1)),
-          total_sodium: Math.round(updatedItems.reduce((s, i) => s + i.sodium_mg, 0)),
-        };
+        return withMealTotals(meal, [...meal.items, newItem]);
       })
     );
   };
@@ -280,26 +297,10 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
     setMeals((prevMeals) =>
       prevMeals.map((meal) => {
         if (meal.id !== mealId) return meal;
-        const updatedItems = meal.items.filter((i) => i.id !== itemId);
-        return {
-          ...meal,
-          items: updatedItems,
-          total_calories: Math.round(updatedItems.reduce((s, i) => s + i.calories_kcal, 0)),
-          total_protein: parseFloat(updatedItems.reduce((s, i) => s + i.protein_g, 0).toFixed(1)),
-          total_carbs: parseFloat(updatedItems.reduce((s, i) => s + i.carbs_g, 0).toFixed(1)),
-          total_fats: parseFloat(updatedItems.reduce((s, i) => s + i.fats_g, 0).toFixed(1)),
-          total_sodium: Math.round(updatedItems.reduce((s, i) => s + i.sodium_mg, 0)),
-        };
+        return withMealTotals(meal, meal.items.filter((i) => i.id !== itemId));
       })
     );
   };
-
-  // Filter food catalog
-  const filteredFoods = FOOD_DATABASE.filter((f) => {
-    const matchesSearch = f.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCat = selectedCategory === 'all' || f.category === selectedCategory;
-    return matchesSearch && matchesCat;
-  });
 
   const onValidSubmit = async (data: DietPlanFormData) => {
     try {
@@ -686,6 +687,25 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
                       ))}
                     </div>
                   )}
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+                    <div className="rounded-xl bg-surface-container-lowest border border-outline-variant/20 px-2.5 py-2">
+                      <p className="text-[10px] font-bold uppercase text-on-surface-variant">Kcal</p>
+                      <p className="text-sm font-black">{meal.total_calories}</p>
+                    </div>
+                    <div className="rounded-xl bg-surface-container-lowest border border-outline-variant/20 px-2.5 py-2">
+                      <p className="text-[10px] font-bold uppercase text-on-surface-variant">Proteínas</p>
+                      <p className="text-sm font-black">{meal.total_protein} g</p>
+                    </div>
+                    <div className="rounded-xl bg-surface-container-lowest border border-outline-variant/20 px-2.5 py-2">
+                      <p className="text-[10px] font-bold uppercase text-on-surface-variant">Grasas</p>
+                      <p className="text-sm font-black">{meal.total_fats} g</p>
+                    </div>
+                    <div className="rounded-xl bg-surface-container-lowest border border-outline-variant/20 px-2.5 py-2">
+                      <p className="text-[10px] font-bold uppercase text-on-surface-variant">Carbohidratos</p>
+                      <p className="text-sm font-black">{meal.total_carbs} g</p>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -934,10 +954,11 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
           <div className="bg-surface-container-lowest w-full max-w-2xl rounded-3xl border border-outline-variant/40 shadow-2xl p-6 space-y-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between pb-2 border-b border-outline-variant/30">
               <div>
-                <h3 className="text-sm font-black text-on-surface">Catálogo de Alimentos & Macronutrientes</h3>
+                <h3 className="text-sm font-black text-on-surface">Catálogo TCA</h3>
                 <p className="text-xs text-on-surface-variant">
                   Agregando a:{' '}
                   <strong>{meals.find((m) => m.id === selectedMealId)?.name}</strong>
+                  . Valores por 100 g × porción en gramos.
                 </p>
               </div>
               <button
@@ -949,75 +970,32 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
               </button>
             </div>
 
-            {/* Search & Category Filter */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="sm:col-span-2">
-                <input
-                  type="text"
-                  placeholder="Buscar alimento (ej. Pollo, Avena, Salmón...)"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-surface-container-low border border-outline-variant/50 rounded-xl px-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                />
-              </div>
+            <FoodSearchCombobox onAddFood={handleAddFoodFromCatalog} />
 
-              <div>
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="w-full bg-surface-container-low border border-outline-variant/50 rounded-xl px-2 py-2 text-xs font-bold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                >
-                  <option value="all">Todas las categorías</option>
-                  <option value="proteina">Proteínas</option>
-                  <option value="carbohidrato">Carbohidratos</option>
-                  <option value="grasa">Grasas saludables</option>
-                  <option value="vegetal">Vegetales</option>
-                  <option value="fruta">Frutas</option>
-                  <option value="lacteo">Lácteos</option>
-                  <option value="suplemento">Suplementos</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Food items list */}
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {filteredFoods.map((food) => (
-                <div
-                  key={food.food_id}
-                  className="p-3 bg-surface-container-low rounded-2xl border border-outline-variant/30 flex items-center justify-between gap-3 text-xs hover:border-primary/50 transition-all"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-on-surface">{food.name}</span>
-                      <span className="text-[10px] text-on-surface-variant font-mono">
-                        ({food.portion_size} {food.unit})
-                      </span>
-                      {food.sodium_mg > 400 && (
-                        <span className="px-1.5 py-0.5 bg-error-container text-on-error-container text-[9px] font-bold rounded border border-error/30">
-                          Alto Na ({food.sodium_mg}mg)
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-on-surface-variant font-mono mt-0.5">
-                      {food.calories_kcal} kcal • P: {food.protein_g}g • C: {food.carbs_g}g • G: {food.fats_g}g • Na:{' '}
-                      {food.sodium_mg}mg
-                    </p>
+            {(() => {
+              const current = meals.find((m) => m.id === selectedMealId);
+              if (!current) return null;
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="rounded-xl bg-primary/10 px-3 py-2">
+                    <p className="text-[10px] font-bold uppercase text-on-surface-variant">Total kcal</p>
+                    <p className="text-base font-black text-primary">{current.total_calories}</p>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleAddFoodToMeal(food);
-                      setSelectedMealId(null);
-                    }}
-                    className="px-3 py-1.5 bg-primary hover:bg-primary-container text-white font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer whitespace-nowrap shadow-2xs transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-sm">add</span>
-                    <span>Agregar</span>
-                  </button>
+                  <div className="rounded-xl bg-surface-container-low px-3 py-2">
+                    <p className="text-[10px] font-bold uppercase text-on-surface-variant">Proteínas</p>
+                    <p className="text-base font-black">{current.total_protein} g</p>
+                  </div>
+                  <div className="rounded-xl bg-surface-container-low px-3 py-2">
+                    <p className="text-[10px] font-bold uppercase text-on-surface-variant">Grasas</p>
+                    <p className="text-base font-black">{current.total_fats} g</p>
+                  </div>
+                  <div className="rounded-xl bg-surface-container-low px-3 py-2">
+                    <p className="text-[10px] font-bold uppercase text-on-surface-variant">Carbohidratos</p>
+                    <p className="text-base font-black">{current.total_carbs} g</p>
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
         </div>
       )}

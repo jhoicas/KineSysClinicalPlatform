@@ -187,3 +187,39 @@ export function convertMacroPctToGrams(
     fats_kcal: Math.round(fats_kcal),
   };
 }
+
+/** Escala un nutriente reportado por 100 g a la porción en gramos. */
+export function scaleNutrientPer100g(valuePer100g: number | null | undefined, grams: number): number {
+  if (valuePer100g == null || !Number.isFinite(valuePer100g) || !Number.isFinite(grams)) return 0;
+  return (valuePer100g / 100) * grams;
+}
+
+export function roundNutrient(value: number, decimals = 1): number {
+  const f = 10 ** decimals;
+  return Math.round(value * f) / f;
+}
+
+export interface MealMacroTotals {
+  total_calories: number;
+  total_protein: number;
+  total_carbs: number;
+  total_fats: number;
+  total_sodium: number;
+}
+
+export function sumMealMacros(
+  items: Array<{ calories_kcal: number; protein_g: number; carbs_g: number; fats_g: number; sodium_mg: number }>
+): MealMacroTotals {
+  const total_calories = items.reduce((s, i) => s + (i.calories_kcal || 0), 0);
+  const total_protein = items.reduce((s, i) => s + (i.protein_g || 0), 0);
+  const total_carbs = items.reduce((s, i) => s + (i.carbs_g || 0), 0);
+  const total_fats = items.reduce((s, i) => s + (i.fats_g || 0), 0);
+  const total_sodium = items.reduce((s, i) => s + (i.sodium_mg || 0), 0);
+  return {
+    total_calories: Math.round(total_calories),
+    total_protein: roundNutrient(total_protein),
+    total_carbs: roundNutrient(total_carbs),
+    total_fats: roundNutrient(total_fats),
+    total_sodium: Math.round(total_sodium),
+  };
+}

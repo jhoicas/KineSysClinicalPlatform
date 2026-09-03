@@ -53,6 +53,7 @@ export {
   getHistoriaClinicaByPatient,
   saveKinesiologyEvaluation,
   getKinesiologyEvaluations,
+  searchFoodCatalog,
   saveAnthropometry,
   saveNutritionalPlan,
   completeOnboarding,

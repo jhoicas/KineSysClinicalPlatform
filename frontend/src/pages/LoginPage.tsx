@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, signInWithGoogle, signInWithMicrosoft, loadUserByEmail } from '../services/supabaseClient';
+import { supabase, signInWithGoogle, signInWithMicrosoft, getOAuthRedirectUrl } from '../services/supabaseClient';
 import { LanguageSelector } from '../components/common/LanguageSelector';
 import { 
   Mail, 
@@ -52,18 +52,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     setLoadingProvider(provider);
 
     try {
-      if (email && email.includes('@')) {
-        const normalizedEmail = email.trim().toLowerCase();
-        const exists = await loadUserByEmail(normalizedEmail);
-        if (!exists) {
-          setErrorMessage(
-            `El correo ${email.trim()} no está registrado en la plataforma. Contacta al administrador para habilitar tu cuenta.`
-          );
-          setLoadingProvider(null);
-          return;
-        }
-      }
-
+      // OAuth permite correos nuevos: AuthProvider asigna pending_onboarding y abre onboarding.
       const { error } =
         provider === 'google' ? await signInWithGoogle() : await signInWithMicrosoft();
 
@@ -101,7 +90,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
       const { data, error } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),
         options: {
-          emailRedirectTo: `${window.location.origin}/#/calendario`,
+          emailRedirectTo: getOAuthRedirectUrl(),
         },
       });
 

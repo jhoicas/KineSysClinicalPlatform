@@ -147,9 +147,13 @@ export function isAuthConfigured(): boolean {
   return subscribeAuthStateChange !== null;
 }
 
-/** URL de retorno post-OAuth (hash router) */
-export function getOAuthRedirectUrl(path = '/calendario'): string {
-  return `${window.location.origin}/#${path}`;
+/**
+ * URL de retorno OAuth: origen limpio sin hash.
+ * Con hash router (#/ruta), incluir el hash en redirectTo impide que el SDK
+ * lea access_token/refresh_token del fragment al volver de Google/Azure.
+ */
+export function getOAuthRedirectUrl(): string {
+  return window.location.origin;
 }
 
 export async function signInWithGoogle() {
@@ -162,7 +166,7 @@ export async function signInWithGoogle() {
   return nativeAuth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: getOAuthRedirectUrl('/calendario'),
+      redirectTo: getOAuthRedirectUrl(),
     },
   });
 }
@@ -177,7 +181,7 @@ export async function signInWithMicrosoft() {
   return nativeAuth.signInWithOAuth({
     provider: 'azure',
     options: {
-      redirectTo: getOAuthRedirectUrl('/calendario'),
+      redirectTo: getOAuthRedirectUrl(),
       scopes: 'email profile',
     },
   });

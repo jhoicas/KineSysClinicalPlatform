@@ -17,16 +17,30 @@ import { AdminAccessControl } from './pages/AdminAccessControl';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 
 export function App() {
+  const resolveAppPath = (rawHash: string): string | null => {
+    const hash = rawHash.replace(/^#/, '');
+    if (!hash) return '/landing';
+    // Fragmentos OAuth (#access_token=... / #error=...) no son rutas de la app
+    if (
+      hash.startsWith('access_token') ||
+      hash.includes('access_token=') ||
+      hash.startsWith('error=') ||
+      hash.startsWith('error_description')
+    ) {
+      return null;
+    }
+    return hash.startsWith('/') ? hash : `/${hash}`;
+  };
+
   const [currentPath, setCurrentPath] = useState<string>(() => {
-    const hash = window.location.hash.replace(/^#/, '');
-    return hash || '/landing';
+    return resolveAppPath(window.location.hash) || '/landing';
   });
 
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash.replace(/^#/, '');
-      if (hash) {
-        setCurrentPath(hash);
+      const path = resolveAppPath(window.location.hash);
+      if (path) {
+        setCurrentPath(path);
       }
     };
 

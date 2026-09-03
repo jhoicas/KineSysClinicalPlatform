@@ -200,6 +200,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAllowedModulesState([]);
     setStoreAllowedModules([]);
     lastSyncedAuthIdRef.current = session.user.id;
+    // Mantener sesión activa; no signOut. Enviar a onboarding si aún no está ahí.
+    const hash = window.location.hash.replace(/^#/, '');
+    if (hash !== '/onboarding' && hash !== '/registro') {
+      window.location.hash = '#/onboarding';
+    }
   }, [setStoreAllowedModules]);
 
   const applyRegisteredUser = useCallback(
@@ -216,6 +221,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await loadPermissionsForRole(registeredUser.role);
       await loadTenantAndUsers(registeredUser);
       lastSyncedAuthIdRef.current = registeredUser.id;
+
+      const hash = window.location.hash.replace(/^#/, '');
+      if (!hash || hash === '/login' || hash === '/landing' || hash === '/') {
+        window.location.hash = '#/calendario';
+      }
     },
     [loadPermissionsForRole, loadTenantAndUsers]
   );

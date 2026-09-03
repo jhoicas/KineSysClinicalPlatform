@@ -16,18 +16,16 @@ import {
 } from '../types';
 import {
   MOVEMENT_ALTERATIONS,
-  POSTURE_SEVERITIES,
   calcStrengthAsymmetry,
   createEmptyGestures,
   createEmptyMobility,
   createEmptyPosture,
   createEmptyStrength,
-  postureFindingsFor,
 } from '../data/kinesiologyCatalog';
 import { formatDateTime } from '../utils/dateUtils';
 import { StrengthDashboard } from '../components/medical/StrengthDashboard';
 import { MobilityDashboard } from '../components/medical/MobilityDashboard';
-import { HumanBodyVisualizer } from '../components/medical/HumanBodyVisualizer';
+import { PostureModule } from '../components/medical/PostureModule';
 
 interface EvaluacionKinesicaPageProps {
   onNavigate?: (path: string) => void;
@@ -222,67 +220,6 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
     }
   };
 
-  const postureSelectClass =
-    'w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-2 py-1.5 text-[11px] font-semibold disabled:opacity-70 disabled:cursor-not-allowed';
-
-  const renderPostureView = (
-    title: string,
-    view: 'anterior' | 'lateral' | 'posterior'
-  ) => (
-    <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-lowest p-3 clinical-shadow">
-      <div className="flex items-center gap-2 mb-3 pb-2 border-b border-outline-variant/15">
-        <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
-        <h4 className="text-[11px] font-black uppercase tracking-wider text-on-surface">{title}</h4>
-      </div>
-      <div className="flex flex-col gap-2">
-        {form.postura[view].landmarks.map((lm) => {
-          const findings = postureFindingsFor(view, lm.landmark);
-          return (
-            <div
-              key={lm.landmark}
-              className="rounded-xl bg-surface-container-low/80 border border-outline-variant/15 px-2.5 py-2 space-y-1.5"
-            >
-              <span className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant">
-                {lm.landmark}
-              </span>
-              <div className="flex flex-col gap-1.5">
-                {findings.length > 0 && (
-                  <select
-                    disabled={readOnly}
-                    className={postureSelectClass}
-                    value={lm.finding || ''}
-                    onChange={(e) => updatePostureLandmark(view, lm.landmark, { finding: e.target.value })}
-                  >
-                    <option value="">Hallazgo —</option>
-                    {findings.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <select
-                  disabled={readOnly}
-                  className={postureSelectClass}
-                  value={lm.severity}
-                  onChange={(e) =>
-                    updatePostureLandmark(view, lm.landmark, { severity: e.target.value as PostureSeverity })
-                  }
-                >
-                  {POSTURE_SEVERITIES.map((opt) => (
-                    <option key={opt.value || 'empty'} value={opt.value}>
-                      {opt.label === '—' ? 'Severidad —' : opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-
   return (
     <div className="min-h-screen flex bg-background font-sans text-on-background overflow-hidden">
       <SideNavBar currentPath="/evaluacion-kinesica" onNavigate={onNavigate} />
@@ -371,40 +308,22 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
                 </div>
 
                 {tab === 'postura' && (
-                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
-                    <div className="xl:col-span-1">
-                      {renderPostureView('VISTA ANTERIOR', 'anterior')}
-                    </div>
-
-                    <div className="xl:col-span-2 space-y-4">
-                      <div className="flex justify-center bg-surface-container-lowest rounded-3xl p-4 border border-outline-variant/30">
-                        <HumanBodyVisualizer data={form.postura} />
-                      </div>
-                      <label className="block bg-surface-container-lowest rounded-2xl border border-outline-variant/30 p-4">
-                        <span className="text-xs font-bold text-on-surface-variant">
-                          Observación fisioterapéutica / Concepto postural
-                        </span>
-                        <textarea
-                          disabled={readOnly}
-                          rows={3}
-                          className={inputClass}
-                          value={form.postura.concepto || ''}
-                          onChange={(e) =>
-                            setForm((prev) => ({
-                              ...prev,
-                              postura: { ...prev.postura, concepto: e.target.value },
-                            }))
-                          }
-                          placeholder="Síntesis de hallazgos posturales..."
-                        />
-                      </label>
-                    </div>
-
-                    <div className="xl:col-span-1 flex flex-col gap-6">
-                      {renderPostureView('VISTA LATERAL', 'lateral')}
-                      {renderPostureView('VISTA POSTERIOR', 'posterior')}
-                    </div>
-                  </div>
+                  <PostureModule
+                    formState={form.postura}
+                    onUpdateLandmark={(view, landmark, value) =>
+                      updatePostureLandmark(view, landmark, { finding: value })
+                    }
+                    onUpdateText={(field, value) => setForm((prev) => ({ ...prev, [field]: value }))}
+                    conceptGlobal={form.postura.concepto}
+                    observacionesGenerales={form.observaciones_generales}
+                    onUpdateConcepto={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        postura: { ...prev.postura, concepto: value },
+                      }))
+                    }
+                    readOnly={readOnly}
+                  />
                 )}
 
                 {/* ── Movilidad: form + dashboard ── */}

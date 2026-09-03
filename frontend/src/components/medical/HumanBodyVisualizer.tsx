@@ -1,14 +1,6 @@
 import React, { useState } from 'react';
 import { PostureAssessment } from '../../types';
 import { getPinColor, toVisualizerPosture } from './postureVisualizerModel';
-import {
-  Layers,
-  Crosshair,
-  Compass,
-  Eye,
-  CheckCircle2,
-  AlertTriangle,
-} from 'lucide-react';
 
 interface HumanBodyVisualizerProps {
   data: PostureAssessment;
@@ -175,7 +167,7 @@ export const HumanBodyVisualizer: React.FC<HumanBodyVisualizerProps> = ({
               }`}
               title="Alternar entre silueta muscular y ejes esqueléticos biomecánicos"
             >
-              <Layers size={14} className={viewMode === 'skeletal' ? 'text-blue-600' : 'text-slate-500'} />
+              <span className={`material-symbols-outlined text-[16px] ${viewMode === 'skeletal' ? 'text-blue-600' : 'text-slate-500'}`}>layers</span>
               <span>{viewMode === 'muscular' ? 'Modo Muscular' : 'Ejes Esqueléticos'}</span>
             </button>
 
@@ -189,7 +181,7 @@ export const HumanBodyVisualizer: React.FC<HumanBodyVisualizerProps> = ({
               }`}
               title="Línea de gravedad / plomada vertical de referencia"
             >
-              <Crosshair size={14} className={showPlumbLine ? 'text-blue-600' : 'text-slate-400'} />
+              <span className={`material-symbols-outlined text-[16px] ${showPlumbLine ? 'text-blue-600' : 'text-slate-400'}`}>my_location</span>
               <span>Línea de Plomada</span>
             </button>
 
@@ -203,7 +195,7 @@ export const HumanBodyVisualizer: React.FC<HumanBodyVisualizerProps> = ({
               }`}
               title="Mostrar grados angulares y milímetros de desviación"
             >
-              <Compass size={14} className={showAngles ? 'text-blue-600' : 'text-slate-400'} />
+              <span className={`material-symbols-outlined text-[16px] ${showAngles ? 'text-blue-600' : 'text-slate-400'}`}>architecture</span>
               <span>Ángulos & Ejes</span>
             </button>
 
@@ -217,7 +209,7 @@ export const HumanBodyVisualizer: React.FC<HumanBodyVisualizerProps> = ({
               }`}
               title="Superpone la silueta fantasma en postura neutra ideal para comparar las desviaciones"
             >
-              <Eye size={14} className={showGhostIdeal ? 'text-emerald-600' : 'text-slate-400'} />
+              <span className={`material-symbols-outlined text-[16px] ${showGhostIdeal ? 'text-emerald-600' : 'text-slate-400'}`}>visibility</span>
               <span>Comparar con Ideal</span>
             </button>
           </div>
@@ -241,11 +233,11 @@ export const HumanBodyVisualizer: React.FC<HumanBodyVisualizerProps> = ({
             <div className="text-[11px] text-slate-500 font-medium">
               {totalDeviations === 0 ? (
                 <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                  <CheckCircle2 size={13} /> Alineación Neutra
+                  <span className="material-symbols-outlined text-[13px]">check_circle</span> Alineación Neutra
                 </span>
               ) : (
                 <span className="text-blue-700 font-semibold flex items-center gap-1">
-                  <AlertTriangle size={13} className="text-blue-600" /> {totalDeviations} hallazgos activos
+                  <span className="material-symbols-outlined text-[13px] text-blue-600">warning</span> {totalDeviations} hallazgos activos
                 </span>
               )}
             </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, signInWithGoogle, signInWithMicrosoft, getOAuthRedirectUrl } from '../services/supabaseClient';
+import { useAuth } from '../app/providers/AuthProvider';
 import { LanguageSelector } from '../components/common/LanguageSelector';
 import { 
   Mail, 
@@ -18,6 +19,8 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
+  const { user, needsOnboarding } = useAuth();
+
   // Form states
   const [email, setEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
@@ -27,6 +30,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
   // Feedback alerts
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      onNavigate(needsOnboarding ? '/onboarding' : '/calendario');
+    }
+  }, [user, needsOnboarding, onNavigate]);
 
   // Check for security denial messages on mount or via custom event
   useEffect(() => {

@@ -17,33 +17,26 @@ import { AdminAccessControl } from './pages/AdminAccessControl';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 
 export function App() {
-  const resolveAppPath = (rawHash: string): string | null => {
-    const hash = rawHash.replace(/^#/, '');
-    if (!hash) return '/landing';
-    // Fragmentos OAuth (#access_token=... / #error=...) no son rutas de la app
+  const getCleanPath = () => {
+    const hash = window.location.hash.replace(/^#/, '');
     if (
+      hash.startsWith('access_token=') ||
       hash.startsWith('access_token') ||
       hash.includes('access_token=') ||
       hash.startsWith('error=') ||
       hash.startsWith('error_description')
     ) {
-      return null;
+      return 'oauth-callback';
     }
-    return hash.startsWith('/') ? hash : `/${hash}`;
+    return hash || '/landing';
   };
 
-  const [currentPath, setCurrentPath] = useState<string>(() => {
-    return resolveAppPath(window.location.hash) || '/landing';
-  });
+  const [currentPath, setCurrentPath] = useState<string>(getCleanPath);
 
   useEffect(() => {
     const handleHashChange = () => {
-      const path = resolveAppPath(window.location.hash);
-      if (path) {
-        setCurrentPath(path);
-      }
+      setCurrentPath(getCleanPath());
     };
-
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
@@ -55,6 +48,15 @@ export function App() {
 
   const renderCurrentView = () => {
     switch (currentPath) {
+      case 'oauth-callback':
+        return (
+          <div className="flex h-screen items-center justify-center bg-background">
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+              <p className="text-on-surface-variant font-bold text-xs">Validando autenticación segura...</p>
+            </div>
+          </div>
+        );
       // ─── RUTAS PÚBLICAS (Sin autenticación requerida) ───
       case '/login':
         return <LoginPage onNavigate={handleNavigate} />;

@@ -309,6 +309,8 @@ export interface StrengthAssessment {
 export interface MovementGesture {
   gesto: string;
   alteraciones: string[];
+  /** Comentario clínico opcional del gesto (JSONB flexible). */
+  comentarios?: string;
 }
 
 export interface KinesiologyEvaluation {

@@ -121,8 +121,17 @@ export function createEmptyStrength(): StrengthAssessment[] {
 }
 
 export function createEmptyGestures(): MovementGesture[] {
-  return MOVEMENT_GESTURES.map((gesto) => ({ gesto, alteraciones: [] }));
+  return MOVEMENT_GESTURES.map((gesto) => ({ gesto, alteraciones: [], comentarios: '' }));
 }
+
+export const GESTURE_ICON_MAP: Record<string, string> = {
+  Sentadilla: 'squat',
+  Estocada: 'lunge',
+  'Peso muerto': 'deadlift',
+  'Salto vertical': 'jump',
+  'Salto unipodal': 'jump',
+  Plancha: 'push-up',
+};
 
 export function calcStrengthAsymmetry(left: number | null, right: number | null): number | null {
   if (left == null || right == null) return null;

@@ -9,13 +9,11 @@ import { getKinesiologyEvaluations, saveKinesiologyEvaluation } from '../service
 import {
   KinesiologyEvaluation,
   MobilityAssessment,
-  MovementGesture,
   PostureAssessment,
   PostureSeverity,
   StrengthAssessment,
 } from '../types';
 import {
-  MOVEMENT_ALTERATIONS,
   calcStrengthAsymmetry,
   createEmptyGestures,
   createEmptyMobility,
@@ -26,6 +24,7 @@ import { formatDateTime } from '../utils/dateUtils';
 import { StrengthDashboard } from '../components/medical/StrengthDashboard';
 import { MobilityDashboard } from '../components/medical/MobilityDashboard';
 import { PostureModule } from '../components/medical/PostureModule';
+import { MovementControlModule } from '../components/medical/MovementControlModule';
 
 interface EvaluacionKinesicaPageProps {
   onNavigate?: (path: string) => void;
@@ -121,7 +120,13 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
       postura: mergePosture(row.postura),
       movilidad: row.movilidad?.length ? row.movilidad : createEmptyMobility(),
       fuerza: row.fuerza?.length ? row.fuerza : createEmptyStrength(),
-      gestos_movimiento: row.gestos_movimiento?.length ? row.gestos_movimiento : createEmptyGestures(),
+      gestos_movimiento: row.gestos_movimiento?.length
+        ? row.gestos_movimiento.map((g) => ({
+            gesto: g.gesto,
+            alteraciones: g.alteraciones || [],
+            comentarios: g.comentarios || '',
+          }))
+        : createEmptyGestures(),
       diagnostico_kinesico: row.diagnostico_kinesico || '',
       plan_tratamiento: row.plan_tratamiento || '',
       observaciones_generales: row.observaciones_generales || '',
@@ -169,20 +174,6 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
         const next: StrengthAssessment = { ...row, [side]: Number.isFinite(parsed as number) ? parsed : null };
         next.asimetria_porcentaje = calcStrengthAsymmetry(next.fuerza_izq_kg, next.fuerza_der_kg);
         return next;
-      }),
-    }));
-  };
-
-  const toggleAlteration = (gestoIndex: number, alteration: string) => {
-    setForm((prev) => ({
-      ...prev,
-      gestos_movimiento: prev.gestos_movimiento.map((g, i) => {
-        if (i !== gestoIndex) return g;
-        const has = g.alteraciones.includes(alteration);
-        return {
-          ...g,
-          alteraciones: has ? g.alteraciones.filter((a) => a !== alteration) : [...g.alteraciones, alteration],
-        } satisfies MovementGesture;
       }),
     }));
   };
@@ -435,44 +426,19 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
                   </div>
                 )}
 
-                <section className={`bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow space-y-5 ${(tab === 'postura' || tab === 'movilidad' || tab === 'fuerza') ? 'hidden' : ''}`}>
+                {tab === 'control' && (
+                  <div className="col-span-full">
+                    <MovementControlModule
+                      gestures={form.gestos_movimiento}
+                      onUpdateGestures={(newGestures) =>
+                        setForm((prev) => ({ ...prev, gestos_movimiento: newGestures }))
+                      }
+                      readOnly={readOnly}
+                    />
+                  </div>
+                )}
 
-                  {tab === 'control' && (
-                    <div className="space-y-4">
-                      {form.gestos_movimiento.map((g, index) => (
-                        <div
-                          key={g.gesto}
-                          className="rounded-2xl border border-outline-variant/20 bg-surface-container-low p-4"
-                        >
-                          <h4 className="text-sm font-extrabold mb-3">{g.gesto}</h4>
-                          <div className="flex flex-wrap gap-2">
-                            {MOVEMENT_ALTERATIONS.map((alt) => {
-                              const checked = g.alteraciones.includes(alt);
-                              return (
-                                <label
-                                  key={alt}
-                                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold ${
-                                    checked
-                                      ? 'border-primary bg-primary/10 text-primary'
-                                      : 'border-outline-variant/30 text-on-surface-variant'
-                                  } ${readOnly ? 'pointer-events-none opacity-80' : 'cursor-pointer'}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="sr-only"
-                                    disabled={readOnly}
-                                    checked={checked}
-                                    onChange={() => toggleAlteration(index, alt)}
-                                  />
-                                  {alt}
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <section className={`bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow space-y-5 ${(tab === 'postura' || tab === 'movilidad' || tab === 'fuerza' || tab === 'control') ? 'hidden' : ''}`}>
 
                   {tab === 'diagnostico' && (
                     <div className="space-y-4">

@@ -868,7 +868,7 @@ export async function submitProfessionalReview(
   }
 }
 
-/** Onboarding: crea tenant → signUp (con metadata) → completa users/profiles */
+/** Onboarding: crea tenant → signUp (metadata) → el trigger crea users/profiles */
 export async function completeOnboarding(params: {
   clinicName: string;
   slug: string;
@@ -893,9 +893,11 @@ export async function completeOnboarding(params: {
   const trialEnds = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const adminEmail = params.adminEmail.trim().toLowerCase();
   const adminName = params.adminName.trim();
+  const adminPhone = params.adminPhone?.trim() || undefined;
+  const adminLicense = params.adminLicense?.trim() || undefined;
+  const adminRut = params.adminRut?.trim() || undefined;
 
   // Paso 1: crear clínica (tenant) ANTES del signUp — vía RPC SECURITY DEFINER
-  // (RLS de tenants solo permite INSERT a authenticated; en onboarding aún no hay sesión)
   const { data: tenantRow, error: tenantError } = await supabase.rpc('create_tenant_onboarding', {
     p_name: params.clinicName.trim(),
     p_slug: params.slug,
@@ -916,7 +918,8 @@ export async function completeOnboarding(params: {
 
   const tenantId = tenant.id;
 
-  // Paso 2: signUp con metadata que exige el trigger handle_new_user
+  // Paso 2: signUp — el trigger handle_new_user crea kinesys.users / profiles
+  // No hay escrituras directas a users/profiles aquí (evita 42501 con rol anon).
   const { data: signUpData, error: signUpError } = await nativeAuthApi.signUp({
     email: adminEmail,
     password: params.password,
@@ -925,6 +928,9 @@ export async function completeOnboarding(params: {
         full_name: adminName,
         tenant_id: tenantId,
         role: 'clinic_admin',
+        ...(adminPhone ? { phone: adminPhone } : {}),
+        ...(adminLicense ? { license_number: adminLicense } : {}),
+        ...(adminRut ? { rut_or_dni: adminRut } : {}),
       },
     },
   });
@@ -938,63 +944,15 @@ export async function completeOnboarding(params: {
     throw new Error('No se pudo crear el usuario de autenticación.');
   }
 
-  const authUserId = signUpData.user.id;
-
-  // El trigger ya insertó users/profiles. Completar campos opcionales si hay sesión
-  // (si el proyecto exige confirmar email, puede no haber JWT aún → no abortar).
-  const { error: userError } = await supabase.from('users').upsert(
-    [
-      {
-        id: authUserId,
-        tenant_id: tenantId,
-        email: adminEmail,
-        full_name: adminName,
-        role: 'clinic_admin',
-        phone: params.adminPhone || null,
-        license_number: params.adminLicense || null,
-        rut_or_dni: params.adminRut || null,
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      },
-    ],
-    { onConflict: 'id' }
-  );
-
-  if (userError) {
-    console.warn('[completeOnboarding] users upsert (no crítico si el trigger ya creó la fila):', userError.message);
-  }
-
-  const { error: profileError } = await supabase.from('profiles').upsert(
-    [
-      {
-        id: authUserId,
-        tenant_id: tenantId,
-        email: adminEmail,
-        full_name: adminName,
-        role: 'clinic_admin',
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      },
-    ],
-    { onConflict: 'id' }
-  );
-
-  if (profileError) {
-    console.warn(
-      '[completeOnboarding] profiles upsert (no crítico si el trigger ya creó la fila):',
-      profileError.message
-    );
-  }
-
   const user: User = {
-    id: authUserId,
+    id: signUpData.user.id,
     email: adminEmail,
     full_name: adminName,
     role: 'clinic_admin',
-    phone: params.adminPhone,
+    phone: adminPhone,
     tenant_id: tenantId,
-    license_number: params.adminLicense,
-    rut_or_dni: params.adminRut,
+    license_number: adminLicense,
+    rut_or_dni: adminRut,
     is_active: true,
     created_at: new Date().toISOString(),
   };

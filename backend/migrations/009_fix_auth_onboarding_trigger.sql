@@ -110,6 +110,9 @@ DECLARE
     v_tenant_id UUID;
     v_role TEXT;
     v_full_name TEXT;
+    v_phone TEXT;
+    v_license TEXT;
+    v_rut TEXT;
 BEGIN
     BEGIN
         v_tenant_id := NULLIF(btrim(COALESCE(NEW.raw_user_meta_data->>'tenant_id', '')), '')::uuid;
@@ -127,19 +130,29 @@ BEGIN
         NULLIF(btrim(COALESCE(NEW.raw_user_meta_data->>'full_name', '')), ''),
         split_part(COALESCE(NEW.email, 'usuario'), '@', 1)
     );
+    v_phone := NULLIF(btrim(COALESCE(NEW.raw_user_meta_data->>'phone', '')), '');
+    v_license := NULLIF(btrim(COALESCE(NEW.raw_user_meta_data->>'license_number', '')), '');
+    v_rut := NULLIF(btrim(COALESCE(NEW.raw_user_meta_data->>'rut_or_dni', '')), '');
 
     -- Sin tenant_id: OAuth / pending_onboarding — no abortar el INSERT de auth.users
     IF v_tenant_id IS NULL THEN
         RETURN NEW;
     END IF;
 
-    INSERT INTO kinesys.users (id, tenant_id, email, full_name, role, is_active)
-    VALUES (NEW.id, v_tenant_id, NEW.email, v_full_name, v_role, TRUE)
+    INSERT INTO kinesys.users (
+        id, tenant_id, email, full_name, role, phone, license_number, rut_or_dni, is_active
+    )
+    VALUES (
+        NEW.id, v_tenant_id, NEW.email, v_full_name, v_role, v_phone, v_license, v_rut, TRUE
+    )
     ON CONFLICT (id) DO UPDATE SET
         tenant_id = EXCLUDED.tenant_id,
         email = EXCLUDED.email,
         full_name = EXCLUDED.full_name,
         role = EXCLUDED.role,
+        phone = COALESCE(EXCLUDED.phone, kinesys.users.phone),
+        license_number = COALESCE(EXCLUDED.license_number, kinesys.users.license_number),
+        rut_or_dni = COALESCE(EXCLUDED.rut_or_dni, kinesys.users.rut_or_dni),
         is_active = TRUE,
         updated_at = NOW();
 

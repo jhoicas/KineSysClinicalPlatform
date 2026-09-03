@@ -3,7 +3,15 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
 };
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -28,10 +36,7 @@ Deno.serve(async (req) => {
     } = body;
 
     if (!email || !full_name || !role || !tenant_id) {
-      return new Response(JSON.stringify({ error: 'Campos requeridos: email, full_name, role, tenant_id' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'Campos requeridos: email, full_name, role, tenant_id' }, 400);
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -41,18 +46,12 @@ Deno.serve(async (req) => {
     });
 
     if (inviteError) {
-      return new Response(JSON.stringify({ error: inviteError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: inviteError.message }, 400);
     }
 
     const userId = inviteData.user?.id;
     if (!userId) {
-      return new Response(JSON.stringify({ error: 'No se obtuvo ID del usuario invitado' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'No se obtuvo ID del usuario invitado' }, 500);
     }
 
     const db = admin.schema('kinesys');
@@ -72,10 +71,7 @@ Deno.serve(async (req) => {
     ]).select().single();
 
     if (userError) {
-      return new Response(JSON.stringify({ error: userError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: userError.message }, 400);
     }
 
     await db.from('profiles').insert([
@@ -92,13 +88,9 @@ Deno.serve(async (req) => {
       ]);
     }
 
-    return new Response(JSON.stringify({ user: userRow }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ success: true, user: userRow }, 200);
   } catch (err) {
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Error interno' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    const message = err instanceof Error ? err.message : 'Error interno';
+    return jsonResponse({ error: message }, 400);
   }
 });

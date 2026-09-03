@@ -255,6 +255,76 @@ export interface PacienteClinico {
   updated_at?: string;
 }
 
+export type NivelDeporte = 'recreativo' | 'amateur' | 'competitivo';
+
+export interface HistoriaClinica {
+  id: string;
+  tenant_id: string;
+  patient_id: string;
+  professional_id: string;
+  ocupacion?: string;
+  motivo_consulta?: string;
+  deporte_practica?: string;
+  nivel_deporte?: NivelDeporte | string;
+  frecuencia_semanal?: string;
+  lesiones_anteriores?: string;
+  habitos_estilo_vida?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export type PostureSeverity = '' | 'normal' | 'leve' | 'moderada' | 'marcada';
+
+export interface PostureLandmark {
+  landmark: string;
+  severity: PostureSeverity | string;
+}
+
+export interface PostureView {
+  landmarks: PostureLandmark[];
+}
+
+export interface PostureAssessment {
+  anterior: PostureView;
+  lateral: PostureView;
+  posterior: PostureView;
+  concepto?: string;
+}
+
+export interface MobilityAssessment {
+  estructura: string;
+  limitacion_izq: string;
+  limitacion_der: string;
+}
+
+export interface StrengthAssessment {
+  estructura: string;
+  fuerza_izq_kg: number | null;
+  fuerza_der_kg: number | null;
+  asimetria_porcentaje: number | null;
+}
+
+export interface MovementGesture {
+  gesto: string;
+  alteraciones: string[];
+}
+
+export interface KinesiologyEvaluation {
+  id: string;
+  tenant_id: string;
+  patient_id: string;
+  professional_id: string;
+  postura: PostureAssessment;
+  movilidad: MobilityAssessment[];
+  fuerza: StrengthAssessment[];
+  gestos_movimiento: MovementGesture[];
+  diagnostico_kinesico?: string;
+  plan_tratamiento?: string;
+  observaciones_generales?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface VitalSignsObservation {
   blood_pressure_systolic: number;
   blood_pressure_diastolic: number;

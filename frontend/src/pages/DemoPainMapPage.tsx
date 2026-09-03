@@ -324,6 +324,16 @@ export function DemoPainMapPage({ onNavigate }: DemoPainMapPageProps) {
                 )}
               </p>
             </div>
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate('/evaluacion-kinesica')}
+                className="inline-flex items-center gap-2 rounded-2xl border border-outline-variant/40 bg-surface-container-lowest px-4 py-2.5 text-sm font-bold text-on-surface"
+              >
+                <span className="material-symbols-outlined text-lg">physical_therapy</span>
+                Evaluación integral
+              </button>
+            )}
           </div>
 
           {/* EMPTY STATE: NO ACTIVE PATIENT */}

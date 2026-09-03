@@ -22,6 +22,8 @@ import {
   PainObservation,
   PricingPlanConfig,
   PacienteClinico,
+  HistoriaClinica,
+  KinesiologyEvaluation,
   ConsultaSOP,
   PrescripcionMedica,
   EvaluacionAntropometrica,
@@ -103,6 +105,8 @@ export const PRICING_PLANS: PricingPlanConfig[] = [
 export const DEFAULT_APP_MODULES: AppModule[] = [
   { id: 'mod_calendario', name: 'Agenda & Citas', path_route: '/calendario', icon: 'calendar_month', display_order: 1 },
   { id: 'mod_pacientes', name: 'Pacientes', path_route: '/pacientes', icon: 'group', display_order: 2 },
+  { id: 'mod_historia_clinica', name: 'Historia Clínica', path_route: '/historia-clinica', icon: 'clinical_notes', display_order: 3 },
+  { id: 'mod_evaluacion_kinesica', name: 'Evaluación Kinésica', path_route: '/evaluacion-kinesica', icon: 'physical_therapy', display_order: 4 },
   { id: 'mod_configuracion', name: 'Gestión de Clínica', path_route: '/configuracion', icon: 'settings', display_order: 7 },
 ];
 
@@ -225,6 +229,104 @@ export async function deleteAppointment(id: string): Promise<void> {
 }
 
 // ─── Clínico ───────────────────────────────────────────────────────────────────
+
+export async function getHistoriaClinicaByPatient(
+  tenantId: string,
+  patientId: string
+): Promise<HistoriaClinica | null> {
+  const { data, error } = await supabase
+    .from('historias_clinicas')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .eq('patient_id', patientId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as HistoriaClinica) || null;
+}
+
+export async function saveHistoriaClinica(
+  data: Omit<HistoriaClinica, 'id' | 'created_at' | 'updated_at'> & { id?: string }
+): Promise<HistoriaClinica> {
+  const payload = {
+    tenant_id: data.tenant_id,
+    patient_id: data.patient_id,
+    professional_id: data.professional_id,
+    ocupacion: data.ocupacion || null,
+    motivo_consulta: data.motivo_consulta || null,
+    deporte_practica: data.deporte_practica || null,
+    nivel_deporte: data.nivel_deporte || null,
+    frecuencia_semanal: data.frecuencia_semanal || null,
+    lesiones_anteriores: data.lesiones_anteriores || null,
+    habitos_estilo_vida: data.habitos_estilo_vida || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (data.id) {
+    const { data: row, error } = await supabase
+      .from('historias_clinicas')
+      .update(payload)
+      .eq('id', data.id)
+      .select()
+      .single();
+    return assertSupabaseOk({ data: row, error }) as HistoriaClinica;
+  }
+
+  const { data: row, error } = await supabase
+    .from('historias_clinicas')
+    .upsert(payload, { onConflict: 'tenant_id,patient_id' })
+    .select()
+    .single();
+  return assertSupabaseOk({ data: row, error }) as HistoriaClinica;
+}
+
+export async function getKinesiologyEvaluations(
+  tenantId: string,
+  patientId: string
+): Promise<KinesiologyEvaluation[]> {
+  const { data, error } = await supabase
+    .from('evaluaciones_kinesicas')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .eq('patient_id', patientId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as KinesiologyEvaluation[]) || [];
+}
+
+export async function saveKinesiologyEvaluation(
+  data: Omit<KinesiologyEvaluation, 'id' | 'created_at' | 'updated_at'> & { id?: string }
+): Promise<KinesiologyEvaluation> {
+  const payload = {
+    tenant_id: data.tenant_id,
+    patient_id: data.patient_id,
+    professional_id: data.professional_id,
+    postura: data.postura ?? {},
+    movilidad: data.movilidad ?? [],
+    fuerza: data.fuerza ?? [],
+    gestos_movimiento: data.gestos_movimiento ?? [],
+    diagnostico_kinesico: data.diagnostico_kinesico || null,
+    plan_tratamiento: data.plan_tratamiento || null,
+    observaciones_generales: data.observaciones_generales || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (data.id) {
+    const { data: row, error } = await supabase
+      .from('evaluaciones_kinesicas')
+      .update(payload)
+      .eq('id', data.id)
+      .select()
+      .single();
+    return assertSupabaseOk({ data: row, error }) as KinesiologyEvaluation;
+  }
+
+  const { data: row, error } = await supabase
+    .from('evaluaciones_kinesicas')
+    .insert([payload])
+    .select()
+    .single();
+  return assertSupabaseOk({ data: row, error }) as KinesiologyEvaluation;
+}
 
 export async function saveSoapEncounter(data: Omit<ConsultaSOP, 'id' | 'created_at' | 'updated_at'>): Promise<ConsultaSOP> {
   const { data: row, error } = await supabase.from('consultas_soap').insert([data]).select().single();

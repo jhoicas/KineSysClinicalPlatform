@@ -14,6 +14,8 @@ import { NutricionistaPage } from './pages/NutricionistaPage';
 import { DoctorDashboard } from './pages/DoctorDashboard';
 import { LoginPage } from './pages/LoginPage';
 import { AdminAccessControl } from './pages/AdminAccessControl';
+import { HistoriaClinicaPage } from './pages/HistoriaClinicaPage';
+import { EvaluacionKinesicaPage } from './pages/EvaluacionKinesicaPage';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 
 function isOAuthFragment(path: string): boolean {
@@ -119,6 +121,18 @@ function AppRouter() {
         return (
           <ProtectedRoute path="/mapa-dolor" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
             <DemoPainMapPage onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
+      case '/historia-clinica':
+        return (
+          <ProtectedRoute path="/historia-clinica" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
+            <HistoriaClinicaPage onNavigate={handleNavigate} />
+          </ProtectedRoute>
+        );
+      case '/evaluacion-kinesica':
+        return (
+          <ProtectedRoute path="/evaluacion-kinesica" onNavigate={handleNavigate} fallbackPath={defaultFallback}>
+            <EvaluacionKinesicaPage onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
       case '/admin-access':

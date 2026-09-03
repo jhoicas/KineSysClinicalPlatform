@@ -23,7 +23,32 @@ export const POSTURE_LATERAL = [
   'Pelvis',
   'Rodillas',
 ] as const;
-export const POSTURE_POSTERIOR = ['Cabeza', 'Hombros', 'Escápulas', 'Pelvis', 'Rodillas', 'Pies'] as const;
+export const POSTURE_POSTERIOR = ['Cabeza', 'Hombros', 'Escápulas', 'Columna', 'Pelvis', 'Rodillas', 'Pies'] as const;
+
+export const POSTURE_FINDINGS: Record<string, readonly string[]> = {
+  'anterior:Cabeza': ['Alineada', 'Derecha', 'Izquierda'],
+  'anterior:Hombros': ['Simétricos', 'Elevado D', 'Elevado I'],
+  'anterior:Pelvis': ['Nivelada', 'Elevada D', 'Elevada I'],
+  'anterior:Rodillas': ['Alineadas', 'Valgo', 'Varo'],
+  'anterior:Pies': ['Alineados', 'Pronación', 'Supinación'],
+  'lateral:Cabeza': ['Alineada', 'Anteriorizada'],
+  'lateral:Hombros': ['Alineados', 'Protracción'],
+  'lateral:Cifosis dorsal': ['Normal', 'Hipercifosis'],
+  'lateral:Lordosis lumbar': ['Normal', 'Hiperlordosis', 'Rectificación'],
+  'lateral:Pelvis': ['Neutra', 'Anteversión', 'Retroversión'],
+  'lateral:Rodillas': ['Neutras', 'Flexum', 'Recurvatum'],
+  'posterior:Cabeza': ['Alineada', 'Derecha', 'Izquierda'],
+  'posterior:Hombros': ['Simétricos', 'Elevado D', 'Elevado I'],
+  'posterior:Escápulas': ['Simétricas', 'Asimetría', 'Escápula alada'],
+  'posterior:Columna': ['Alineada', 'Desviación derecha', 'Desviación izquierda'],
+  'posterior:Pelvis': ['Simétrica', 'Asimetría'],
+  'posterior:Rodillas': ['Alineadas', 'Valgo', 'Varo'],
+  'posterior:Pies': ['Alineados', 'Valgo', 'Varo'],
+};
+
+export function postureFindingsFor(view: 'anterior' | 'lateral' | 'posterior', landmark: string): readonly string[] {
+  return POSTURE_FINDINGS[`${view}:${landmark}`] ?? [];
+}
 
 export const MOBILITY_SEGMENTS = [
   'Cuello',
@@ -66,7 +91,7 @@ export const MOVEMENT_ALTERATIONS = [
 ] as const;
 
 function landmarks(names: readonly string[]) {
-  return names.map((landmark) => ({ landmark, severity: '' as PostureSeverity }));
+  return names.map((landmark) => ({ landmark, severity: '' as PostureSeverity, finding: '' }));
 }
 
 export function createEmptyPosture(): PostureAssessment {

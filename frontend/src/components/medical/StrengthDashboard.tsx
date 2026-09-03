@@ -1,5 +1,6 @@
 import React from 'react';
 import { StrengthAssessment } from '../../types';
+import { AnatomyIcon } from './AnatomyIcons';
 
 interface StrengthDashboardProps {
   data: StrengthAssessment[];
@@ -23,42 +24,35 @@ function asymmetryLabel(pct: number | null) {
   return          'Asimetría marcada';
 }
 
-/** SVG ring KPI ─ radio=40 → circunferencia ≈ 251 */
-function Ring({ value, max, color, label, sublabel }: {
+/** Anillo KPI estilo Fisiotest (stroke-dasharray sobre circunferencia 100). */
+function Ring({ value, max, colorClass, label }: {
   value: number;
   max: number;
+  colorClass: string;
   label: string;
-  sublabel: string;
-  color: string;
 }) {
-  const R = 40;
-  const C = 2 * Math.PI * R;
-  const pct = Math.min(1, value / (max || 1));
-  const dash = pct * C;
-
+  const pct = Math.min(100, Math.round((value / (max || 1)) * 100));
   return (
-    <div className="flex flex-col items-center gap-1">
-      <svg width="100" height="100" viewBox="0 0 100 100">
-        {/* track */}
-        <circle cx="50" cy="50" r={R} fill="none" stroke="#e2e8f0" strokeWidth="9" />
-        {/* progress */}
-        <circle
-          cx="50" cy="50" r={R}
+    <div className="relative w-20 h-20 flex items-center justify-center shrink-0">
+      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+        <path
+          className="text-slate-100"
+          strokeWidth="3.5"
+          stroke="currentColor"
           fill="none"
-          stroke={color}
-          strokeWidth="9"
-          strokeLinecap="round"
-          strokeDasharray={`${dash} ${C - dash}`}
-          strokeDashoffset={C / 4}      /* rotate −90° */
-          style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }}
+          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
         />
-        <text x="50" y="46" textAnchor="middle" className="font-black text-base" fontSize="13" fontWeight="900" fill={color}>
-          {label}
-        </text>
-        <text x="50" y="62" textAnchor="middle" fontSize="9" fill="#64748b">
-          {sublabel}
-        </text>
+        <path
+          className={colorClass}
+          strokeDasharray={`${pct}, 100`}
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          stroke="currentColor"
+          fill="none"
+          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+        />
       </svg>
+      <div className="absolute font-black text-sm text-on-surface">{label}</div>
     </div>
   );
 }
@@ -105,18 +99,25 @@ export const StrengthDashboard: React.FC<StrengthDashboardProps> = ({ data }) =>
                 value={avgForce}
                 max={maxForce * 1.25}
                 label={`${avgForce}`}
-                sublabel="kg prom."
-                color="#6366f1"
+                colorClass="text-primary"
               />
               <p className="text-[11px] font-bold text-on-surface-variant mt-1">Fuerza global</p>
+              <p className="text-[10px] text-on-surface-variant">kg promedio</p>
             </div>
             <div className="text-center">
               <Ring
                 value={avgAsym}
                 max={50}
                 label={`${avgAsym}%`}
-                sublabel="asim."
-                color={asymColor.ring}
+                colorClass={
+                  avgAsym < 10
+                    ? 'text-emerald-500'
+                    : avgAsym < 20
+                    ? 'text-amber-500'
+                    : avgAsym < 30
+                    ? 'text-orange-500'
+                    : 'text-red-500'
+                }
               />
               <p className={`text-[11px] font-bold mt-1 ${asymColor.text}`}>
                 {asymmetryLabel(asymmetries.length ? avgAsym : null)}
@@ -133,9 +134,12 @@ export const StrengthDashboard: React.FC<StrengthDashboardProps> = ({ data }) =>
                 <div key={row.estructura} className="pt-4 first:pt-0">
                   {/* structure name + asym badge */}
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-[11px] font-black uppercase tracking-wider text-on-surface">
-                      {row.estructura}
-                    </p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <AnatomyIcon structure={row.estructura} size={32} className="w-8 h-8" />
+                      <p className="text-[11px] font-black uppercase tracking-wider text-on-surface truncate">
+                        {row.estructura}
+                      </p>
+                    </div>
                     <span className={`text-[11px] font-black px-2 py-0.5 rounded-full ${col.bg} ${col.text}`}>
                       {row.asimetria_porcentaje != null ? `${row.asimetria_porcentaje}%` : '—'}
                     </span>

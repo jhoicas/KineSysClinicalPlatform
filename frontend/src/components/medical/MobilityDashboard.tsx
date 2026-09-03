@@ -1,20 +1,10 @@
 import React from 'react';
 import { MobilityAssessment } from '../../types';
+import { AnatomyIcon } from './AnatomyIcons';
 
 interface MobilityDashboardProps {
   data: MobilityAssessment[];
 }
-
-const SEGMENT_ICONS: Record<string, string> = {
-  Cuello:    'emergency',
-  Hombros:   'accessibility',
-  Codos:     'back_hand',
-  Muñecas:   'wrist',
-  Tronco:    'personal_injury',
-  Caderas:   'directions_walk',
-  Rodillas:  'sprint',
-  Tobillos:  'steps',
-};
 
 function LimitationChip({ text, side }: { text: string; side: 'izq' | 'der' }) {
   const empty = !text.trim();
@@ -71,7 +61,6 @@ export const MobilityDashboard: React.FC<MobilityDashboardProps> = ({ data }) =>
       {/* segment list */}
       <div className="divide-y divide-outline-variant/15">
         {data.map((row) => {
-          const icon = SEGMENT_ICONS[row.estructura] ?? 'radio_button_unchecked';
           const hasIzq = !!row.limitacion_izq.trim();
           const hasDer = !!row.limitacion_der.trim();
           const hasAny = hasIzq || hasDer;
@@ -88,17 +77,9 @@ export const MobilityDashboard: React.FC<MobilityDashboardProps> = ({ data }) =>
                 <LimitationChip text={row.limitacion_izq} side="izq" />
               </div>
 
-              {/* center: icon + name */}
+              {/* center: anatomy icon + name */}
               <div className="flex flex-col items-center gap-0.5 shrink-0">
-                <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center border ${
-                    hasAny
-                      ? 'bg-primary/10 border-primary/30 text-primary'
-                      : 'bg-surface-container border-outline-variant/20 text-on-surface-variant'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-base">{icon}</span>
-                </div>
+                <AnatomyIcon structure={row.estructura} size={40} className="w-10 h-10" />
                 <span className="text-[9px] font-black uppercase tracking-wider text-on-surface-variant text-center leading-none">
                   {row.estructura}
                 </span>

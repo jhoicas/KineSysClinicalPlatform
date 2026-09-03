@@ -278,6 +278,8 @@ export type PostureSeverity = '' | 'normal' | 'leve' | 'moderada' | 'marcada';
 export interface PostureLandmark {
   landmark: string;
   severity: PostureSeverity | string;
+  /** Hallazgo cualitativo (Valgo, Hipercifosis, etc.) para el visualizador corporal. */
+  finding?: string;
 }
 
 export interface PostureView {

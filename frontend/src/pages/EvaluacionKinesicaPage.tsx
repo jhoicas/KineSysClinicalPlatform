@@ -22,6 +22,7 @@ import {
   createEmptyMobility,
   createEmptyPosture,
   createEmptyStrength,
+  postureFindingsFor,
 } from '../data/kinesiologyCatalog';
 import { formatDateTime } from '../utils/dateUtils';
 import { StrengthDashboard } from '../components/medical/StrengthDashboard';
@@ -63,7 +64,7 @@ function mergePosture(raw?: PostureAssessment | null): PostureAssessment {
   const mergeView = (baseView: PostureAssessment['anterior'], saved?: PostureAssessment['anterior']) => ({
     landmarks: baseView.landmarks.map((lm) => {
       const found = saved?.landmarks?.find((s) => s.landmark === lm.landmark);
-      return { ...lm, severity: (found?.severity as PostureSeverity) || '' };
+      return { ...lm, severity: (found?.severity as PostureSeverity) || '', finding: found?.finding || '' };
     }),
   });
   return {
@@ -136,14 +137,18 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
     setTab('postura');
   };
 
-  const updatePostureLandmark = (view: keyof Pick<PostureAssessment, 'anterior' | 'lateral' | 'posterior'>, landmark: string, severity: PostureSeverity) => {
+  const updatePostureLandmark = (
+    view: keyof Pick<PostureAssessment, 'anterior' | 'lateral' | 'posterior'>,
+    landmark: string,
+    patch: { severity?: PostureSeverity; finding?: string }
+  ) => {
     setForm((prev) => ({
       ...prev,
       postura: {
         ...prev.postura,
         [view]: {
           landmarks: prev.postura[view].landmarks.map((lm) =>
-            lm.landmark === landmark ? { ...lm, severity } : lm
+            lm.landmark === landmark ? { ...lm, ...patch } : lm
           ),
         },
       },
@@ -224,25 +229,43 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
     <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low p-4 space-y-3">
       <h4 className="text-sm font-extrabold text-on-surface">{title}</h4>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {form.postura[view].landmarks.map((lm) => (
-          <label key={lm.landmark} className="block">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
-              {lm.landmark}
-            </span>
-            <select
-              disabled={readOnly}
-              className={inputClass}
-              value={lm.severity}
-              onChange={(e) => updatePostureLandmark(view, lm.landmark, e.target.value as PostureSeverity)}
-            >
-              {POSTURE_SEVERITIES.map((opt) => (
-                <option key={opt.value || 'empty'} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
+        {form.postura[view].landmarks.map((lm) => {
+          const findings = postureFindingsFor(view, lm.landmark);
+          return (
+            <div key={lm.landmark} className="space-y-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                {lm.landmark}
+              </span>
+              {findings.length > 0 && (
+                <select
+                  disabled={readOnly}
+                  className={inputClass}
+                  value={lm.finding || ''}
+                  onChange={(e) => updatePostureLandmark(view, lm.landmark, { finding: e.target.value })}
+                >
+                  <option value="">Hallazgo —</option>
+                  {findings.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <select
+                disabled={readOnly}
+                className={inputClass}
+                value={lm.severity}
+                onChange={(e) => updatePostureLandmark(view, lm.landmark, { severity: e.target.value as PostureSeverity })}
+              >
+                {POSTURE_SEVERITIES.map((opt) => (
+                  <option key={opt.value || 'empty'} value={opt.value}>
+                    {opt.label === '—' ? 'Severidad —' : opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

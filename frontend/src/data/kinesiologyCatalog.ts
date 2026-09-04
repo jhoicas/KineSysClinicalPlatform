@@ -64,12 +64,12 @@ export const MOBILITY_SEGMENTS = [
 ] as const;
 
 export const STRENGTH_SEGMENTS = [
-  'Hombro (ABD)',
-  'Hombro (FLX)',
-  'Cadera (ABD)',
-  'Cuádriceps',
-  'Isquiotibiales',
-  'Gemelos',
+  'Hombros',
+  'Codos',
+  'Muñecas',
+  'Caderas',
+  'Rodillas',
+  'Tobillos',
 ] as const;
 
 export const MOVEMENT_GESTURES = [
@@ -120,6 +120,24 @@ export function createEmptyStrength(): StrengthAssessment[] {
     fuerza_der_kg: null,
     asimetria_porcentaje: null,
   }));
+}
+
+/** Alinea fuerza guardada al catálogo de complejos articulares (estilo Fisiotest). */
+export function mergeStrength(raw?: StrengthAssessment[] | null): StrengthAssessment[] {
+  const base = createEmptyStrength();
+  if (!raw?.length) return base;
+
+  const byName = new Map(raw.map((r) => [r.estructura.trim().toLowerCase(), r]));
+  return base.map((row) => {
+    const found = byName.get(row.estructura.toLowerCase());
+    if (!found) return row;
+    return {
+      estructura: row.estructura,
+      fuerza_izq_kg: found.fuerza_izq_kg ?? null,
+      fuerza_der_kg: found.fuerza_der_kg ?? null,
+      asimetria_porcentaje: found.asimetria_porcentaje ?? null,
+    };
+  });
 }
 
 export function createEmptyGestures(): MovementGesture[] {

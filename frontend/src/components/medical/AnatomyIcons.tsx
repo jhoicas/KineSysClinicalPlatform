@@ -10,16 +10,31 @@ interface AnatomyIconProps {
 }
 
 function resolveStructure(structure: string): AnatomyKey {
-  if ((ANATOMY_KEYS as readonly string[]).includes(structure)) return structure as AnatomyKey;
-  const lower = structure.toLowerCase();
+  const trimmed = structure.trim();
+  const exact = ANATOMY_KEYS.find((k) => k.toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact;
+
+  const lower = trimmed
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
   if (lower.includes('hombro')) return 'Hombros';
   if (lower.includes('cadera')) return 'Caderas';
   if (lower.includes('cuello')) return 'Cuello';
   if (lower.includes('codo')) return 'Codos';
-  if (lower.includes('muñeca')) return 'Muñecas';
-  if (lower.includes('tronco')) return 'Tronco';
-  if (lower.includes('rodilla') || lower.includes('cuádriceps') || lower.includes('isquio')) return 'Rodillas';
-  if (lower.includes('tobillo') || lower.includes('gemelo')) return 'Tobillos';
+  if (lower.includes('muneca') || lower.includes('carpo')) return 'Muñecas';
+  if (lower.includes('tronco') || lower.includes('columna')) return 'Tronco';
+  if (
+    lower.includes('rodilla') ||
+    lower.includes('cuadriceps') ||
+    lower.includes('isquio')
+  ) {
+    return 'Rodillas';
+  }
+  if (lower.includes('tobillo') || lower.includes('gemelo') || lower.includes('pie')) {
+    return 'Tobillos';
+  }
   return 'Tronco';
 }
 

@@ -21,6 +21,7 @@ import {
   createEmptyPosture,
   createEmptyStrength,
   createEmptyTreatmentPlan,
+  mergeStrength,
   normalizeTreatmentPlan,
 } from '../data/kinesiologyCatalog';
 import { formatDateTime } from '../utils/dateUtils';
@@ -124,7 +125,7 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
     setForm({
       postura: mergePosture(row.postura),
       movilidad: row.movilidad?.length ? row.movilidad : createEmptyMobility(),
-      fuerza: row.fuerza?.length ? row.fuerza : createEmptyStrength(),
+      fuerza: mergeStrength(row.fuerza),
       gestos_movimiento: row.gestos_movimiento?.length
         ? row.gestos_movimiento.map((g) => ({
             gesto: g.gesto,

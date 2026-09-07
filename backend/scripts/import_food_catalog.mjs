@@ -28,74 +28,40 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 }
 
 const HEADER_MAP = {
-  id: ['id', 'codigo', 'cod', 'code', 'alimento_id'],
-  name: ['name', 'nombre', 'alimento', 'nombre_del_alimento', 'nombrealimento'],
-  analyzed_part: ['analyzed_part', 'parte_analizada', 'parteanalizada'],
-  moisture_g: ['moisture_g', 'humedad_g', 'humedad'],
-  energy_kcal: ['energy_kcal', 'energia', 'energia_kcal', 'kcal', 'energia_kcal_100g', 'calorias'],
-  energy_kj: ['energy_kj', 'energia_kj', 'kj'],
-  protein_g: ['protein_g', 'proteina', 'proteinas', 'proteina_g', 'proteina_total'],
-  lipids_g: ['lipids_g', 'grasa', 'grasas', 'lipidos', 'grasa_total', 'grasa_g', 'lipidos_g'],
-  carbs_total_g: [
-    'carbs_total_g',
-    'carbohidratos',
-    'carbohidratos_totales',
-    'carbohidratos_totales_g',
-    'cho',
-    'cho_g',
-    'hidratos',
-  ],
-  carbs_available_g: [
-    'carbs_available_g',
-    'carbohidratos_disponibles_g',
-    'cho_disponibles',
-    'carbohidratos_disponibles',
-  ],
-  dietary_fiber_g: ['dietary_fiber_g', 'fibra', 'fibra_dietaria', 'fibra_dietaria_g', 'fibra_dietetica', 'fibra_g'],
-  ash_g: ['ash_g', 'cenizas_g', 'cenizas'],
-  calcium_mg: ['calcium_mg', 'calcio', 'calcio_mg', 'ca'],
-  phosphorus_mg: ['phosphorus_mg', 'fosforo_mg', 'fosforo', 'p'],
-  iron_mg: ['iron_mg', 'hierro', 'hierro_mg', 'fe'],
-  iodine_mg: ['iodine_mg', 'yodo_mg', 'yodo', 'i'],
-  zinc_mg: ['zinc_mg', 'zinc', 'zn'],
-  magnesium_mg: ['magnesium_mg', 'magnesio_mg', 'magnesio', 'mg'],
-  sodium_mg: ['sodium_mg', 'sodio', 'sodio_mg', 'na'],
-  potassium_mg: ['potassium_mg', 'potasio_mg', 'potasio', 'k'],
-  thiamine_mg: ['thiamine_mg', 'tiamina_mg', 'tiamina', 'vitamina_b1', 'b1'],
-  riboflavin_mg: ['riboflavin_mg', 'riboflavina_mg', 'riboflavina', 'vitamina_b2', 'b2'],
-  niacin_mg: ['niacin_mg', 'niacina_mg', 'niacina', 'vitamina_b3', 'b3'],
-  folate_mcg: ['folate_mcg', 'folatos_mcg', 'folatos', 'folato'],
-  vitamin_b12_mcg: ['vitamin_b12_mcg', 'vitamina_b12_mcg', 'vitamina_b12', 'b12'],
-  vitamin_c_mg: ['vitamin_c_mg', 'vitamina_c_mg', 'vitamina_c', 'vit_c'],
-  vitamin_a_er: ['vitamin_a_er', 'vitamina_a_er', 'vitamina_a', 'vit_a'],
-  saturated_fat_g: ['saturated_fat_g', 'grasa_saturada', 'grasas_saturadas', 'ags', 'saturados'],
-  monounsaturated_fat_g: [
-    'monounsaturated_fat_g',
-    'grasa_monoinsaturada_g',
-    'grasas_monoinsaturadas',
-    'agmi',
-  ],
-  polyunsaturated_fat_g: [
-    'polyunsaturated_fat_g',
-    'grasa_poliinsaturada_g',
-    'grasas_poliinsaturadas',
-    'agpi',
-  ],
-  cholesterol_mg: ['cholesterol_mg', 'colesterol', 'colesterol_mg'],
-  edible_portion_percentage: [
-    'edible_portion_percentage',
-    'parte_comestible',
-    'porcion_comestible',
-    'pc',
-    'parte_comestible_pct',
-  ],
-  purchase_unit: [
-    'purchase_unit',
-    'unidad_de_medida_de_compra_g_o_cc',
-    'unidad_compra',
-    'unidad_de_medida',
-  ],
-  purchase_price: ['purchase_price', 'precio', 'precio_compra'],
+  id: ['codigo', 'id', 'cod', 'code', 'alimento_id'],
+  name: ['nombre_del_alimento', 'nombre', 'alimento', 'nombrealimento', 'name'],
+  analyzed_part: ['parte_analizada', 'parteanalizada'],
+  moisture_g: ['humedad_g', 'humedad'],
+  energy_kcal: ['energia_kcal', 'energia', 'kcal', 'calorias'],
+  energy_kj: ['energia_kj', 'kj'],
+  protein_g: ['proteina_g', 'proteina', 'proteinas'],
+  lipids_g: ['lipidos_g', 'grasa', 'lipidos', 'grasa_total'],
+  carbs_total_g: ['carbohidratos_totales_g', 'carbohidratos_totales', 'carbohidratos'],
+  carbs_available_g: ['carbohidratos_disponibles_g', 'carbohidratos_disponibles', 'carbohidratos_dispo'],
+  dietary_fiber_g: ['fibra_dietaria_g', 'fibra_dietaria', 'fibra'],
+  ash_g: ['cenizas_g', 'cenizas'],
+  calcium_mg: ['calcio_mg', 'calcio', 'ca'],
+  iron_mg: ['hierro_mg', 'hierro', 'fe'],
+  sodium_mg: ['sodio_mg', 'sodio', 'na'],
+  phosphorus_mg: ['fosforo_mg', 'fosforo'],
+  iodine_mg: ['yodo_mg', 'yodo'],
+  zinc_mg: ['zinc_mg', 'zinc'],
+  magnesium_mg: ['magnesio_mg', 'magnesio'],
+  potassium_mg: ['potasio_mg', 'potasio'],
+  thiamine_mg: ['tiamina_mg', 'tiamina'],
+  riboflavin_mg: ['riboflavina_mg', 'riboflavina'],
+  niacin_mg: ['niacina_mg', 'niacina'],
+  folate_mcg: ['folatos_mcg', 'folatos'],
+  vitamin_b12_mcg: ['vitamina_b12_mcg', 'vitamina_b12'],
+  vitamin_c_mg: ['vitamina_c_mg', 'vitamina_c'],
+  vitamin_a_er: ['vitamina_a_er', 'vitamina_a'],
+  saturated_fat_g: ['grasa_saturada_g', 'grasa_saturada'],
+  monounsaturated_fat_g: ['grasa_monoinsaturada_g', 'grasa_monoinsaturada'],
+  polyunsaturated_fat_g: ['grasa_poliinsaturada_g', 'grasa_poliinsaturada'],
+  cholesterol_mg: ['colesterol_mg', 'colesterol'],
+  edible_portion_percentage: ['parte_comestible', 'parte_comestible_pct', 'porcion_comestible'],
+  purchase_unit: ['unidad_de_medida_de_compra_g_o_cc', 'unidad_de_medida_de_compra'],
+  purchase_price: ['precio', 'precio_compra'],
 };
 
 function normalizeHeader(h) {
@@ -106,7 +72,7 @@ function normalizeHeader(h) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '');
+    .replace(/^_+|_+$/g, ''); // Limpia múltiples '_' al inicio y al final
 }
 
 function detectDelimiter(headerLine) {
@@ -170,6 +136,7 @@ function parseNumber(raw) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Primera coincidencia (indexOf): ante "codigo" duplicado, id toma la 1ª columna. */
 function resolveColumn(headers, aliases) {
   for (const alias of aliases) {
     const idx = headers.indexOf(alias);

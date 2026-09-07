@@ -9,6 +9,7 @@ import { api } from '../../services/apiClient';
 import { ExerciseModal } from './ExerciseModal';
 import { ExerciseLibraryModal } from './ExerciseLibraryModal';
 import { ExerciseLightboxModal } from './ExerciseLightboxModal';
+import { downloadTreatmentPlanPdf } from '../../utils/treatmentPlanPdfExport';
 
 interface TreatmentPlanModuleProps {
   planData: TreatmentPlan;
@@ -34,6 +35,7 @@ export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
   const [inspectExercise, setInspectExercise] = useState<Exercise | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   useEffect(() => {
     setCurrentPlan(planData);
@@ -223,6 +225,18 @@ export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
     onUpdatePlan(nextPlan);
   };
 
+  const handleExportPdf = async () => {
+    if (isExportingPdf) return;
+    setIsExportingPdf(true);
+    try {
+      await downloadTreatmentPlanPdf(currentPlan);
+    } catch (err) {
+      console.error('Error exporting treatment plan PDF:', err);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   const handleSaveAll = () => {
     if (readOnly) return;
     onUpdatePlan(currentPlan);
@@ -287,6 +301,19 @@ export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
             >
               <span className="material-symbols-outlined text-[16px] text-blue-600">menu_book</span>
               <span>Banco de Ejercicios ({library.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleExportPdf()}
+              disabled={isExportingPdf}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-60 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-colors"
+              title="Descargar el plan actual como receta kinésica PDF"
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {isExportingPdf ? 'sync' : 'picture_as_pdf'}
+              </span>
+              <span>{isExportingPdf ? 'Generando PDF...' : 'Exportar a PDF'}</span>
             </button>
 
             {!readOnly && (

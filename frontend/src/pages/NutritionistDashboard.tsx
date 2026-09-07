@@ -7,6 +7,7 @@ import {
   EvaluacionAntropometrica,
   PlanNutricional,
   OrdenNutricionFHIR,
+  User,
 } from '../types';
 import { AnthropometryModule } from '../components/nutrition/AnthropometryModule';
 import { BodyCompositionModule } from '../components/nutrition/BodyCompositionModule';
@@ -32,6 +33,7 @@ import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
 import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
 import { EcoExportActions } from '../components/common/EcoExportActions';
+import { MedicalHistoryModal } from '../components/patients/MedicalHistoryModal';
 
 interface NutritionistDashboardProps {
   onNavigate: (path: string) => void;
@@ -86,6 +88,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   // View modal states
   const [viewingEvaluation, setViewingEvaluation] = useState<EvaluacionAntropometrica | null>(null);
   const [viewingPlan, setViewingPlan] = useState<PlanNutricional | null>(null);
+  const [isMedicalHistoryOpen, setIsMedicalHistoryOpen] = useState(false);
   const [pdfModalData, setPdfModalData] = useState<{
     patient: PacienteClinico;
     evaluation: EvaluacionAntropometrica;
@@ -134,6 +137,26 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   const currentClinico = useMemo<PacienteClinico | null>(() => {
     if (!activePatient) return null;
     return mapActiveToPacienteClinico(activePatient, tenantId);
+  }, [activePatient, tenantId]);
+
+  const historyPatient = useMemo<User | null>(() => {
+    if (!activePatient) return null;
+    return {
+      id: activePatient.id,
+      email: activePatient.email || '',
+      full_name: activePatient.full_name,
+      role: 'patient',
+      tenant_id: activePatient.tenant_id || tenantId,
+      phone: activePatient.phone,
+      avatar_url: activePatient.avatar_url,
+      rut_or_dni: activePatient.rut_or_dni,
+      birth_date: activePatient.birth_date,
+      gender: activePatient.gender,
+      medical_conditions: activePatient.medical_conditions,
+      allergies: activePatient.allergies,
+      emergency_contact: activePatient.emergency_contact,
+      created_at: activePatient.created_at || new Date().toISOString(),
+    };
   }, [activePatient, tenantId]);
 
   // Load Patient-Scoped Nutrition Clinical Data from Supabase
@@ -444,6 +467,15 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsMedicalHistoryOpen(true)}
+                  className="px-3 py-1.5 bg-transparent hover:bg-primary/10 text-primary rounded-xl text-xs font-bold transition-colors border border-primary/40 flex items-center gap-1.5 cursor-pointer"
+                  title="Ver historia clínica del paciente activo"
+                >
+                  <span className="material-symbols-outlined text-sm">clinical_notes</span>
+                  <span>Ver Historia Clínica</span>
+                </button>
                 <button
                   type="button"
                   onClick={clearActivePatient}
@@ -904,6 +936,16 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
           clinicName={tenant?.name || 'KineSys Salud'}
         />
       )}
+
+      <MedicalHistoryModal
+        patient={historyPatient}
+        isOpen={isMedicalHistoryOpen}
+        onClose={() => setIsMedicalHistoryOpen(false)}
+        onNavigateToPainMap={(patientId) => {
+          setIsMedicalHistoryOpen(false);
+          onNavigate(`/mapa-dolor?patientId=${encodeURIComponent(patientId)}`);
+        }}
+      />
         </div>
       </main>
     </div>

@@ -334,6 +334,8 @@ export interface Exercise {
   videoPlaceholderUrl?: string;
   tags?: string[];
   difficulty?: ExerciseDifficulty;
+  isSystem?: boolean;
+  authorAttribution?: string;
   status: 'active' | 'completed' | 'pending';
 }
 

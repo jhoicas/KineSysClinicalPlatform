@@ -126,6 +126,8 @@ export const ExerciseLibraryModal: React.FC<ExerciseLibraryModalProps> = ({
       instructions: libEx.instructions,
       imageUrl: libEx.imageUrl,
       difficulty: libEx.difficulty,
+      isSystem: libEx.isSystem,
+      authorAttribution: libEx.authorAttribution,
       status: 'active',
     };
 

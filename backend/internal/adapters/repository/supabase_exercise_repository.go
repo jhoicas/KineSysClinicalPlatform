@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/google/uuid"
 	"github.com/kinesys/clinical-platform-backend/internal/core/domain"
 	"github.com/kinesys/clinical-platform-backend/internal/core/ports"
 )
@@ -27,11 +28,11 @@ func NewSupabaseExerciseRepository(supabaseURL, serviceRoleKey string) ports.Exe
 	}
 }
 
-func (r *SupabaseExerciseRepository) ListSystem(ctx context.Context, search, category string) ([]domain.Exercise, error) {
+func (r *SupabaseExerciseRepository) List(ctx context.Context, userID, tenantID uuid.UUID, search, category string) ([]domain.Exercise, error) {
 	query := url.Values{
-		"select":    {"*"},
-		"is_system": {"eq.true"},
-		"order":     {"name.asc"},
+		"select": {"*"},
+		"or":     {"(is_system.eq.true,and(is_system.eq.false,tenant_id.eq." + tenantID.String() + ",user_id.eq." + userID.String() + "))"},
+		"order":  {"name.asc"},
 	}
 	if category != "" {
 		query.Set("category", "eq."+category)
@@ -47,8 +48,8 @@ func (r *SupabaseExerciseRepository) ListSystem(ctx context.Context, search, cat
 	return exercises, nil
 }
 
-func (r *SupabaseExerciseRepository) UpsertSystem(ctx context.Context, exercises []domain.Exercise) error {
-	return r.doJSON(ctx, http.MethodPost, "?on_conflict=name", exercises, nil)
+func (r *SupabaseExerciseRepository) Create(ctx context.Context, exercise *domain.Exercise) error {
+	return r.doJSON(ctx, http.MethodPost, "", exercise, nil)
 }
 
 func (r *SupabaseExerciseRepository) doJSON(ctx context.Context, method, suffix string, body any, result any) error {

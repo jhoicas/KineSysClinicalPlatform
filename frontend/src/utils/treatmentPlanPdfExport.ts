@@ -74,8 +74,8 @@ function addHeader(doc: jsPDF, plan: TreatmentPlan) {
 function addExerciseCard(doc: jsPDF, exercise: Exercise, y: number, image: StaticImage | null): number {
   const description = safeText(exercise.instructions) || 'Sin indicaciones adicionales.';
   const descriptionLines = wrap(doc, description, image ? CONTENT_WIDTH - 58 : CONTENT_WIDTH - 10).slice(0, 4);
-  const attribution = exercise.isSystem
-    ? `Descripciones de ejercicios proveídas por Wger (CC-BY-SA)${exercise.authorAttribution ? ` · ${safeText(exercise.authorAttribution)}` : ''}`
+  const attribution = exercise.isSystem && exercise.authorAttribution
+    ? safeText(exercise.authorAttribution)
     : '';
   const cardHeight = Math.max(image ? 54 : 38, 25 + descriptionLines.length * 3.5 + (attribution ? 8 : 0));
 

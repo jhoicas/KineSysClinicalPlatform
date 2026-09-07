@@ -13,9 +13,6 @@ type Config struct {
 	SupabaseURL            string
 	SupabaseAnonKey        string
 	SupabaseServiceRoleKey string
-	WgerAPIURL             string
-	ExerciseDBAPIURL       string
-	ExerciseDBAPIKey       string
 	SupabaseJWTSecret      string
 	CorsOrigins            string
 }
@@ -32,9 +29,6 @@ func LoadConfig() *Config {
 		SupabaseURL:            getEnv("SUPABASE_URL", ""),
 		SupabaseAnonKey:        getEnv("SUPABASE_ANON_KEY", ""),
 		SupabaseServiceRoleKey: getEnv("SUPABASE_SERVICE_ROLE_KEY", ""),
-		WgerAPIURL:             getEnv("WGER_API_URL", "https://wger.de/api/v2/exerciseinfo/"),
-		ExerciseDBAPIURL:       getEnv("EXERCISEDB_API_URL", "https://exercisedb.p.rapidapi.com/exercises"),
-		ExerciseDBAPIKey:       getEnv("EXERCISEDB_API_KEY", ""),
 		SupabaseJWTSecret:      getEnv("SUPABASE_JWT_SECRET", ""),
 		CorsOrigins:            getEnv("CORS_ORIGINS", "http://localhost:3000"),
 	}

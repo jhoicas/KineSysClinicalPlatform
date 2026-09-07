@@ -1,4 +1,4 @@
--- Catálogo global de ejercicios sincronizado desde Wger y ExerciseDB.
+-- Catálogo de ejercicios del sistema y ejercicios personalizados.
 CREATE TABLE IF NOT EXISTS kinesys.exercises (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL UNIQUE,

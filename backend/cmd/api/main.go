@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -44,14 +45,13 @@ func main() {
 	nutritionRepo := postgres.NewNutritionRepository(dbPool)
 	auditRepo := postgres.NewAuditRepository(dbPool)
 	exerciseRepo := repository.NewSupabaseExerciseRepository(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey)
-	exerciseSource := repository.NewExerciseAPISource(cfg.WgerAPIURL, cfg.ExerciseDBAPIURL, cfg.ExerciseDBAPIKey)
 
 	// Initialize Services
 	patientSvc := services.NewPatientService(patientRepo)
 	encounterSvc := services.NewEncounterService(encounterRepo, auditRepo)
 	anthropometrySvc := services.NewAnthropometryService(anthropometryRepo)
 	nutritionSvc := services.NewNutritionService(nutritionRepo)
-	exerciseSvc := services.NewExerciseService(exerciseRepo, exerciseSource)
+	exerciseSvc := services.NewExerciseService(exerciseRepo)
 
 	// Initialize Handlers
 	patientHandler := handlers.NewPatientHandler(patientSvc)
@@ -71,9 +71,12 @@ func main() {
 
 	// CORS Configuration
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{cfg.CorsOrigins},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedOrigins: append([]string{
+			"https://clinicalplatform.ludoia.com",
+			"http://localhost:*",
+		}, strings.Split(cfg.CorsOrigins, ",")...),
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -109,7 +112,7 @@ func main() {
 
 		// System exercise catalog
 		r.Get("/api/v1/exercises", exerciseHandler.List)
-		r.Post("/api/v1/exercises/sync", exerciseHandler.Sync)
+		r.Post("/api/v1/exercises", exerciseHandler.Create)
 	})
 
 	// Start HTTP Server

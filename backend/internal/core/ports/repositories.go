@@ -34,6 +34,6 @@ type AuditRepository interface {
 }
 
 type ExerciseRepository interface {
-	ListSystem(ctx context.Context, search, category string) ([]domain.Exercise, error)
-	UpsertSystem(ctx context.Context, exercises []domain.Exercise) error
+	List(ctx context.Context, userID, tenantID uuid.UUID, search, category string) ([]domain.Exercise, error)
+	Create(ctx context.Context, exercise *domain.Exercise) error
 }

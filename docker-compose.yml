@@ -5,7 +5,9 @@ services:
     build: ./frontend
     ports: ["3005:3000"]
     environment:
-      - VITE_API_BASE_URL=http://backend:8080
+      # Browser clients cannot resolve the Docker service name "backend".
+      # Override with the public Go API URL for deployed environments.
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8085}
     depends_on: [backend]
 
   backend:

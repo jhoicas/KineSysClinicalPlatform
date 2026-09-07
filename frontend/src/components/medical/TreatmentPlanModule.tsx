@@ -117,7 +117,15 @@ export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
   const handleAddLibraryExercise = async (newLibEx: LibraryExercise) => {
     if (!tenantId || readOnly) return;
     try {
-      await saveLibraryExercise(tenantId, newLibEx);
+      const result = await api.exercises.create({
+        name: newLibEx.name,
+        description: newLibEx.instructions,
+        category: newLibEx.category,
+        target_muscle: newLibEx.targetMuscle,
+        difficulty: newLibEx.difficulty || 'Medio',
+        media_url: newLibEx.imageUrl,
+      });
+      if (result.error) throw new Error(result.error);
       await refreshLibrary();
     } catch (err) {
       console.error('Error saving library exercise:', err);

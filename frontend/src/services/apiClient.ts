@@ -34,8 +34,9 @@ import type {
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
+const configuredApiBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL?.trim();
 const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
+  configuredApiBaseUrl || ((import.meta as any).env?.DEV ? 'http://localhost:8080' : '');
 
 // ─── Generic Response Types ───────────────────────────────────────────────────
 
@@ -62,6 +63,15 @@ export interface ExerciseCatalogItem {
   author_attribution: string;
   target_muscle?: string;
   difficulty?: string;
+}
+
+export interface CreateExerciseInput {
+  name: string;
+  description: string;
+  category: string;
+  target_muscle: string;
+  difficulty: string;
+  media_url?: string;
 }
 
 // ─── Core HTTP Client ─────────────────────────────────────────────────────────
@@ -135,6 +145,8 @@ export const api = {
   exercises: {
     list: (params?: { search?: string; category?: string }) =>
       request<ExerciseCatalogItem[]>('GET', '/api/v1/exercises', undefined, params),
+    create: (data: CreateExerciseInput) =>
+      request<ExerciseCatalogItem>('POST', '/api/v1/exercises', data),
   },
 
   // ──── Users ────

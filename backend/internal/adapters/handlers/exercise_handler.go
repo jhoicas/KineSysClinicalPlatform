@@ -3,8 +3,9 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
+	"github.com/google/uuid"
+	"github.com/kinesys/clinical-platform-backend/internal/core/domain"
 	"github.com/kinesys/clinical-platform-backend/internal/core/ports"
 	"github.com/kinesys/clinical-platform-backend/internal/middleware"
 )
@@ -18,7 +19,12 @@ func NewExerciseHandler(service ports.ExerciseService) *ExerciseHandler {
 }
 
 func (h *ExerciseHandler) List(w http.ResponseWriter, r *http.Request) {
-	exercises, err := h.service.List(r.Context(), r.URL.Query().Get("search"), r.URL.Query().Get("category"))
+	userID, tenantID, ok := requestIdentity(r)
+	if !ok {
+		http.Error(w, "invalid user context", http.StatusUnauthorized)
+		return
+	}
+	exercises, err := h.service.List(r.Context(), userID, tenantID, r.URL.Query().Get("search"), r.URL.Query().Get("category"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -27,19 +33,40 @@ func (h *ExerciseHandler) List(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(exercises)
 }
 
-func (h *ExerciseHandler) Sync(w http.ResponseWriter, r *http.Request) {
-	role, _ := r.Context().Value(middleware.RoleKey).(string)
-	role = strings.ToLower(role)
-	if role != "clinic_admin" && role != "super_admin" && role != "superadmin" {
-		http.Error(w, "forbidden", http.StatusForbidden)
+func (h *ExerciseHandler) Create(w http.ResponseWriter, r *http.Request) {
+	userID, tenantID, ok := requestIdentity(r)
+	if !ok {
+		http.Error(w, "invalid user context", http.StatusUnauthorized)
 		return
 	}
 
-	count, err := h.service.Sync(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+	var exercise domain.Exercise
+	if err := json.NewDecoder(r.Body).Decode(&exercise); err != nil {
+		http.Error(w, "invalid exercise payload", http.StatusBadRequest)
+		return
+	}
+	if exercise.Name == "" || exercise.Category == "" {
+		http.Error(w, "name and category are required", http.StatusBadRequest)
+		return
+	}
+	exercise.ID = uuid.New()
+	exercise.UserID = &userID
+	exercise.TenantID = tenantID
+	exercise.IsSystem = false
+	exercise.AuthorAttribution = ""
+	if err := h.service.Create(r.Context(), &exercise); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"synced": count})
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(exercise)
+}
+
+func requestIdentity(r *http.Request) (uuid.UUID, uuid.UUID, bool) {
+	userID, userOK := r.Context().Value(middleware.UserIDKey).(string)
+	tenantID, tenantOK := r.Context().Value(middleware.TenantIDKey).(string)
+	parsedUser, userErr := uuid.Parse(userID)
+	parsedTenant, tenantErr := uuid.Parse(tenantID)
+	return parsedUser, parsedTenant, userOK && tenantOK && userErr == nil && tenantErr == nil
 }

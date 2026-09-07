@@ -32,6 +32,6 @@ type NutritionService interface {
 }
 
 type ExerciseService interface {
-	List(ctx context.Context, search, category string) ([]domain.Exercise, error)
-	Sync(ctx context.Context) (int, error)
+	List(ctx context.Context, userID, tenantID uuid.UUID, search, category string) ([]domain.Exercise, error)
+	Create(ctx context.Context, exercise *domain.Exercise) error
 }

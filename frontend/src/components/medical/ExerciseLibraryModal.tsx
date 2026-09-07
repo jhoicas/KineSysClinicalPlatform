@@ -66,7 +66,7 @@ export const ExerciseLibraryModal: React.FC<ExerciseLibraryModalProps> = ({
         equipment: 'Según indicación clínica',
         createdAt: undefined,
         isSystem: item.is_system,
-        authorAttribution: item.author_attribution,
+        authorAttribution: undefined,
       }));
       if (remote.error || systemItems.length === 0) {
         setLocalLibrary(await getExerciseLibrary(tenantId));

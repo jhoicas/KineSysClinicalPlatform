@@ -130,7 +130,7 @@ export const KinesiologyPdfModal: React.FC<KinesiologyPdfModalProps> = ({
     };
   }, [isOpen, patient.id, patient.telecom_email, painProp]);
 
-  // Captura HD: mapa anatómico + postura (html2canvas, settle 400ms dentro del helper)
+  // Captura HD: mapa anatómico + postura (html2canvas; settle 450ms aquí y en helpers)
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;

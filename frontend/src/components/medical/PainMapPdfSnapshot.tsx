@@ -100,32 +100,32 @@ function AnatomicalSideView({
             </g>
           )}
 
-          {/* Marcadores EVA — círculos SVG (fiables con html2canvas) */}
+          {/* Marcadores EVA "n/10" — círculos cromáticos (fiables con html2canvas) */}
           {points.map((obs) => {
             const cx = (Math.min(95, Math.max(5, obs.coordinates_x)) / 100) * SVG_VIEWBOX_WIDTH;
             const cy = (Math.min(95, Math.max(5, obs.coordinates_y)) / 100) * SVG_VIEWBOX_HEIGHT;
             const fill = painLevelHex(obs.pain_level);
             return (
               <g key={obs.id}>
-                <circle cx={cx} cy={cy} r="16" fill={fill} opacity="0.25" />
+                <circle cx={cx} cy={cy} r="20" fill={fill} opacity="0.22" />
                 <circle
                   cx={cx}
                   cy={cy}
-                  r="12"
+                  r="15"
                   fill={fill}
                   stroke="#ffffff"
                   strokeWidth="2.5"
                 />
                 <text
                   x={cx}
-                  y={cy + 4}
+                  y={cy + 1}
                   textAnchor="middle"
                   fill="#ffffff"
-                  fontSize="11"
+                  fontSize="9"
                   fontWeight="800"
                   fontFamily="Segoe UI, Roboto, Helvetica, Arial, sans-serif"
                 >
-                  {obs.pain_level}
+                  {obs.pain_level}/10
                 </text>
               </g>
             );
@@ -186,10 +186,9 @@ export const PainMapPdfSnapshot = React.forwardRef<HTMLDivElement, PainMapPdfSna
           }}
         >
           {[
-            { label: 'EVA 1–3', color: '#22c55e' },
-            { label: 'EVA 4–5', color: '#f59e0b' },
-            { label: 'EVA 6–7', color: '#f97316' },
-            { label: 'EVA 8–10', color: '#ef4444' },
+            { label: 'EVA 1–3 Leve', color: '#22c55e' },
+            { label: 'EVA 4–6 Moderado', color: '#f97316' },
+            { label: 'EVA 7–10 Severo', color: '#ef4444' },
           ].map((item) => (
             <span
               key={item.label}

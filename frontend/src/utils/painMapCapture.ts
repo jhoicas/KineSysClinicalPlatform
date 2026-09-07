@@ -16,7 +16,7 @@ export async function captureElementToPngBase64(
   element: HTMLElement,
   options?: CapturePngOptions,
 ): Promise<string> {
-  const settleMs = options?.settleMs ?? 400;
+  const settleMs = options?.settleMs ?? 450;
   if (settleMs > 0) {
     await new Promise((r) => setTimeout(r, settleMs));
   }
@@ -72,11 +72,10 @@ export async function captureElementToPngBase64(
   }
 }
 
-/** Color clínico por intensidad EVA (1–10). */
+/** Color clínico por intensidad EVA (1–10): Verde 1–3, Ámbar/Naranja 4–6, Rojo 7–10. */
 export function painLevelHex(level: number): string {
   if (level <= 3) return '#22c55e';
-  if (level <= 5) return '#f59e0b';
-  if (level <= 7) return '#f97316';
+  if (level <= 6) return '#f97316';
   return '#ef4444';
 }
 

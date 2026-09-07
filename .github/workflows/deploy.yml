@@ -95,10 +95,10 @@ jobs:
           tags: kinesys-backend:latest
 
   # ==========================================
-  # JOB 3: Deploy to VPS (DigitalOcean Droplet)
+  # JOB 3: Deploy to AWS EC2 (Ubuntu)
   # ==========================================
   deploy:
-    name: Deploy to DigitalOcean Droplet
+    name: Deploy to AWS EC2
     needs: build-containers
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
@@ -107,22 +107,13 @@ jobs:
       - name: Execute Remote SSH Commands
         uses: appleboy/ssh-action@v1.0.3
         with:
-          # ==========================================================
-          # ⚠️ IMPORTANTE: DEBES CREAR ESTOS SECRETS EN GITHUB ⚠️
-          # Ve a: Settings > Secrets and variables > Actions > New repository secret
-          # 1. VPS_HOST: La IP de tu Droplet (ej. 142.93.x.x)
-          # 2. VPS_USERNAME: Tu usuario SSH (ej. root)
-          # 3. VPS_PASSWORD: Tu contraseña SSH (o usa VPS_SSH_KEY si usas llaves)
-          # ==========================================================
+          # Secrets: VPS_HOST, VPS_USERNAME, VPS_SSH_KEY (clave privada PEM)
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
-          password: ${{ secrets.VPS_PASSWORD }}
-          # Si usas SSH Key en lugar de password:
-          # key: ${{ secrets.VPS_SSH_KEY }}
+          key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd ~/KineSysClinicalPlatform
+            cd ~/apps/kinesys
             git pull origin main
-            # Detecta docker compose v2 o v1 automáticamente
             if docker compose version > /dev/null 2>&1; then
               docker compose down --remove-orphans
               docker compose up --build -d

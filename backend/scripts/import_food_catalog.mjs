@@ -9,8 +9,7 @@
  *   SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
  *
- * Detecta delimitador (coma o punto y coma) y mapea encabezados habituales
- * (codigo, nombre, energia_kcal, proteina, grasa, carbohidratos, fibra, etc.).
+ * Detecta delimitador (coma o punto y coma) y mapea encabezados TCA_2018.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,7 +30,10 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 const HEADER_MAP = {
   id: ['id', 'codigo', 'cod', 'code', 'alimento_id'],
   name: ['name', 'nombre', 'alimento', 'nombre_del_alimento', 'nombrealimento'],
+  analyzed_part: ['analyzed_part', 'parte_analizada', 'parteanalizada'],
+  moisture_g: ['moisture_g', 'humedad_g', 'humedad'],
   energy_kcal: ['energy_kcal', 'energia', 'energia_kcal', 'kcal', 'energia_kcal_100g', 'calorias'],
+  energy_kj: ['energy_kj', 'energia_kj', 'kj'],
   protein_g: ['protein_g', 'proteina', 'proteinas', 'proteina_g', 'proteina_total'],
   lipids_g: ['lipids_g', 'grasa', 'grasas', 'lipidos', 'grasa_total', 'grasa_g', 'lipidos_g'],
   carbs_total_g: [
@@ -42,13 +44,43 @@ const HEADER_MAP = {
     'cho',
     'cho_g',
     'hidratos',
+  ],
+  carbs_available_g: [
+    'carbs_available_g',
+    'carbohidratos_disponibles_g',
     'cho_disponibles',
+    'carbohidratos_disponibles',
   ],
   dietary_fiber_g: ['dietary_fiber_g', 'fibra', 'fibra_dietaria', 'fibra_dietaria_g', 'fibra_dietetica', 'fibra_g'],
+  ash_g: ['ash_g', 'cenizas_g', 'cenizas'],
   calcium_mg: ['calcium_mg', 'calcio', 'calcio_mg', 'ca'],
+  phosphorus_mg: ['phosphorus_mg', 'fosforo_mg', 'fosforo', 'p'],
   iron_mg: ['iron_mg', 'hierro', 'hierro_mg', 'fe'],
+  iodine_mg: ['iodine_mg', 'yodo_mg', 'yodo', 'i'],
+  zinc_mg: ['zinc_mg', 'zinc', 'zn'],
+  magnesium_mg: ['magnesium_mg', 'magnesio_mg', 'magnesio', 'mg'],
   sodium_mg: ['sodium_mg', 'sodio', 'sodio_mg', 'na'],
+  potassium_mg: ['potassium_mg', 'potasio_mg', 'potasio', 'k'],
+  thiamine_mg: ['thiamine_mg', 'tiamina_mg', 'tiamina', 'vitamina_b1', 'b1'],
+  riboflavin_mg: ['riboflavin_mg', 'riboflavina_mg', 'riboflavina', 'vitamina_b2', 'b2'],
+  niacin_mg: ['niacin_mg', 'niacina_mg', 'niacina', 'vitamina_b3', 'b3'],
+  folate_mcg: ['folate_mcg', 'folatos_mcg', 'folatos', 'folato'],
+  vitamin_b12_mcg: ['vitamin_b12_mcg', 'vitamina_b12_mcg', 'vitamina_b12', 'b12'],
+  vitamin_c_mg: ['vitamin_c_mg', 'vitamina_c_mg', 'vitamina_c', 'vit_c'],
+  vitamin_a_er: ['vitamin_a_er', 'vitamina_a_er', 'vitamina_a', 'vit_a'],
   saturated_fat_g: ['saturated_fat_g', 'grasa_saturada', 'grasas_saturadas', 'ags', 'saturados'],
+  monounsaturated_fat_g: [
+    'monounsaturated_fat_g',
+    'grasa_monoinsaturada_g',
+    'grasas_monoinsaturadas',
+    'agmi',
+  ],
+  polyunsaturated_fat_g: [
+    'polyunsaturated_fat_g',
+    'grasa_poliinsaturada_g',
+    'grasas_poliinsaturadas',
+    'agpi',
+  ],
   cholesterol_mg: ['cholesterol_mg', 'colesterol', 'colesterol_mg'],
   edible_portion_percentage: [
     'edible_portion_percentage',
@@ -57,6 +89,13 @@ const HEADER_MAP = {
     'pc',
     'parte_comestible_pct',
   ],
+  purchase_unit: [
+    'purchase_unit',
+    'unidad_de_medida_de_compra_g_o_cc',
+    'unidad_compra',
+    'unidad_de_medida',
+  ],
+  purchase_price: ['purchase_price', 'precio', 'precio_compra'],
 };
 
 function normalizeHeader(h) {
@@ -190,6 +229,10 @@ function pick(row, field) {
   return row[idx];
 }
 
+function textField(row, field) {
+  return String(pick(row, field) || '').trim() || null;
+}
+
 const records = [];
 for (let i = headerRowIndex + 1; i < table.length; i += 1) {
   const row = table[i];
@@ -200,22 +243,50 @@ for (let i = headerRowIndex + 1; i < table.length; i += 1) {
   records.push({
     id: id.slice(0, 50),
     name: name.slice(0, 255),
+    analyzed_part: textField(row, 'analyzed_part'),
+    moisture_g: parseNumber(pick(row, 'moisture_g')),
     energy_kcal: parseNumber(pick(row, 'energy_kcal')),
+    energy_kj: parseNumber(pick(row, 'energy_kj')),
     protein_g: parseNumber(pick(row, 'protein_g')),
     lipids_g: parseNumber(pick(row, 'lipids_g')),
     carbs_total_g: parseNumber(pick(row, 'carbs_total_g')),
+    carbs_available_g: parseNumber(pick(row, 'carbs_available_g')),
     dietary_fiber_g: parseNumber(pick(row, 'dietary_fiber_g')),
+    ash_g: parseNumber(pick(row, 'ash_g')),
     calcium_mg: parseNumber(pick(row, 'calcium_mg')),
+    phosphorus_mg: parseNumber(pick(row, 'phosphorus_mg')),
     iron_mg: parseNumber(pick(row, 'iron_mg')),
+    iodine_mg: parseNumber(pick(row, 'iodine_mg')),
+    zinc_mg: parseNumber(pick(row, 'zinc_mg')),
+    magnesium_mg: parseNumber(pick(row, 'magnesium_mg')),
     sodium_mg: parseNumber(pick(row, 'sodium_mg')),
+    potassium_mg: parseNumber(pick(row, 'potassium_mg')),
+    thiamine_mg: parseNumber(pick(row, 'thiamine_mg')),
+    riboflavin_mg: parseNumber(pick(row, 'riboflavin_mg')),
+    niacin_mg: parseNumber(pick(row, 'niacin_mg')),
+    folate_mcg: parseNumber(pick(row, 'folate_mcg')),
+    vitamin_b12_mcg: parseNumber(pick(row, 'vitamin_b12_mcg')),
+    vitamin_c_mg: parseNumber(pick(row, 'vitamin_c_mg')),
+    vitamin_a_er: parseNumber(pick(row, 'vitamin_a_er')),
     saturated_fat_g: parseNumber(pick(row, 'saturated_fat_g')),
+    monounsaturated_fat_g: parseNumber(pick(row, 'monounsaturated_fat_g')),
+    polyunsaturated_fat_g: parseNumber(pick(row, 'polyunsaturated_fat_g')),
     cholesterol_mg: parseNumber(pick(row, 'cholesterol_mg')),
     edible_portion_percentage: parseNumber(pick(row, 'edible_portion_percentage')),
+    purchase_unit: textField(row, 'purchase_unit'),
+    purchase_price: parseNumber(pick(row, 'purchase_price')),
     is_active: true,
   });
 }
 
-console.log(`Filas a importar: ${records.length}`);
+// Evita conflictos 21000 en el mismo lote: un solo registro por id
+const uniqueRecords = Array.from(new Map(records.map((r) => [r.id, r])).values());
+const dropped = records.length - uniqueRecords.length;
+if (dropped > 0) {
+  console.log(`Duplicados por id omitidos: ${dropped}`);
+}
+
+console.log(`Filas a importar: ${uniqueRecords.length}`);
 
 async function upsertBatch(batch) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/food_catalog?on_conflict=id`, {
@@ -236,10 +307,10 @@ async function upsertBatch(batch) {
 }
 
 const CHUNK = 100;
-for (let i = 0; i < records.length; i += CHUNK) {
-  const batch = records.slice(i, i + CHUNK);
+for (let i = 0; i < uniqueRecords.length; i += CHUNK) {
+  const batch = uniqueRecords.slice(i, i + CHUNK);
   await upsertBatch(batch);
-  console.log(`Upsert ${Math.min(i + CHUNK, records.length)} / ${records.length}`);
+  console.log(`Upsert ${Math.min(i + CHUNK, uniqueRecords.length)} / ${uniqueRecords.length}`);
 }
 
 console.log('Importación TCA completada.');

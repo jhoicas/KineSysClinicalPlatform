@@ -3,7 +3,12 @@
  * Espejo clínico de backend/services/AnthropometryService.ts
  */
 
-export type IsaKEquationId = 'faulkner' | 'jackson_pollock_3' | 'jackson_pollock_7' | 'durnin_womersley';
+export type IsaKEquationId =
+  | 'faulkner'
+  | 'yuhasz'
+  | 'jackson_pollock_3'
+  | 'jackson_pollock_7'
+  | 'durnin_womersley';
 
 export interface SkinfoldSet {
   triceps: number;
@@ -70,6 +75,39 @@ export function faulkner4(folds: SkinfoldSet, weightKg: number): BodyFatResult {
     formula: `Faulkner (1968) — 4 pliegues · Σ=${round(sum, 1)} mm`,
     formulaLatex: '%GC = (Σ4 × 0.153) + 5.783',
     classification: classifyBodyFat(bodyFatPct, 'male'),
+  };
+}
+
+/**
+ * Yuhasz (1974) — 6 pliegues típicos ISAK/deportivo.
+ * Hombres: %GC = (Σ6 × 0.1051) + 2.585
+ * Mujeres: %GC = (Σ6 × 0.1548) + 3.580
+ * Σ6 = tríceps + subescapular + suprailiaco + abdominal + muslo + pierna
+ */
+export function yuhasz6(
+  gender: 'male' | 'female' | 'other',
+  folds: SkinfoldSet,
+  weightKg: number,
+): BodyFatResult {
+  const sum =
+    folds.triceps +
+    folds.subscapular +
+    folds.suprailiac +
+    folds.abdominal +
+    (folds.thigh || 0) +
+    (folds.calf || 0);
+  const female = gender === 'female';
+  const bodyFatPct = round(female ? sum * 0.1548 + 3.58 : sum * 0.1051 + 2.585, 1);
+  const fatMassKg = round((bodyFatPct / 100) * weightKg, 1);
+  return {
+    bodyFatPct,
+    fatMassKg,
+    leanMassKg: round(weightKg - fatMassKg, 1),
+    formula: `Yuhasz (1974) — 6 pliegues (${female ? '♀' : '♂'}) · Σ=${round(sum, 1)} mm`,
+    formulaLatex: female
+      ? '%GC = (Σ6 × 0.1548) + 3.580'
+      : '%GC = (Σ6 × 0.1051) + 2.585',
+    classification: classifyBodyFat(bodyFatPct, gender),
   };
 }
 
@@ -174,6 +212,8 @@ export function estimateBodyFat(
       const r = faulkner4(folds, weightKg);
       return { ...r, classification: classifyBodyFat(r.bodyFatPct, gender) };
     }
+    case 'yuhasz':
+      return yuhasz6(gender, folds, weightKg);
     case 'jackson_pollock_3':
       return jacksonPollock3(gender, age, folds, weightKg);
     case 'jackson_pollock_7':
@@ -185,6 +225,7 @@ export function estimateBodyFat(
 
 export const EQUATION_OPTIONS: { id: IsaKEquationId; label: string }[] = [
   { id: 'faulkner', label: 'Faulkner (1968) — 4 pliegues' },
+  { id: 'yuhasz', label: 'Yuhasz (1974) — 6 pliegues' },
   { id: 'jackson_pollock_3', label: 'Jackson-Pollock — 3 pliegues' },
   { id: 'jackson_pollock_7', label: 'Jackson-Pollock — 7 pliegues' },
   { id: 'durnin_womersley', label: 'Durnin-Womersley / Siri' },

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { EvaluacionAntropometrica, PacienteClinico } from '../../types';
 import { calculateWaistHipRatio } from '../../utils/nutritionCalculations';
 import {
@@ -9,6 +9,7 @@ import {
   heathCarterSomatotype,
   type IsaKEquationId,
 } from '../../utils/isakCalculations';
+import { useAppStore } from '../../store/useAppStore';
 import { IsakPatientHeader } from './IsakPatientHeader';
 import {
   ISAK_NODES,
@@ -58,17 +59,33 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
     | 'female'
     | 'other';
 
+  const nutritionDraft = useAppStore((s) => s.nutritionDraft);
+  const patchNutritionDraft = useAppStore((s) => s.patchNutritionDraft);
+  const setActivePatient = useAppStore((s) => s.setActivePatient);
+  const activePatient = useAppStore((s) => s.activePatient);
+
+  const draftForPatient =
+    nutritionDraft?.patientId === patient.id ? nutritionDraft : null;
+
   const [moduleView, setModuleView] = useState<'isak' | 'progreso'>('isak');
   const [activeTab, setActiveTab] = useState<IsakMeasureTab>('pliegues');
   const [selectedId, setSelectedId] = useState<IsakNodeId | null>('triceps');
   const [draftValue, setDraftValue] = useState('14.5');
-  const [equation, setEquation] = useState<IsaKEquationId>('faulkner');
-  const [weightKg, setWeightKg] = useState(gender === 'male' ? 78 : 62.4);
-  const [heightCm, setHeightCm] = useState(gender === 'male' ? 175 : 167);
+  const [equation, setEquation] = useState<IsaKEquationId>(
+    (draftForPatient?.equation as IsaKEquationId) || 'faulkner',
+  );
+  const [weightKg, setWeightKg] = useState(
+    draftForPatient?.weightKg ??
+      (typeof patient.weight_kg === 'number' ? patient.weight_kg : gender === 'male' ? 78 : 62.4),
+  );
+  const [heightCm, setHeightCm] = useState(
+    draftForPatient?.heightCm ??
+      (typeof patient.height_cm === 'number' ? patient.height_cm : gender === 'male' ? 175 : 167),
+  );
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
 
-  const [measures, setMeasures] = useState<MeasureMap>({
+  const defaultMeasures: MeasureMap = {
     biceps: 8.5,
     triceps: gender === 'male' ? 14.5 : 16,
     subscapular: gender === 'male' ? 18 : 14.5,
@@ -86,7 +103,23 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
     biacromial: 38,
     humerus: 6.8,
     femur: 9.2,
-  });
+  };
+
+  const [measures, setMeasures] = useState<MeasureMap>(() => ({
+    ...defaultMeasures,
+    ...(draftForPatient?.isakMeasures as MeasureMap | undefined),
+  }));
+
+  // Sync live → store (debounced lightly via effect)
+  useEffect(() => {
+    patchNutritionDraft({
+      patientId: patient.id,
+      weightKg,
+      heightCm,
+      equation,
+      isakMeasures: measures as Record<string, number>,
+    });
+  }, [patient.id, weightKg, heightCm, equation, measures, patchNutritionDraft]);
 
   const patientHistory = historyEvaluations.filter((e) => e.patient_id === patient.id);
 
@@ -215,6 +248,14 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
     try {
       const record = buildRecord();
       await onSaveEvaluation(record);
+      if (activePatient?.id === patient.id) {
+        setActivePatient({
+          ...activePatient,
+          weight_kg: weightKg,
+          height_cm: heightCm,
+          gender: patient.gender || activePatient.gender,
+        });
+      }
       setSaveOk(true);
       setTimeout(() => {
         setSaveOk(false);
@@ -331,6 +372,7 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
 
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] gap-4">
             <IsakAnatomicalModel
+              gender={gender}
               activeTab={activeTab}
               values={measures}
               selectedId={selectedId}
@@ -473,6 +515,46 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
                   </div>
 
                   <h4 className="text-xs font-black text-slate-700 pt-1">Tipo de cuerpo (Heath-Carter)</h4>
+
+                  {/* Somatochart 2D (proyección de componentes endo/meso/ecto) */}
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                      Gráfica somática tridimensional (proyección)
+                    </p>
+                    <svg viewBox="0 0 220 190" className="w-full max-w-[280px] mx-auto h-40">
+                      <polygon
+                        points="110,18 198,160 22,160"
+                        fill="#fff"
+                        stroke="#94a3b8"
+                        strokeWidth="1.5"
+                      />
+                      <text x="110" y="12" textAnchor="middle" className="fill-slate-500" fontSize="9" fontWeight="700">
+                        Meso
+                      </text>
+                      <text x="12" y="175" textAnchor="start" className="fill-slate-500" fontSize="9" fontWeight="700">
+                        Endo
+                      </text>
+                      <text x="208" y="175" textAnchor="end" className="fill-slate-500" fontSize="9" fontWeight="700">
+                        Ecto
+                      </text>
+                      {/* Posición relativa normalizada 0–7 → triángulo */}
+                      {(() => {
+                        const e = Math.min(7, somatotype.endomorphy) / 7;
+                        const m = Math.min(7, somatotype.mesomorphy) / 7;
+                        const c = Math.min(7, somatotype.ectomorphy) / 7;
+                        const sum = e + m + c || 1;
+                        const x = 110 + ((c - e) / sum) * 88;
+                        const y = 160 - (m / sum) * 130;
+                        return (
+                          <g>
+                            <circle cx={x} cy={y} r="7" fill="#f97316" stroke="#fff" strokeWidth="2" />
+                            <circle cx={x} cy={y} r="12" fill="none" stroke="#fb923c" strokeWidth="1" opacity="0.5" />
+                          </g>
+                        );
+                      })()}
+                    </svg>
+                  </div>
+
                   <div className="grid grid-cols-3 gap-2">
                     {(
                       [

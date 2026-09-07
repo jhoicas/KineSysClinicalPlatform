@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -14,6 +14,58 @@ import { convertMacroPctToGrams, scaleNutrientPer100g, roundNutrient, sumMealMac
 import { EcoExportActions } from '../common/EcoExportActions';
 import { dietPlanFormSchema, DietPlanFormData } from '../../schemas/nutritionSchemas';
 import { FoodSearchCombobox } from './FoodSearchCombobox';
+import { useAppStore } from '../../store/useAppStore';
+
+function MacroRing({
+  label,
+  current,
+  target,
+  unit,
+  color,
+}: {
+  label: string;
+  current: number;
+  target: number;
+  unit: string;
+  color: string;
+}) {
+  const pct = Math.min(100, Math.round((current / (target || 1)) * 100));
+  const r = 34;
+  const c = 2 * Math.PI * r;
+  const offset = c - (pct / 100) * c;
+  return (
+    <div className="flex flex-col items-center gap-1.5 min-w-[96px]">
+      <div className="relative w-[88px] h-[88px]">
+        <svg width="88" height="88" viewBox="0 0 88 88" className="-rotate-90">
+          <circle cx="44" cy="44" r={r} fill="none" stroke="#e2e8f0" strokeWidth="8" />
+          <circle
+            cx="44"
+            cy="44"
+            r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={c}
+            strokeDashoffset={offset}
+            className="transition-all duration-500"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center rotate-0">
+          <p className="text-sm font-black text-slate-900 tabular-nums">{pct}%</p>
+        </div>
+      </div>
+      <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="text-[11px] font-bold text-slate-800 tabular-nums text-center">
+        {current}
+        <span className="text-slate-400 font-medium">
+          {' '}
+          / {target} {unit}
+        </span>
+      </p>
+    </div>
+  );
+}
 
 interface DietPlannerModuleProps {
   patient: PacienteClinico;
@@ -35,6 +87,7 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
   onSavePlan,
 }) => {
   const baseTdee = latestEvaluation?.tdee_kcal || 2200;
+  const patchNutritionDraft = useAppStore((s) => s.patchNutritionDraft);
 
   // React Hook Form for Diet Plan configuration & validation
   const {
@@ -219,6 +272,13 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
   const totalPlannedCarbs = Math.round(meals.reduce((sum, m) => sum + m.total_carbs, 0));
   const totalPlannedFats = Math.round(meals.reduce((sum, m) => sum + m.total_fats, 0));
   const totalPlannedSodium = Math.round(meals.reduce((sum, m) => sum + m.total_sodium, 0));
+
+  useEffect(() => {
+    patchNutritionDraft({
+      patientId: patient.id,
+      dietCaloricTarget: caloricTarget,
+    });
+  }, [patient.id, caloricTarget, patchNutritionDraft]);
 
   // Cross-check with FHIR NutritionOrder Restrictions
   const patientFhirOrder = activeFhirOrders.find((o) => o.patient_id === patient.id && o.status === 'active');
@@ -565,6 +625,52 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
               La distribución debe sumar exactamente 100% (actualmente {totalMacroPct}%).
             </span>
           )}
+        </div>
+      </div>
+
+      {/* Anillos de progreso: calorías + macros planificados vs meta */}
+      <div className="bg-surface-container-lowest p-5 rounded-3xl border border-outline-variant/30 clinical-shadow">
+        <h3 className="text-xs font-black text-on-surface uppercase tracking-wider flex items-center gap-2 mb-4">
+          <span className="material-symbols-outlined text-primary text-base">donut_large</span>
+          Distribución calórica y macronutrientes
+        </h3>
+        <div className="flex flex-wrap justify-center gap-6 sm:gap-10">
+          <div className="relative">
+            <MacroRing
+              label="Calorías"
+              current={totalPlannedCalories}
+              target={caloricTarget}
+              unit="kcal"
+              color="#0a192f"
+            />
+          </div>
+          <div className="relative">
+            <MacroRing
+              label="Proteínas"
+              current={totalPlannedProtein}
+              target={macroGrams.protein_grams}
+              unit="g"
+              color="#0284c7"
+            />
+          </div>
+          <div className="relative">
+            <MacroRing
+              label="Carbohidratos"
+              current={totalPlannedCarbs}
+              target={macroGrams.carbs_grams}
+              unit="g"
+              color="#10b981"
+            />
+          </div>
+          <div className="relative">
+            <MacroRing
+              label="Grasas"
+              current={totalPlannedFats}
+              target={macroGrams.fats_grams}
+              unit="g"
+              color="#f97316"
+            />
+          </div>
         </div>
       </div>
 

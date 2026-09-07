@@ -23,6 +23,19 @@ export interface ActivePatient {
   [key: string]: any;
 }
 
+/** Borrador de sesión nutricional (ISAK / BIA / metas) ligado al paciente activo. */
+export interface NutritionSessionDraft {
+  patientId: string;
+  weightKg?: number;
+  heightCm?: number;
+  isakMeasures?: Record<string, number>;
+  equation?: string;
+  biaSource?: 'WITHINGS' | 'INBODY';
+  biaSnapshot?: Record<string, unknown> | null;
+  dietCaloricTarget?: number;
+  updatedAt?: string;
+}
+
 interface AppStoreState {
   // Estado Global del Paciente en Consulta Activa
   activePatient: ActivePatient | null;
@@ -33,6 +46,11 @@ interface AppStoreState {
   recentPatients: ActivePatient[];
   addRecentPatient: (patient: ActivePatient) => void;
   clearRecentPatients: () => void;
+
+  // Borrador clínico Nutrición & Antropometría (sincroniza módulos)
+  nutritionDraft: NutritionSessionDraft | null;
+  patchNutritionDraft: (patch: Partial<NutritionSessionDraft> & { patientId: string }) => void;
+  clearNutritionDraft: () => void;
 
   // RBAC: Módulos y Rutas Permitidas para el usuario/rol activo
   allowedModules: AppModule[];
@@ -47,10 +65,14 @@ export const useAppStore = create<AppStoreState>()(
       activePatient: null,
 
       setActivePatient: (patient: ActivePatient | null) => {
-        set({ activePatient: patient });
+        const prevId = get().activePatient?.id;
+        const resetDraft = !patient || (prevId != null && prevId !== patient.id);
+        set({
+          activePatient: patient,
+          ...(resetDraft ? { nutritionDraft: null } : {}),
+        });
         if (patient) {
           get().addRecentPatient(patient);
-          // Emitir evento para componentes desacoplados si es necesario
           window.dispatchEvent(
             new CustomEvent('kinesys_active_patient_changed', { detail: { patient } })
           );
@@ -62,7 +84,7 @@ export const useAppStore = create<AppStoreState>()(
       },
 
       clearActivePatient: () => {
-        set({ activePatient: null });
+        set({ activePatient: null, nutritionDraft: null });
         window.dispatchEvent(
           new CustomEvent('kinesys_active_patient_changed', { detail: { patient: null } })
         );
@@ -82,6 +104,25 @@ export const useAppStore = create<AppStoreState>()(
       },
 
       clearRecentPatients: () => set({ recentPatients: [] }),
+
+      nutritionDraft: null,
+
+      patchNutritionDraft: (patch) => {
+        set((state) => {
+          const prev =
+            state.nutritionDraft?.patientId === patch.patientId ? state.nutritionDraft : null;
+          return {
+            nutritionDraft: {
+              ...(prev || { patientId: patch.patientId }),
+              ...patch,
+              patientId: patch.patientId,
+              updatedAt: new Date().toISOString(),
+            },
+          };
+        });
+      },
+
+      clearNutritionDraft: () => set({ nutritionDraft: null }),
 
       // RBAC State & Methods
       allowedModules: [],

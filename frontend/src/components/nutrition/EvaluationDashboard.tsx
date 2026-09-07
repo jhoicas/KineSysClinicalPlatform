@@ -1,7 +1,8 @@
 /**
  * EvaluationDashboard — Informe BIA / InBody H30 / Withings (CORE BODY)
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
 
 export type EvaluationSourceMode = 'MANUAL_ISAK' | 'WITHINGS' | 'INBODY';
 
@@ -194,13 +195,7 @@ function SegmentalBody({
 
       <Callout title="Brazo Izq." m={muscle.left_arm} f={fat.left_arm} style={{ left: '2%', top: '22%' }} />
       <Callout title="Brazo Der." m={muscle.right_arm} f={fat.right_arm} style={{ right: '2%', top: '22%' }} />
-      <Callout title="Tronco" m={muscle.trunk} f={fat.trunk} style={{ left: '2%', top: '44%' }} />
-      <Callout
-        title="Tronco (esp.)"
-        m={muscle.trunk != null ? round(muscle.trunk * 0.92, 1) : null}
-        f={fat.trunk != null ? round(fat.trunk * 0.88, 1) : null}
-        style={{ right: '2%', top: '44%' }}
-      />
+      <Callout title="Tronco" m={muscle.trunk} f={fat.trunk} style={{ left: '50%', top: '8%', transform: 'translateX(-50%)' }} />
       <Callout title="Pierna Izq." m={muscle.left_leg} f={fat.left_leg} style={{ left: '2%', top: '68%' }} />
       <Callout title="Pierna Der." m={muscle.right_leg} f={fat.right_leg} style={{ right: '2%', top: '68%' }} />
 
@@ -227,9 +222,32 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
   initialReading = null,
   className = '',
 }) => {
-  const [source, setSource] = useState<'WITHINGS' | 'INBODY'>('INBODY');
-  const [reading, setReading] = useState<HardwareReadingPreview | null>(initialReading || DEMO.INBODY);
+  const activePatient = useAppStore((s) => s.activePatient);
+  const patchNutritionDraft = useAppStore((s) => s.patchNutritionDraft);
+  const nutritionDraft = useAppStore((s) => s.nutritionDraft);
+
+  const storedBia =
+    nutritionDraft?.patientId === activePatient?.id && nutritionDraft?.biaSnapshot
+      ? (nutritionDraft.biaSnapshot as unknown as HardwareReadingPreview)
+      : null;
+
+  const [source, setSource] = useState<'WITHINGS' | 'INBODY'>(
+    nutritionDraft?.biaSource || 'INBODY',
+  );
+  const [reading, setReading] = useState<HardwareReadingPreview | null>(
+    initialReading || storedBia || DEMO.INBODY,
+  );
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!activePatient?.id || !reading) return;
+    patchNutritionDraft({
+      patientId: activePatient.id,
+      biaSource: source,
+      biaSnapshot: reading as unknown as Record<string, unknown>,
+      weightKg: reading.weight_kg ?? undefined,
+    });
+  }, [activePatient?.id, reading, source, patchNutritionDraft]);
 
   const metrics = useMemo(() => {
     const r = reading;

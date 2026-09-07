@@ -6,8 +6,11 @@ import {
   MealFoodEntry,
 } from '../../types/coreBodyNutrition';
 import type { FoodItem } from '../../types';
+import type { PacienteClinico } from '../../types';
 import { FoodSearchCombobox } from './FoodSearchCombobox';
 import { scaleNutrientPer100g, roundNutrient } from '../../utils/nutritionCalculations';
+import { coreBodyPlanToKinesys } from '../../utils/coreBodyAdapters';
+import { EcoExportActions } from '../common/EcoExportActions';
 import {
   Apple,
   Plus,
@@ -22,6 +25,8 @@ import {
 
 interface NutritionPlanningModuleProps {
   patient: Patient;
+  clinicalPatient?: PacienteClinico;
+  tenantId?: string;
   plan?: NutritionPlan;
   onSave: (plan: NutritionPlan) => void;
 }
@@ -66,6 +71,8 @@ function buildEmptyPlan(patient: Patient): NutritionPlan {
 
 export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = ({
   patient,
+  clinicalPatient,
+  tenantId,
   plan,
   onSave,
 }) => {
@@ -180,6 +187,16 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
               {isSaved ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
               {isSaved ? 'Plan Guardado' : 'Guardar Minuta'}
             </button>
+            {clinicalPatient && tenantId && (
+              <EcoExportActions
+                patient={clinicalPatient}
+                documentType="plan_nutricional"
+                plan={coreBodyPlanToKinesys(currentPlan, { tenantId })}
+                nutritionistName={patient.nutritionist}
+                size="sm"
+                showPreviewOption={true}
+              />
+            )}
           </div>
         </div>
 

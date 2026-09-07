@@ -467,6 +467,29 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                {plans[0] && (
+                  <EcoExportActions
+                    patient={currentClinico}
+                    documentType="plan_nutricional"
+                    plan={plans[0]}
+                    nutritionistName={nutritionistName}
+                    tenant={tenant}
+                    size="sm"
+                    showPreviewOption={true}
+                  />
+                )}
+                {latestEvaluation && (
+                  <EcoExportActions
+                    patient={currentClinico}
+                    documentType="antropometria"
+                    evaluation={latestEvaluation}
+                    historyEvaluations={evaluations}
+                    nutritionistName={nutritionistName}
+                    tenant={tenant}
+                    size="sm"
+                    showPreviewOption={true}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => setIsMedicalHistoryOpen(true)}
@@ -617,6 +640,8 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                   weightKg: latestEvaluation?.weight_kg,
                   heightCm: latestEvaluation?.height_cm,
                 })}
+                clinicalPatient={currentClinico}
+                tenantId={tenantId}
                 onSave={async (plan) => {
                   await handleSavePlan(coreBodyPlanToKinesys(plan, { tenantId }));
                 }}
@@ -767,7 +792,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                                 documentType="plan_nutricional"
                                 plan={pl}
                                 size="sm"
-                                showPreviewOption={false}
+                                showPreviewOption={true}
                               />
 
                               <button

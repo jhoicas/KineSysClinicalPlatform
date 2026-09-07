@@ -25,13 +25,13 @@ interface SendDocumentPayload {
 }
 
 Deno.serve(async (req: Request) => {
-  // Preflight CORS — debe responder 200 ANTES de auth/JWT
+  // Preflight CORS — respuesta limpia con corsHeaders antes de auth/JWT
   if (req.method === 'OPTIONS') {
     return optionsResponse();
   }
 
   if (req.method !== 'POST') {
-    return jsonResponse({ error: 'Method not allowed' }, 405);
+    return jsonResponse({ success: false, error: 'Method not allowed' }, 405);
   }
 
   try {
@@ -54,19 +54,28 @@ Deno.serve(async (req: Request) => {
 
     if (!to_email || !to_email.includes('@')) {
       return jsonResponse(
-        { error: 'Dirección de correo electrónico inválida o no provista.' },
+        {
+          success: false,
+          error: 'Dirección de correo electrónico inválida o no provista.',
+        },
         400,
       );
     }
 
     if (!pdf_base64) {
       return jsonResponse(
-        { error: 'El archivo PDF en Base64 es requerido para el envío.' },
+        {
+          success: false,
+          error: 'El archivo PDF en Base64 es requerido para el envío.',
+        },
         400,
       );
     }
 
-    const cleanBase64 = pdf_base64.includes(',') ? pdf_base64.split(',')[1] : pdf_base64;
+    // Resend exige Base64 puro (sin prefijo data:application/pdf;base64,)
+    const attachmentContent = pdf_base64.includes(',')
+      ? pdf_base64.split(',')[1]
+      : pdf_base64;
 
     const emailHtml = `
       <!DOCTYPE html>
@@ -115,58 +124,46 @@ Deno.serve(async (req: Request) => {
 
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
 
-    if (resendApiKey) {
-      const resendResponse = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: `${clinic_name} <documentos@kinesys.health>`,
-          to: [to_email],
-          subject: subject,
-          html: emailHtml,
-          attachments: [
-            {
-              filename: filename,
-              content: cleanBase64,
-            },
-          ],
-        }),
-      });
-
-      const resendData = await resendResponse.json();
-
-      if (!resendResponse.ok) {
-        return jsonResponse(
-          { error: resendData?.message || 'Error al comunicarse con el proveedor de correo Resend' },
-          400,
-        );
-      }
-
+    if (!resendApiKey) {
       return jsonResponse(
         {
-          success: true,
-          messageId: resendData.id || `resend_${Date.now()}`,
-          recipient: to_email,
-          eco_impact: { paper_saved_sheets: 2, water_saved_liters: 20 },
+          success: false,
+          error: 'RESEND_API_KEY no está configurada en el entorno de Supabase.',
         },
-        200,
+        500,
       );
     }
 
-    console.log(
-      `[send-patient-document] Simulating Resend Email to ${to_email} with PDF "${filename}"`,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    const resendResponse = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: 'KineSys Clinical Platform <noresponder@clinicalplatform.ludoia.com>',
+        to: [to_email],
+        subject,
+        html: emailHtml,
+        attachments: [
+          {
+            filename,
+            content: attachmentContent,
+          },
+        ],
+      }),
+    });
+
+    const responseData = await resendResponse.json();
+
+    if (!resendResponse.ok) {
+      return jsonResponse({ success: false, error: responseData }, 400);
+    }
 
     return jsonResponse(
       {
         success: true,
-        simulated: true,
-        message: `Documento "${filename}" enviado satisfactoriamente al correo ${to_email}.`,
-        messageId: `eco_sim_${Date.now()}`,
+        messageId: responseData.id || `resend_${Date.now()}`,
         recipient: to_email,
         eco_impact: { paper_saved_sheets: 2, water_saved_liters: 20 },
       },
@@ -176,7 +173,7 @@ Deno.serve(async (req: Request) => {
     console.error('[send-patient-document] Error processing request:', error);
     const message =
       error instanceof Error ? error.message : 'Error interno al enviar el documento por correo.';
-    return jsonResponse({ error: message }, 500);
+    return jsonResponse({ success: false, error: message }, 500);
   }
 });
 

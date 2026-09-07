@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kinesys/clinical-platform-backend/internal/adapters/handlers"
+	"github.com/kinesys/clinical-platform-backend/internal/adapters/repository"
 	"github.com/kinesys/clinical-platform-backend/internal/adapters/repository/postgres"
 	"github.com/kinesys/clinical-platform-backend/internal/config"
 	"github.com/kinesys/clinical-platform-backend/internal/core/services"
@@ -42,18 +43,22 @@ func main() {
 	anthropometryRepo := postgres.NewAnthropometryRepository(dbPool)
 	nutritionRepo := postgres.NewNutritionRepository(dbPool)
 	auditRepo := postgres.NewAuditRepository(dbPool)
+	exerciseRepo := repository.NewSupabaseExerciseRepository(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey)
+	exerciseSource := repository.NewExerciseAPISource(cfg.WgerAPIURL, cfg.ExerciseDBAPIURL, cfg.ExerciseDBAPIKey)
 
 	// Initialize Services
 	patientSvc := services.NewPatientService(patientRepo)
 	encounterSvc := services.NewEncounterService(encounterRepo, auditRepo)
 	anthropometrySvc := services.NewAnthropometryService(anthropometryRepo)
 	nutritionSvc := services.NewNutritionService(nutritionRepo)
+	exerciseSvc := services.NewExerciseService(exerciseRepo, exerciseSource)
 
 	// Initialize Handlers
 	patientHandler := handlers.NewPatientHandler(patientSvc)
 	encounterHandler := handlers.NewEncounterHandler(encounterSvc)
 	anthropometryHandler := handlers.NewAnthropometryHandler(anthropometrySvc)
 	nutritionHandler := handlers.NewNutritionHandler(nutritionSvc)
+	exerciseHandler := handlers.NewExerciseHandler(exerciseSvc)
 
 	// Initialize Router
 	r := chi.NewRouter()
@@ -84,7 +89,7 @@ func main() {
 	// Protected Routes (Require Supabase JWT)
 	r.Group(func(r chi.Router) {
 		r.Use(customMiddleware.SupabaseAuth(cfg.SupabaseJWTSecret))
-		
+
 		// Patients
 		r.Get("/api/v1/patients", patientHandler.List)
 		r.Post("/api/v1/patients", patientHandler.Create)
@@ -101,6 +106,10 @@ func main() {
 		// Nutrition
 		r.Get("/api/v1/patients/{patientId}/nutrition", nutritionHandler.ListByPatient)
 		r.Post("/api/v1/nutrition", nutritionHandler.Create)
+
+		// System exercise catalog
+		r.Get("/api/v1/exercises", exerciseHandler.List)
+		r.Post("/api/v1/exercises/sync", exerciseHandler.Sync)
 	})
 
 	// Start HTTP Server

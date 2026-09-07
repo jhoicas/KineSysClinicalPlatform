@@ -352,6 +352,8 @@ export interface LibraryExercise {
   difficulty?: ExerciseDifficulty;
   equipment?: string;
   createdAt?: string;
+  isSystem?: boolean;
+  authorAttribution?: string;
 }
 
 export interface TreatmentPlan {

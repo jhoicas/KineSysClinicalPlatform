@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { LibraryExercise, Exercise } from '../../types';
 import { getExerciseLibrary } from '../../services/dataService';
+import { api } from '../../services/apiClient';
 import { ExerciseLightboxModal } from './ExerciseLightboxModal';
 import { ExerciseModal } from './ExerciseModal';
+import { ImageWithFallback } from './ImageWithFallback';
 
 interface ExerciseLibraryModalProps {
   isOpen: boolean;
@@ -47,8 +49,30 @@ export const ExerciseLibraryModal: React.FC<ExerciseLibraryModalProps> = ({
     }
     setLoadingLibrary(true);
     try {
-      const items = await getExerciseLibrary(tenantId);
-      setLocalLibrary(items);
+      const remote = await api.exercises.list();
+      const systemItems: LibraryExercise[] = (remote.data || []).map((item) => ({
+        id: item.id,
+        name: item.name,
+        category: item.category as LibraryExercise['category'],
+        targetMuscle: item.target_muscle || 'Movilidad general',
+        defaultSets: 3,
+        defaultRepsOrDuration: '30 segundos',
+        defaultRestSeconds: 30,
+        defaultFrequencyDaysPerWeek: 3,
+        instructions: item.description || 'Consultar indicaciones clínicas.',
+        imageUrl: item.media_url || undefined,
+        tags: [item.category, item.target_muscle || 'movilidad'].filter(Boolean),
+        difficulty: item.difficulty as LibraryExercise['difficulty'],
+        equipment: 'Según indicación clínica',
+        createdAt: undefined,
+        isSystem: item.is_system,
+        authorAttribution: item.author_attribution,
+      }));
+      if (remote.error || systemItems.length === 0) {
+        setLocalLibrary(await getExerciseLibrary(tenantId));
+      } else {
+        setLocalLibrary(systemItems);
+      }
     } catch (err) {
       console.error('Error loading exercise_library:', err);
       setLocalLibrary([]);
@@ -282,15 +306,11 @@ export const ExerciseLibraryModal: React.FC<ExerciseLibraryModalProps> = ({
                   <div>
                     <div className="relative h-40 bg-slate-100 overflow-hidden">
                       {ex.imageUrl ? (
-                        <img
+                        <ImageWithFallback
                           src={ex.imageUrl}
                           alt={ex.name}
                           referrerPolicy="no-referrer"
                           className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).src =
-                              'https://images.unsplash.com/photo-1574680096145-d05b474e2155?auto=format&fit=crop&w=800&q=80';
-                          }}
                         />
                       ) : (
                         <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
@@ -369,6 +389,11 @@ export const ExerciseLibraryModal: React.FC<ExerciseLibraryModalProps> = ({
                       <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
                         {ex.instructions}
                       </p>
+                      {ex.isSystem && ex.authorAttribution && (
+                        <p className="text-[10px] font-semibold text-slate-400">
+                          {ex.authorAttribution}
+                        </p>
+                      )}
                     </div>
                   </div>
 

@@ -32,3 +32,8 @@ type NutritionRepository interface {
 type AuditRepository interface {
 	Create(ctx context.Context, log *domain.ClinicalAuditLog) error
 }
+
+type ExerciseRepository interface {
+	ListSystem(ctx context.Context, search, category string) ([]domain.Exercise, error)
+	UpsertSystem(ctx context.Context, exercises []domain.Exercise) error
+}

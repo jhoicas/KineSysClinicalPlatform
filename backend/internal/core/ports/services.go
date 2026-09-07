@@ -30,3 +30,8 @@ type NutritionService interface {
 	ListPlans(ctx context.Context, patientID, tenantID uuid.UUID) ([]domain.NutritionPlan, error)
 	CreatePlan(ctx context.Context, plan *domain.NutritionPlan) error
 }
+
+type ExerciseService interface {
+	List(ctx context.Context, search, category string) ([]domain.Exercise, error)
+	Sync(ctx context.Context) (int, error)
+}

@@ -52,6 +52,18 @@ export interface PaginatedResponse<T> {
   per_page: number;
 }
 
+export interface ExerciseCatalogItem {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  media_url: string;
+  is_system: boolean;
+  author_attribution: string;
+  target_muscle?: string;
+  difficulty?: string;
+}
+
 // ─── Core HTTP Client ─────────────────────────────────────────────────────────
 
 async function request<T>(
@@ -118,6 +130,11 @@ export const api = {
   // ──── Health ────
   health: {
     check: () => request<{ status: string; timestamp: string }>('GET', '/api/v1/health'),
+  },
+
+  exercises: {
+    list: (params?: { search?: string; category?: string }) =>
+      request<ExerciseCatalogItem[]>('GET', '/api/v1/exercises', undefined, params),
   },
 
   // ──── Users ────

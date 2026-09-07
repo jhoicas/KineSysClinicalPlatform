@@ -5,6 +5,7 @@ import {
   saveLibraryExercise,
   softDeleteLibraryExercise,
 } from '../../services/dataService';
+import { api } from '../../services/apiClient';
 import { ExerciseModal } from './ExerciseModal';
 import { ExerciseLibraryModal } from './ExerciseLibraryModal';
 import { ExerciseLightboxModal } from './ExerciseLightboxModal';
@@ -44,8 +45,28 @@ export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
       return;
     }
     try {
-      const items = await getExerciseLibrary(tenantId);
-      setLibrary(items);
+      const remote = await api.exercises.list();
+      if (!remote.error && remote.data && remote.data.length > 0) {
+        setLibrary(remote.data.map((item) => ({
+          id: item.id,
+          name: item.name,
+          category: item.category as LibraryExercise['category'],
+          targetMuscle: item.target_muscle || 'Movilidad general',
+          defaultSets: 3,
+          defaultRepsOrDuration: '30 segundos',
+          defaultRestSeconds: 30,
+          defaultFrequencyDaysPerWeek: 3,
+          instructions: item.description || 'Consultar indicaciones clínicas.',
+          imageUrl: item.media_url || undefined,
+          tags: [item.category, item.target_muscle || 'movilidad'].filter(Boolean),
+          difficulty: item.difficulty as LibraryExercise['difficulty'],
+          equipment: 'Según indicación clínica',
+          isSystem: item.is_system,
+          authorAttribution: item.author_attribution,
+        })));
+      } else {
+        setLibrary(await getExerciseLibrary(tenantId));
+      }
     } catch (err) {
       console.error('Error loading exercise library:', err);
       setLibrary([]);
@@ -60,7 +81,26 @@ export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
         return;
       }
       try {
-        const items = await getExerciseLibrary(tenantId);
+        const remote = await api.exercises.list();
+        const items = !remote.error && remote.data && remote.data.length > 0
+          ? remote.data.map((item) => ({
+              id: item.id,
+              name: item.name,
+              category: item.category as LibraryExercise['category'],
+              targetMuscle: item.target_muscle || 'Movilidad general',
+              defaultSets: 3,
+              defaultRepsOrDuration: '30 segundos',
+              defaultRestSeconds: 30,
+              defaultFrequencyDaysPerWeek: 3,
+              instructions: item.description || 'Consultar indicaciones clínicas.',
+              imageUrl: item.media_url || undefined,
+              tags: [item.category, item.target_muscle || 'movilidad'].filter(Boolean),
+              difficulty: item.difficulty as LibraryExercise['difficulty'],
+              equipment: 'Según indicación clínica',
+              isSystem: item.is_system,
+              authorAttribution: item.author_attribution,
+            }))
+          : await getExerciseLibrary(tenantId);
         if (!cancelled) setLibrary(items);
       } catch (err) {
         console.error('Error loading exercise library:', err);

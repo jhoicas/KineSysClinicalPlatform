@@ -8,12 +8,16 @@ import (
 )
 
 type Config struct {
-	Port              string
-	DatabaseURL       string
-	SupabaseURL       string
-	SupabaseAnonKey   string
-	SupabaseJWTSecret string
-	CorsOrigins       string
+	Port                   string
+	DatabaseURL            string
+	SupabaseURL            string
+	SupabaseAnonKey        string
+	SupabaseServiceRoleKey string
+	WgerAPIURL             string
+	ExerciseDBAPIURL       string
+	ExerciseDBAPIKey       string
+	SupabaseJWTSecret      string
+	CorsOrigins            string
 }
 
 func LoadConfig() *Config {
@@ -23,12 +27,16 @@ func LoadConfig() *Config {
 	}
 
 	return &Config{
-		Port:              getEnv("PORT", "8080"),
-		DatabaseURL:       getEnv("DATABASE_URL", ""),
-		SupabaseURL:       getEnv("SUPABASE_URL", ""),
-		SupabaseAnonKey:   getEnv("SUPABASE_ANON_KEY", ""),
-		SupabaseJWTSecret: getEnv("SUPABASE_JWT_SECRET", ""),
-		CorsOrigins:       getEnv("CORS_ORIGINS", "http://localhost:3000"),
+		Port:                   getEnv("PORT", "8080"),
+		DatabaseURL:            getEnv("DATABASE_URL", ""),
+		SupabaseURL:            getEnv("SUPABASE_URL", ""),
+		SupabaseAnonKey:        getEnv("SUPABASE_ANON_KEY", ""),
+		SupabaseServiceRoleKey: getEnv("SUPABASE_SERVICE_ROLE_KEY", ""),
+		WgerAPIURL:             getEnv("WGER_API_URL", "https://wger.de/api/v2/exerciseinfo/"),
+		ExerciseDBAPIURL:       getEnv("EXERCISEDB_API_URL", "https://exercisedb.p.rapidapi.com/exercises"),
+		ExerciseDBAPIKey:       getEnv("EXERCISEDB_API_KEY", ""),
+		SupabaseJWTSecret:      getEnv("SUPABASE_JWT_SECRET", ""),
+		CorsOrigins:            getEnv("CORS_ORIGINS", "http://localhost:3000"),
 	}
 }
 

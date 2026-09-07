@@ -45,12 +45,27 @@ Deno.serve(async (req) => {
     const { data: callerRecord, error: callerRecordError } = await supabaseAdmin
       .schema('kinesys').from('users').select('role, tenant_id').eq('id', user.id).single();
 
-    if (
-      callerRecordError ||
-      !callerRecord ||
-      !['clinic_admin', 'super_admin', 'superadmin'].includes(String(callerRecord.role).toLowerCase())
-    ) {
-      return jsonResponse({ error: 'Forbidden' }, 403);
+    if (callerRecordError || !callerRecord) {
+      return new Response(
+        JSON.stringify({
+          error: 'DB_ERROR',
+          message: 'Error al consultar el perfil en kinesys.users',
+          details: callerRecordError,
+          userId: user.id,
+        }),
+        { status: 403, headers: corsHeaders },
+      );
+    }
+
+    if (!['clinic_admin', 'super_admin', 'superadmin'].includes(callerRecord.role)) {
+      return new Response(
+        JSON.stringify({
+          error: 'INVALID_ROLE',
+          message: 'El rol actual no tiene permisos',
+          role_found: callerRecord.role,
+        }),
+        { status: 403, headers: corsHeaders },
+      );
     }
 
     const body = await req.json();

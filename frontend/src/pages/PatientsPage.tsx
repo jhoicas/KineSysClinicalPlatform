@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useI18n } from '../app/providers/I18nProvider';
-import { getPatients, createPatient } from '../services/supabaseClient';
+import { getPatients, createPatient, updatePatient } from '../services/supabaseClient';
 import { PacienteClinico } from '../types';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
@@ -10,18 +10,24 @@ import { PatientRegistrationModal } from '../components/patients/PatientRegistra
 import { PatientRegistrationFormData } from '../schemas/patientSchema';
 import { ToastContainer, ToastMessage } from '../components/common/Toast';
 import { User } from '../types';
+import { useAppStore } from '../store/useAppStore';
 
 interface PatientsPageProps {
   onNavigate?: (path: string) => void;
 }
 
+/** Fila de listado: User + campos clínicos extra para edición. */
+type PatientRow = User & { address_line?: string };
+
 export function PatientsPage({ onNavigate }: PatientsPageProps) {
   const { tenantId } = useAuth();
   const { t } = useI18n();
-  const [patients, setPatients] = useState<User[]>([]);
+  const { activePatient, setActivePatient } = useAppStore();
+  const [patients, setPatients] = useState<PatientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<User | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<PatientRow | null>(null);
+  const [editingPatient, setEditingPatient] = useState<PatientRow | null>(null);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -46,7 +52,7 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
     return () => window.removeEventListener('kinesys_data_updated', handleDataUpdate);
   }, [tenantId]);
 
-  const mapPatientToUser = (p: PacienteClinico): User => ({
+  const mapPatientToUser = (p: PacienteClinico): PatientRow => ({
     id: p.id,
     full_name: `${p.first_name} ${p.last_name}`.trim(),
     email: p.telecom_email,
@@ -59,8 +65,39 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
     medical_conditions: p.chronic_conditions,
     allergies: p.known_allergies,
     emergency_contact: p.emergency_contact,
+    address_line: p.address_line,
     created_at: p.created_at,
   });
+
+  const formDataToPatientPatch = (
+    formData: PatientRegistrationFormData,
+  ): Partial<PacienteClinico> => {
+    const nameParts = formData.full_name.trim().split(/\s+/);
+    const firstName = nameParts[0] || formData.full_name;
+    const lastName = nameParts.slice(1).join(' ') || firstName;
+
+    return {
+      identifier_type: 'CC',
+      identifier_number: formData.rut_or_dni,
+      first_name: firstName,
+      last_name: lastName,
+      gender: (formData.gender as PacienteClinico['gender']) || 'unknown',
+      birth_date: formData.birth_date || '',
+      telecom_phone: formData.phone,
+      telecom_email: formData.email,
+      address_line: formData.address_line || '',
+      known_allergies: formData.allergies ? [formData.allergies] : [],
+      chronic_conditions: formData.medical_conditions ? [formData.medical_conditions] : [],
+      emergency_contact: formData.emergency_contact_name
+        ? {
+            name: formData.emergency_contact_name,
+            phone: formData.emergency_contact_phone || '',
+            relationship: 'contacto',
+          }
+        : undefined,
+      active: true,
+    };
+  };
 
   const fetchPatients = async () => {
     setLoading(true);
@@ -77,37 +114,17 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
 
   const handleCreatePatientValidated = async (formData: PatientRegistrationFormData) => {
     try {
-      const nameParts = formData.full_name.trim().split(/\s+/);
-      const firstName = nameParts[0] || formData.full_name;
-      const lastName = nameParts.slice(1).join(' ') || firstName;
-
-      await createPatient(tenantId, {
-        identifier_type: 'CC',
-        identifier_number: formData.rut_or_dni,
-        first_name: firstName,
-        last_name: lastName,
-        gender: (formData.gender as PacienteClinico['gender']) || 'unknown',
-        birth_date: formData.birth_date || '',
-        telecom_phone: formData.phone,
-        telecom_email: formData.email,
-        known_allergies: formData.allergies ? [formData.allergies] : [],
-        chronic_conditions: formData.medical_conditions ? [formData.medical_conditions] : [],
-        emergency_contact: formData.emergency_contact_name
-          ? {
-              name: formData.emergency_contact_name,
-              phone: formData.emergency_contact_phone || '',
-              relationship: 'contacto',
-            }
-          : undefined,
-        active: true,
-      });
+      await createPatient(tenantId, formDataToPatientPatch(formData) as Omit<
+        PacienteClinico,
+        'id' | 'tenant_id' | 'created_at' | 'updated_at'
+      >);
 
       addToast(
         'success',
         t('patients.add_patient', 'Paciente Registrado'),
         `${formData.full_name} guardado con éxito en el sistema.`
       );
-      fetchPatients();
+      await fetchPatients();
     } catch (err: any) {
       console.error('Error creating patient:', err);
       addToast(
@@ -119,9 +136,61 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
     }
   };
 
-  const handleOpenHistory = (patient: User) => {
+  const handleUpdatePatientValidated = async (formData: PatientRegistrationFormData) => {
+    if (!editingPatient?.id) {
+      addToast('error', 'Error', 'No hay paciente seleccionado para editar.');
+      throw new Error('missing patient id');
+    }
+
+    try {
+      const updated = await updatePatient(editingPatient.id, formDataToPatientPatch(formData));
+      const mapped = mapPatientToUser(updated);
+
+      setPatients((prev) => prev.map((p) => (p.id === mapped.id ? mapped : p)));
+
+      if (activePatient?.id === mapped.id) {
+        setActivePatient({
+          ...activePatient,
+          full_name: mapped.full_name,
+          email: mapped.email,
+          phone: mapped.phone,
+          rut_or_dni: mapped.rut_or_dni,
+          gender: mapped.gender,
+          birth_date: mapped.birth_date,
+          medical_conditions: mapped.medical_conditions,
+          allergies: mapped.allergies,
+          emergency_contact: mapped.emergency_contact,
+        });
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('kinesys_data_updated', { detail: { table: 'pacientes_clinicos' } }),
+      );
+
+      addToast(
+        'success',
+        'Paciente actualizado',
+        'Información del paciente actualizada correctamente',
+      );
+      setEditingPatient(null);
+    } catch (err: any) {
+      console.error('Supabase Error:', err);
+      addToast(
+        'error',
+        t('common.error', 'Error al actualizar'),
+        err?.message || 'No se pudo guardar la información del paciente.',
+      );
+      throw err;
+    }
+  };
+
+  const handleOpenHistory = (patient: PatientRow) => {
     setSelectedPatient(patient);
     setIsHistoryModalOpen(true);
+  };
+
+  const handleOpenEdit = (patient: PatientRow) => {
+    setEditingPatient(patient);
   };
 
   const filteredPatients = patients.filter((p) => {
@@ -141,9 +210,7 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
       <main className="flex-1 ml-0 md:ml-72 flex flex-col h-screen overflow-hidden">
         <TopNavBar currentPath="/pacientes" onNavigate={onNavigate} />
 
-        {/* Workspace */}
         <div className="flex-1 overflow-y-auto pt-[80px] pb-12 px-6 md:px-10">
-          {/* Header */}
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
             <div>
               <div className="flex items-center gap-2.5">
@@ -160,7 +227,6 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-              {/* Search Bar */}
               <div className="relative flex-1 sm:w-72 bg-surface-container-lowest rounded-2xl border border-outline-variant/30 clinical-shadow flex items-center px-3">
                 <span className="material-symbols-outlined text-outline text-xl">search</span>
                 <input
@@ -181,7 +247,6 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
                 )}
               </div>
 
-              {/* Add Patient Button */}
               <button
                 id="btn-add-new-patient"
                 onClick={() => setIsNewPatientModalOpen(true)}
@@ -193,7 +258,6 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
             </div>
           </div>
 
-          {/* Quick Metrics Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             <div className="p-4 rounded-2xl bg-surface-container-lowest border border-outline-variant/20 clinical-shadow flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
@@ -220,7 +284,6 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
             </div>
           </div>
 
-          {/* Patients Table Card */}
           <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 clinical-shadow overflow-hidden">
             {loading ? (
               <div className="flex flex-col items-center py-24 opacity-70">
@@ -232,7 +295,9 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
                 <span className="material-symbols-outlined text-5xl mb-2 text-outline/50">person_off</span>
                 <p className="text-base font-bold text-on-surface">{t('patients.no_patients', 'No se encontraron pacientes')}</p>
                 <p className="text-xs text-on-surface-variant mt-1">
-                  {searchQuery ? t('patients.try_other_search', 'Prueba con otro término de búsqueda.') : t('patients.create_first_patient', 'Crea tu primer paciente usando el botón superior.')}
+                  {searchQuery
+                    ? t('patients.try_other_search', 'Prueba con otro término de búsqueda.')
+                    : t('patients.create_first_patient', 'Crea tu primer paciente usando el botón superior.')}
                 </p>
               </div>
             ) : (
@@ -254,7 +319,6 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
                         id={`patient-row-${patient.id}`}
                         className="hover:bg-surface-container-low/40 transition-colors group"
                       >
-                        {/* Paciente / Nombre / ID */}
                         <td className="py-4 px-6">
                           <div className="flex items-center gap-3.5">
                             <img
@@ -276,7 +340,6 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
                           </div>
                         </td>
 
-                        {/* Contacto: Email & Teléfono */}
                         <td className="py-4 px-6">
                           <div className="space-y-0.5">
                             <p className="text-xs font-semibold text-on-surface flex items-center gap-1.5">
@@ -290,7 +353,6 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
                           </div>
                         </td>
 
-                        {/* Condición / Diagnóstico */}
                         <td className="py-4 px-6">
                           {patient.medical_conditions && patient.medical_conditions.length > 0 ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-primary/10 text-primary border border-primary/20">
@@ -302,23 +364,33 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
                           )}
                         </td>
 
-                        {/* Rol / Status */}
                         <td className="py-4 px-6 text-center">
                           <span className="inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">
                             {t('patients.active_status', 'Activo')}
                           </span>
                         </td>
 
-                        {/* Botón Simulado: Ver Historia Clínica */}
                         <td className="py-4 px-6 text-right">
-                          <button
-                            id={`btn-view-history-${patient.id}`}
-                            onClick={() => handleOpenHistory(patient)}
-                            className="bg-primary/10 hover:bg-primary text-primary hover:text-white font-bold text-xs px-4 py-2 rounded-xl transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-base">clinical_notes</span>
-                            <span>{t('patients.view_history', 'Ver Historia Clínica')}</span>
-                          </button>
+                          <div className="inline-flex items-center gap-2 justify-end">
+                            <button
+                              type="button"
+                              id={`btn-edit-patient-${patient.id}`}
+                              onClick={() => handleOpenEdit(patient)}
+                              title={t('patients.edit_patient', 'Editar paciente')}
+                              className="bg-surface-container-high hover:bg-primary/10 text-on-surface hover:text-primary font-bold text-xs px-3 py-2 rounded-xl transition-all border border-outline-variant/30 inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-base">edit</span>
+                              <span className="hidden sm:inline">Editar</span>
+                            </button>
+                            <button
+                              id={`btn-view-history-${patient.id}`}
+                              onClick={() => handleOpenHistory(patient)}
+                              className="bg-primary/10 hover:bg-primary text-primary hover:text-white font-bold text-xs px-4 py-2 rounded-xl transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-base">clinical_notes</span>
+                              <span>{t('patients.view_history', 'Ver Historia Clínica')}</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -330,15 +402,23 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
         </div>
       </main>
 
-      {/* New Patient Modal powered by React Hook Form & Zod */}
       <PatientRegistrationModal
         isOpen={isNewPatientModalOpen}
         onClose={() => setIsNewPatientModalOpen(false)}
         onSubmitPatient={handleCreatePatientValidated}
         tenantId={tenantId}
+        mode="create"
       />
 
-      {/* Medical History Modal */}
+      <PatientRegistrationModal
+        isOpen={!!editingPatient}
+        onClose={() => setEditingPatient(null)}
+        onSubmitPatient={handleUpdatePatientValidated}
+        tenantId={tenantId}
+        mode="edit"
+        initialPatient={editingPatient}
+      />
+
       <MedicalHistoryModal
         patient={selectedPatient}
         isOpen={isHistoryModalOpen}
@@ -348,7 +428,6 @@ export function PatientsPage({ onNavigate }: PatientsPageProps) {
         }}
       />
 
-      {/* Toast notifications */}
       <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
     </div>
   );

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Esquema de validación Zod para Registro de Pacientes
+ * Esquema de validación Zod para Registro / Edición de Pacientes
  */
 export const patientRegistrationSchema = z.object({
   full_name: z
@@ -37,6 +37,11 @@ export const patientRegistrationSchema = z.object({
       const now = new Date();
       return !isNaN(date.getTime()) && date <= now;
     }, 'La fecha de nacimiento no puede ser futura.'),
+  address_line: z
+    .string()
+    .trim()
+    .max(250, 'La dirección no puede exceder 250 caracteres.')
+    .optional(),
   medical_conditions: z
     .string()
     .trim()
@@ -59,3 +64,17 @@ export const patientRegistrationSchema = z.object({
 });
 
 export type PatientRegistrationFormData = z.infer<typeof patientRegistrationSchema>;
+
+export const emptyPatientFormValues: PatientRegistrationFormData = {
+  full_name: '',
+  email: '',
+  phone: '',
+  rut_or_dni: '',
+  gender: 'male',
+  birth_date: '',
+  address_line: '',
+  medical_conditions: '',
+  allergies: '',
+  emergency_contact_name: '',
+  emergency_contact_phone: '',
+};

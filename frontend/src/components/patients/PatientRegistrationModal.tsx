@@ -2,93 +2,126 @@ import React, { useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
+  emptyPatientFormValues,
   patientRegistrationSchema,
   PatientRegistrationFormData,
 } from '../../schemas/patientSchema';
 import { PhoneInputWithCountry } from '../common/PhoneInputWithCountry';
 import { useI18n } from '../../app/providers/I18nProvider';
+import type { PacienteClinico, User } from '../../types';
+
+export type PatientFormSource = User | PacienteClinico | null;
 
 interface PatientRegistrationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmitPatient: (data: PatientRegistrationFormData) => Promise<void>;
   tenantId: string;
+  /** create = alta; edit = actualización con campos precargados */
+  mode?: 'create' | 'edit';
+  /** Paciente a editar (User de listado o PacienteClinico) */
+  initialPatient?: PatientFormSource;
+}
+
+function toFormValues(patient?: PatientFormSource): PatientRegistrationFormData {
+  if (!patient) return { ...emptyPatientFormValues };
+
+  if ('first_name' in patient) {
+    const p = patient as PacienteClinico;
+    const gender =
+      p.gender === 'female' || p.gender === 'male' || p.gender === 'other' ? p.gender : 'other';
+    return {
+      full_name: `${p.first_name || ''} ${p.last_name || ''}`.trim(),
+      email: p.telecom_email || '',
+      phone: p.telecom_phone || '',
+      rut_or_dni: p.identifier_number || '',
+      gender,
+      birth_date: p.birth_date ? String(p.birth_date).slice(0, 10) : '',
+      address_line: p.address_line || '',
+      medical_conditions: p.chronic_conditions?.[0] || '',
+      allergies: p.known_allergies?.[0] || '',
+      emergency_contact_name: p.emergency_contact?.name || '',
+      emergency_contact_phone: p.emergency_contact?.phone || '',
+    };
+  }
+
+  const u = patient as User;
+  const gender =
+    u.gender === 'female' || u.gender === 'male' || u.gender === 'other' ? u.gender : 'male';
+  return {
+    full_name: u.full_name || '',
+    email: u.email || '',
+    phone: u.phone || '',
+    rut_or_dni: u.rut_or_dni || '',
+    gender,
+    birth_date: u.birth_date ? String(u.birth_date).slice(0, 10) : '',
+    address_line: (u as User & { address_line?: string }).address_line || '',
+    medical_conditions: u.medical_conditions?.[0] || '',
+    allergies: u.allergies?.[0] || '',
+    emergency_contact_name: u.emergency_contact?.name || '',
+    emergency_contact_phone: u.emergency_contact?.phone || '',
+  };
 }
 
 export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> = ({
   isOpen,
   onClose,
   onSubmitPatient,
+  mode = 'create',
+  initialPatient = null,
 }) => {
   const { t } = useI18n();
+  const isEdit = mode === 'edit';
 
   const {
     register,
     handleSubmit,
     control,
     reset,
-    formState: { errors, isSubmitting, isDirty },
+    formState: { errors, isSubmitting },
   } = useForm<PatientRegistrationFormData>({
     resolver: zodResolver(patientRegistrationSchema),
-    defaultValues: {
-      full_name: '',
-      email: '',
-      phone: '',
-      rut_or_dni: '',
-      gender: 'male',
-      birth_date: '',
-      medical_conditions: '',
-      allergies: '',
-      emergency_contact_name: '',
-      emergency_contact_phone: '',
-    },
+    defaultValues: emptyPatientFormValues,
     mode: 'onBlur',
   });
 
   useEffect(() => {
-    if (isOpen) {
-      reset({
-        full_name: '',
-        email: '',
-        phone: '',
-        rut_or_dni: '',
-        gender: 'male',
-        birth_date: '',
-        medical_conditions: '',
-        allergies: '',
-        emergency_contact_name: '',
-        emergency_contact_phone: '',
-      });
-    }
-  }, [isOpen, reset]);
+    if (!isOpen) return;
+    reset(isEdit ? toFormValues(initialPatient) : { ...emptyPatientFormValues });
+  }, [isOpen, isEdit, initialPatient, reset]);
 
   if (!isOpen) return null;
 
   const onFormSubmit = async (data: PatientRegistrationFormData) => {
     try {
       await onSubmitPatient(data);
-      reset();
+      reset({ ...emptyPatientFormValues });
       onClose();
     } catch (err) {
-      console.error('Error submitting patient registration form:', err);
+      console.error('Error submitting patient form:', err);
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-surface-container-lowest w-full max-w-xl rounded-3xl border border-outline-variant/40 shadow-2xl p-6 space-y-5 animate-scaleUp max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-outline-variant/30">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center font-bold">
-              <span className="material-symbols-outlined text-2xl">person_add</span>
+              <span className="material-symbols-outlined text-2xl">
+                {isEdit ? 'edit' : 'person_add'}
+              </span>
             </div>
             <div>
               <h3 className="text-base font-black text-on-surface">
-                {t('patients.add_patient', 'Registrar Nuevo Paciente')}
+                {isEdit
+                  ? t('patients.edit_patient', 'Editar Paciente')
+                  : t('patients.add_patient', 'Registrar Nuevo Paciente')}
               </h3>
               <p className="text-xs text-on-surface-variant">
-                Validación estricta de expediente clínico con React Hook Form & Zod
+                {isEdit
+                  ? 'Actualiza los datos demográficos y de contacto del expediente'
+                  : 'Validación estricta de expediente clínico con React Hook Form & Zod'}
               </p>
             </div>
           </div>
@@ -102,9 +135,7 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
           </button>
         </div>
 
-        {/* Validation Form */}
         <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4 text-xs" noValidate>
-          {/* Nombre Completo */}
           <div>
             <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
               Nombre Completo *
@@ -134,9 +165,7 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
             )}
           </div>
 
-          {/* Email & Phone Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Email */}
             <div>
               <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
                 Correo Electrónico *
@@ -166,7 +195,6 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
               )}
             </div>
 
-            {/* Teléfono */}
             <div>
               <Controller
                 name="phone"
@@ -190,7 +218,6 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
             </div>
           </div>
 
-          {/* RUT / DNI & Género */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
@@ -248,7 +275,6 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
             </div>
           </div>
 
-          {/* Fecha de Nacimiento & Diagnóstico Inicial */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
@@ -286,7 +312,30 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
             </div>
           </div>
 
-          {/* Alergias / Observaciones Clínicas */}
+          <div>
+            <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
+              Dirección
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-2.5 text-on-surface-variant material-symbols-outlined text-base">
+                home
+              </span>
+              <input
+                type="text"
+                {...register('address_line')}
+                placeholder="Calle, número, comuna / ciudad"
+                disabled={isSubmitting}
+                className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl pl-9 pr-3 py-2 text-xs font-semibold text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary/40"
+              />
+            </div>
+            {errors.address_line && (
+              <p className="text-[11px] font-bold text-error mt-1 flex items-center gap-1">
+                <span className="material-symbols-outlined text-xs">error</span>
+                <span>{errors.address_line.message}</span>
+              </p>
+            )}
+          </div>
+
           <div>
             <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
               Alergias o Restricciones Clínicas
@@ -300,7 +349,33 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
             />
           </div>
 
-          {/* Footer Actions with clear Loading State */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
+                Contacto de emergencia
+              </label>
+              <input
+                type="text"
+                {...register('emergency_contact_name')}
+                placeholder="Nombre"
+                disabled={isSubmitting}
+                className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-2 text-xs font-semibold text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary/40"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
+                Teléfono de emergencia
+              </label>
+              <input
+                type="text"
+                {...register('emergency_contact_phone')}
+                placeholder="+57 300..."
+                disabled={isSubmitting}
+                className="w-full bg-surface-container-low border border-outline-variant/40 rounded-xl p-2 text-xs font-semibold text-on-surface outline-none focus:border-primary focus:ring-1 focus:ring-primary/40"
+              />
+            </div>
+          </div>
+
           <div className="pt-3 border-t border-outline-variant/20 flex items-center justify-end gap-3">
             <button
               type="button"
@@ -318,12 +393,22 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
               {isSubmitting ? (
                 <>
                   <span className="material-symbols-outlined animate-spin text-base">sync</span>
-                  <span>{t('patients.saving', 'Registrando Paciente...')}</span>
+                  <span>
+                    {isEdit
+                      ? t('patients.updating', 'Guardando cambios...')
+                      : t('patients.saving', 'Registrando Paciente...')}
+                  </span>
                 </>
               ) : (
                 <>
-                  <span className="material-symbols-outlined text-base">person_add</span>
-                  <span>{t('patients.add_patient', 'Registrar Paciente')}</span>
+                  <span className="material-symbols-outlined text-base">
+                    {isEdit ? 'save' : 'person_add'}
+                  </span>
+                  <span>
+                    {isEdit
+                      ? t('patients.save_changes', 'Guardar cambios')
+                      : t('patients.add_patient', 'Registrar Paciente')}
+                  </span>
                 </>
               )}
             </button>

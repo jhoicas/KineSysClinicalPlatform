@@ -179,6 +179,37 @@ export async function createPatient(
   return assertSupabaseOk({ data, error }) as PacienteClinico;
 }
 
+/**
+ * Actualiza un paciente en `pacientes_clinicos` (columnas fijas + JSONB allergies/conditions/emergency).
+ */
+export async function updatePatient(
+  id: string,
+  updatedData: Partial<PacienteClinico>
+): Promise<PacienteClinico> {
+  const {
+    id: _omitId,
+    tenant_id: _omitTenant,
+    created_at: _omitCreated,
+    ...patch
+  } = updatedData;
+
+  const { data, error } = await supabase
+    .from('pacientes_clinicos')
+    .update({
+      ...patch,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Supabase Error:', error);
+    throw error;
+  }
+  return data as PacienteClinico;
+}
+
 // ─── CRUD Citas ────────────────────────────────────────────────────────────────
 
 export async function getAppointments(

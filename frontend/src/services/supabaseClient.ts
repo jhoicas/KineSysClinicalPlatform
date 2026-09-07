@@ -44,6 +44,7 @@ export {
   CLINIC_STAFF_ROLES,
   getPatients,
   createPatient,
+  updatePatient,
   getAppointments,
   createAppointment,
   updateAppointment,

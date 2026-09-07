@@ -1,6 +1,6 @@
 import React from 'react';
 import type { PainObservation } from '../../types';
-import { getSegmentsForSide } from '../pain-map/anatomicalData';
+import { BODY_SILHOUETTES, getSegmentsForSide } from '../pain-map/anatomicalData';
 import { SVG_VIEWBOX_WIDTH, SVG_VIEWBOX_HEIGHT } from '../pain-map/usePainCanvasEngine';
 import { groupPainBySide, painLevelHex } from '../../utils/painMapCapture';
 
@@ -8,12 +8,6 @@ interface PainMapPdfSnapshotProps {
   observations: PainObservation[];
   captureId?: string;
 }
-
-const FRONT_SILHOUETTE =
-  'M 200,20 C 235,20 235,65 220,95 L 230,120 C 255,120 275,135 275,160 C 275,210 260,250 280,265 C 310,325 310,360 295,385 C 285,370 280,330 260,250 L 245,170 C 245,260 240,290 240,330 C 255,420 255,540 260,650 C 275,680 230,705 230,650 L 220,490 C 215,440 205,350 200,345 C 195,350 185,440 180,490 L 170,650 C 170,705 125,680 140,650 C 145,540 145,420 160,330 C 160,290 155,260 155,170 L 140,250 C 120,330 115,370 105,385 C 90,360 90,325 120,265 C 140,250 125,210 125,160 C 125,135 145,120 170,120 L 180,95 C 165,65 165,20 200,20 Z';
-
-const BACK_SILHOUETTE =
-  'M 200,20 C 235,20 235,65 215,85 L 265,135 C 275,155 270,185 260,195 L 280,265 C 310,325 310,360 295,385 C 285,370 280,330 260,250 L 240,165 C 240,260 245,330 245,335 C 255,420 255,540 260,640 C 270,685 230,700 230,640 L 220,495 C 215,440 205,350 200,350 C 195,350 185,440 180,495 L 170,640 C 170,700 130,685 140,640 C 145,540 145,420 155,335 C 155,330 160,260 160,165 L 140,250 C 120,330 115,370 105,385 C 90,360 90,325 120,265 L 140,195 C 130,185 125,155 135,135 L 185,85 C 165,65 165,20 200,20 Z';
 
 function AnatomicalSideView({
   side,
@@ -23,7 +17,7 @@ function AnatomicalSideView({
   points: PainObservation[];
 }) {
   const segments = getSegmentsForSide(side);
-  const silhouette = side === 'front' ? FRONT_SILHOUETTE : BACK_SILHOUETTE;
+  const silhouette = BODY_SILHOUETTES[side];
 
   return (
     <div className="flex flex-col items-center" style={{ width: 280 }}>
@@ -100,37 +94,24 @@ function AnatomicalSideView({
             </g>
           )}
 
-          {/* Marcadores EVA "n/10" — círculos cromáticos (fiables con html2canvas) */}
-          {points.map((obs) => {
-            const cx = (Math.min(95, Math.max(5, obs.coordinates_x)) / 100) * SVG_VIEWBOX_WIDTH;
-            const cy = (Math.min(95, Math.max(5, obs.coordinates_y)) / 100) * SVG_VIEWBOX_HEIGHT;
-            const fill = painLevelHex(obs.pain_level);
-            return (
-              <g key={obs.id}>
-                <circle cx={cx} cy={cy} r="20" fill={fill} opacity="0.22" />
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r="15"
-                  fill={fill}
-                  stroke="#ffffff"
-                  strokeWidth="2.5"
-                />
-                <text
-                  x={cx}
-                  y={cy + 1}
-                  textAnchor="middle"
-                  fill="#ffffff"
-                  fontSize="9"
-                  fontWeight="800"
-                  fontFamily="Segoe UI, Roboto, Helvetica, Arial, sans-serif"
-                >
-                  {obs.pain_level}/10
-                </text>
-              </g>
-            );
-          })}
         </svg>
+        {points.map((obs) => {
+          const fill = painLevelHex(obs.pain_level);
+          return (
+            <div
+              key={obs.id}
+              style={{
+                left: `${obs.coordinates_x}%`,
+                top: `${obs.coordinates_y}%`,
+                background: fill,
+                boxShadow: `0 0 10px ${fill}`,
+              }}
+              className="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white font-black text-[10px] text-white"
+            >
+              {obs.pain_level}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

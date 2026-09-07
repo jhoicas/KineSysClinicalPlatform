@@ -171,13 +171,13 @@ function danielsOrKg(value: number | null | undefined): { label: string; daniels
 }
 
 /**
- * Captura HD del mapa de dolor (settle 450ms + html2canvas).
+ * Captura HD del mapa de dolor (settle 600ms + html2canvas).
  */
 export async function capturePainMapForPdf(element: HTMLElement): Promise<string> {
   return captureElementToPngBase64(element, {
-    scale: 2.5,
+    scale: 2,
     backgroundColor: '#ffffff',
-    settleMs: 450,
+    settleMs: 600,
   });
 }
 
@@ -456,7 +456,7 @@ export function generateKinesiologyPdf(options: GenerateKinesiologyPdfOptions): 
   sectionTitle(2, 'Mapa Anatómico 2D de Dolor (Lienzo Vectorial SVG)');
 
   if (painMapImageBase64) {
-    const imgH = 112;
+    const imgH = 100;
     ensureSpace(imgH + 8);
     try {
       doc.addImage(painMapImageBase64, 'PNG', margin, y, contentWidth, imgH);
@@ -466,8 +466,6 @@ export function generateKinesiologyPdf(options: GenerateKinesiologyPdfOptions): 
     }
   } else if (painObservations.length === 0) {
     paragraph('Sin observaciones de dolor registradas en el mapa corporal.');
-  } else {
-    paragraph('Captura gráfica pendiente. Se detallan hallazgos en la tabla inferior.');
   }
 
   // Leyenda EVA

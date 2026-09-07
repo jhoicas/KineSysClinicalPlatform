@@ -16,7 +16,7 @@ export async function captureElementToPngBase64(
   element: HTMLElement,
   options?: CapturePngOptions,
 ): Promise<string> {
-  const settleMs = options?.settleMs ?? 450;
+  const settleMs = options?.settleMs ?? 600;
   if (settleMs > 0) {
     await new Promise((r) => setTimeout(r, settleMs));
   }
@@ -35,7 +35,7 @@ export async function captureElementToPngBase64(
   element.style.top = '0';
   element.style.opacity = '1';
   element.style.pointerEvents = 'none';
-  element.style.zIndex = '-1';
+  element.style.zIndex = '2147483647';
 
   try {
     const canvas = await html2canvas(element, {
@@ -74,7 +74,8 @@ export async function captureElementToPngBase64(
 
 /** Color clínico por intensidad EVA (1–10): Verde 1–3, Ámbar/Naranja 4–6, Rojo 7–10. */
 export function painLevelHex(level: number): string {
-  if (level <= 3) return '#22c55e';
+  if (level <= 3) return '#10b981';
+  if (level <= 5) return '#f59e0b';
   if (level <= 6) return '#f97316';
   return '#ef4444';
 }

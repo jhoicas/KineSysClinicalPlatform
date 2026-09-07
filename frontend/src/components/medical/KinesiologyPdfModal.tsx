@@ -4,13 +4,17 @@ import type {
   KinesiologyEvaluation,
   PacienteClinico,
   PainObservation,
+  PostureAssessment,
 } from '../../types';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { supabase } from '../../services/supabaseClient';
 import { PdfViewer } from '../common/PdfViewer';
 import { PainMapPdfSnapshot } from './PainMapPdfSnapshot';
+import { PosturePdfSnapshot } from './PosturePdfSnapshot';
+import { createEmptyPosture } from '../../data/kinesiologyCatalog';
 import {
   capturePainMapForPdf,
+  capturePostureForPdf,
   downloadKinesiologyPdf,
   getKinesiologyPdfBase64,
   getKinesiologyPdfBlob,
@@ -39,10 +43,12 @@ export const KinesiologyPdfModal: React.FC<KinesiologyPdfModalProps> = ({
   onToast,
 }) => {
   const { user, tenant } = useAuth();
-  const captureRef = useRef<HTMLDivElement>(null);
+  const painCaptureRef = useRef<HTMLDivElement>(null);
+  const postureCaptureRef = useRef<HTMLDivElement>(null);
 
   const [painObservations, setPainObservations] = useState<PainObservation[]>(painProp || []);
   const [painMapImageBase64, setPainMapImageBase64] = useState<string | null>(null);
+  const [postureImageBase64, setPostureImageBase64] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [isEmailOpen, setIsEmailOpen] = useState(false);
   const [recipientEmail, setRecipientEmail] = useState(patient.telecom_email || '');
@@ -68,6 +74,9 @@ export const KinesiologyPdfModal: React.FC<KinesiologyPdfModalProps> = ({
     [tenant, professionalName],
   );
 
+  const postureForCapture: PostureAssessment =
+    (evaluation?.postura as PostureAssessment | undefined) || createEmptyPosture();
+
   const pdfOptions: GenerateKinesiologyPdfOptions = useMemo(
     () => ({
       patient,
@@ -75,10 +84,19 @@ export const KinesiologyPdfModal: React.FC<KinesiologyPdfModalProps> = ({
       evaluation,
       painObservations,
       painMapImageBase64,
+      postureImageBase64,
       ...clinicOptions,
       evaluationDate: evaluation?.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
     }),
-    [patient, historia, evaluation, painObservations, painMapImageBase64, clinicOptions],
+    [
+      patient,
+      historia,
+      evaluation,
+      painObservations,
+      painMapImageBase64,
+      postureImageBase64,
+      clinicOptions,
+    ],
   );
 
   // Sync external pain list or fetch from Supabase
@@ -112,25 +130,38 @@ export const KinesiologyPdfModal: React.FC<KinesiologyPdfModalProps> = ({
     };
   }, [isOpen, patient.id, patient.telecom_email, painProp]);
 
-  // Captura html2canvas del lienzo del mapa
+  // Captura HD: mapa anatómico + postura (html2canvas, settle 400ms dentro del helper)
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
 
     const run = async () => {
-      // Esperar paint del snapshot
-      await new Promise((r) => setTimeout(r, 120));
-      if (cancelled || !captureRef.current) return;
+      // Primer paint del DOM (SVG anatómico + visualizador postural)
+      await new Promise((r) => setTimeout(r, 450));
+      if (cancelled) return;
       setCapturing(true);
       try {
-        const b64 = await capturePainMapForPdf(captureRef.current);
+        let painB64: string | null = null;
+        let postureB64: string | null = null;
+
+        if (painCaptureRef.current) {
+          painB64 = await capturePainMapForPdf(painCaptureRef.current);
+        }
+        if (postureCaptureRef.current) {
+          postureB64 = await capturePostureForPdf(postureCaptureRef.current);
+        }
+
         if (!cancelled) {
-          setPainMapImageBase64(b64);
+          setPainMapImageBase64(painB64);
+          setPostureImageBase64(postureB64);
           setPreviewKey((k) => k + 1);
         }
       } catch (err) {
-        console.error('Error capturando mapa de dolor:', err);
-        if (!cancelled) setPainMapImageBase64(null);
+        console.error('Error capturando gráficos PDF:', err);
+        if (!cancelled) {
+          setPainMapImageBase64(null);
+          setPostureImageBase64(null);
+        }
       } finally {
         if (!cancelled) setCapturing(false);
       }
@@ -140,7 +171,7 @@ export const KinesiologyPdfModal: React.FC<KinesiologyPdfModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, painObservations]);
+  }, [isOpen, painObservations, evaluation?.postura]);
 
   const handleDownload = useCallback(async () => {
     try {
@@ -220,13 +251,20 @@ export const KinesiologyPdfModal: React.FC<KinesiologyPdfModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-      {/* Off-screen capture target for html2canvas */}
+      {/* Targets de captura: el helper los mueve a fixed 0,0 durante html2canvas */}
       <div
         aria-hidden
         className="fixed pointer-events-none"
-        style={{ left: -9999, top: 0, opacity: 1 }}
+        style={{ left: -10000, top: 0, width: 640, opacity: 1 }}
       >
-        <PainMapPdfSnapshot ref={captureRef} observations={painObservations} />
+        <PainMapPdfSnapshot ref={painCaptureRef} observations={painObservations} />
+      </div>
+      <div
+        aria-hidden
+        className="fixed pointer-events-none"
+        style={{ left: -10000, top: 520, width: 740, opacity: 1 }}
+      >
+        <PosturePdfSnapshot ref={postureCaptureRef} posture={postureForCapture} />
       </div>
 
       <div className="bg-surface-container-lowest w-full max-w-5xl rounded-3xl border border-outline-variant/40 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
@@ -241,7 +279,7 @@ export const KinesiologyPdfModal: React.FC<KinesiologyPdfModalProps> = ({
               </h3>
               <p className="text-xs text-on-surface-variant">
                 {patient.first_name} {patient.last_name} · Historia · Mapa de dolor · Valoración
-                {capturing ? ' · Capturando mapa…' : ''}
+                {capturing ? ' · Capturando gráficas anatómicas…' : ''}
               </p>
             </div>
           </div>

@@ -30,11 +30,11 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
     const {
-      data: { user: callerUser },
+      data: { user },
       error: callerError,
     } = await caller.auth.getUser();
 
-    if (callerError || !callerUser) {
+    if (callerError || !user) {
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
@@ -43,16 +43,11 @@ Deno.serve(async (req) => {
     });
 
     const { data: callerRecord, error: callerRecordError } = await supabaseAdmin
-      .schema('kinesys')
-      .from('users')
-      .select('tenant_id, role, is_active')
-      .eq('id', callerUser.id)
-      .maybeSingle();
+      .schema('kinesys').from('users').select('role, tenant_id').eq('id', user.id).single();
 
     if (
       callerRecordError ||
       !callerRecord ||
-      !callerRecord.is_active ||
       !['clinic_admin', 'super_admin', 'superadmin'].includes(String(callerRecord.role).toLowerCase())
     ) {
       return jsonResponse({ error: 'Forbidden' }, 403);

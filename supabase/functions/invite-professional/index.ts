@@ -12,9 +12,13 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Method not allowed' }, 405);
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+
+    if (!supabaseUrl || !serviceRoleKey || !anonKey) {
+      return jsonResponse({ error: 'Configuración de Supabase incompleta' }, 500);
+    }
 
     // Validar JWT del invocador (verify_jwt=false en config para no romper OPTIONS)
     const authHeader = req.headers.get('Authorization');
@@ -34,7 +38,25 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
-    const admin = createClient(supabaseUrl, serviceRoleKey);
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: callerRecord, error: callerRecordError } = await supabaseAdmin
+      .schema('kinesys')
+      .from('users')
+      .select('tenant_id, role, is_active')
+      .eq('id', callerUser.id)
+      .maybeSingle();
+
+    if (
+      callerRecordError ||
+      !callerRecord ||
+      !callerRecord.is_active ||
+      !['clinic_admin', 'super_admin', 'superadmin'].includes(String(callerRecord.role).toLowerCase())
+    ) {
+      return jsonResponse({ error: 'Forbidden' }, 403);
+    }
 
     const body = await req.json();
     const {
@@ -55,9 +77,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    const callerRole = String(callerRecord.role).toLowerCase();
+    if (callerRole === 'clinic_admin' && callerRecord.tenant_id !== tenant_id) {
+      return jsonResponse({ error: 'No autorizado para este tenant' }, 403);
+    }
+
     const normalizedEmail = String(email).trim().toLowerCase();
 
-    const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
+    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
       normalizedEmail,
       {
         data: { full_name, role, tenant_id },
@@ -73,11 +100,11 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'No se obtuvo ID del usuario invitado' }, 500);
     }
 
-    const db = admin.schema('kinesys');
+    const db = supabaseAdmin.schema('kinesys');
 
     const { data: userRow, error: userError } = await db
       .from('users')
-      .insert([
+      .upsert([
         {
           id: userId,
           tenant_id,
@@ -89,7 +116,7 @@ Deno.serve(async (req) => {
           specialty,
           is_active: true,
         },
-      ])
+      ], { onConflict: 'id' })
       .select()
       .single();
 
@@ -97,18 +124,29 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: userError.message }, 400);
     }
 
-    await db.from('profiles').insert([
-      { id: userId, tenant_id, email: normalizedEmail, full_name, role, is_active: true },
-    ]);
+    const { error: profileError } = await db.from('profiles').upsert(
+      [{ id: userId, tenant_id, email: normalizedEmail, full_name, role, is_active: true }],
+      { onConflict: 'id' },
+    );
+    if (profileError) {
+      return jsonResponse({ error: profileError.message }, 400);
+    }
 
-    await db.from('professional_profiles').insert([
-      { user_id: userId, tenant_id, bio: '' },
-    ]);
+    const { error: professionalProfileError } = await db.from('professional_profiles').upsert(
+      [{ user_id: userId, tenant_id, bio: '' }],
+      { onConflict: 'user_id' },
+    );
+    if (professionalProfileError) {
+      return jsonResponse({ error: professionalProfileError.message }, 400);
+    }
 
     if (invited_by) {
-      await db.from('team_invitations').insert([
+      const { error: invitationError } = await db.from('team_invitations').insert([
         { tenant_id, email: normalizedEmail, role, status: 'pending', invited_by },
       ]);
+      if (invitationError) {
+        return jsonResponse({ error: invitationError.message }, 400);
+      }
     }
 
     return jsonResponse(

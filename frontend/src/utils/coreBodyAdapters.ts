@@ -162,13 +162,7 @@ export function coreBodyPlanToKinesys(
       total_sodium: 0,
     })),
     clinical_restrictions: [],
-    notes_and_recommendations: [
-      plan.generalIndications,
-      `Canasta diaria $${plan.dailyBasketEstimatedCostCOP.toLocaleString('es-CO')} COP`,
-      `Mensual $${plan.monthlyBasketEstimatedCostCOP.toLocaleString('es-CO')} COP`,
-    ]
-      .filter(Boolean)
-      .join(' · '),
+    notes_and_recommendations: plan.generalIndications || '',
     hydration_target_liters: plan.hydrationDailyLiters,
     created_at: new Date().toISOString(),
   };

@@ -10,7 +10,6 @@ import { FoodSearchCombobox } from './FoodSearchCombobox';
 import { scaleNutrientPer100g, roundNutrient } from '../../utils/nutritionCalculations';
 import {
   Apple,
-  DollarSign,
   Plus,
   Trash2,
   Save,
@@ -18,7 +17,6 @@ import {
   Clock,
   Flame,
   PieChart,
-  ShoppingBag,
   Utensils,
 } from 'lucide-react';
 
@@ -83,8 +81,6 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
   const totalProteinG = Number(allEntries.reduce((acc, curr) => acc + curr.proteinG, 0).toFixed(1));
   const totalLipidsG = Number(allEntries.reduce((acc, curr) => acc + curr.lipidsG, 0).toFixed(1));
   const totalCarbsG = Number(allEntries.reduce((acc, curr) => acc + curr.carbsTotalG, 0).toFixed(1));
-  const totalCostDailyCOP = allEntries.reduce((acc, curr) => acc + curr.estimatedCostCOP, 0);
-  const totalCostMonthlyCOP = totalCostDailyCOP * 30;
 
   const proteinPerKg = useMemo(() => {
     const w = patient.weightKg;
@@ -92,7 +88,7 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
     return Number((totalProteinG / w).toFixed(1));
   }, [patient.weightKg, totalProteinG]);
 
-  /** Catálogo real kinesys.food_catalog (valores por 100 g). Sin precio en schema → costeo 0. */
+  /** Catálogo real kinesys.food_catalog (valores por 100 g). */
   const handleAddFoodFromCatalog = (food: FoodItem, grams: number) => {
     const factor = grams / 100;
     const newEntry: MealFoodEntry = {
@@ -133,12 +129,11 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
   };
 
   const handleSavePlan = () => {
-    const updatedPlan: NutritionPlan = {
+    onSave({
       ...currentPlan,
-      dailyBasketEstimatedCostCOP: totalCostDailyCOP,
-      monthlyBasketEstimatedCostCOP: totalCostMonthlyCOP,
-    };
-    onSave(updatedPlan);
+      dailyBasketEstimatedCostCOP: 0,
+      monthlyBasketEstimatedCostCOP: 0,
+    });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
@@ -188,7 +183,7 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
           </div>
         </div>
 
-        <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+        <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
             <span className="text-2xs text-slate-400 block font-semibold uppercase tracking-wider flex items-center gap-1">
               <Flame className="w-3 h-3" /> Calorías
@@ -223,22 +218,6 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
             </span>
             <span className="text-lg font-black text-orange-900 mt-0.5 block">{totalLipidsG || '—'}g</span>
           </div>
-          <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg p-3">
-            <span className="text-2xs text-emerald-800 block font-semibold uppercase tracking-wider flex items-center gap-1">
-              <DollarSign className="w-3 h-3" /> Canasta / día
-            </span>
-            <span className="text-lg font-black text-emerald-900 mt-0.5 block">
-              ${totalCostDailyCOP.toLocaleString('es-CO')}
-            </span>
-          </div>
-          <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg p-3">
-            <span className="text-2xs text-emerald-800 block font-semibold uppercase tracking-wider flex items-center gap-1">
-              <ShoppingBag className="w-3 h-3" /> Mensual
-            </span>
-            <span className="text-lg font-black text-emerald-900 mt-0.5 block">
-              ${totalCostMonthlyCOP.toLocaleString('es-CO')}
-            </span>
-          </div>
         </div>
       </div>
 
@@ -246,7 +225,6 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
         {currentPlan.meals.map((meal) => {
           const mealKcal = meal.entries.reduce((s, e) => s + e.caloriesKcal, 0);
           const mealProt = meal.entries.reduce((s, e) => s + e.proteinG, 0);
-          const mealCost = meal.entries.reduce((s, e) => s + e.estimatedCostCOP, 0);
           return (
             <div
               key={meal.mealTime}
@@ -263,7 +241,6 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
                 <div className="flex items-center gap-3 text-2xs font-semibold text-slate-600">
                   <span>{mealKcal} kcal</span>
                   <span>P {mealProt.toFixed(1)}g</span>
-                  <span className="text-emerald-700">${mealCost.toLocaleString('es-CO')}</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -319,8 +296,8 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
 
       {showAddFoodModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full shadow-2xl overflow-hidden">
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full shadow-2xl overflow-visible min-h-[420px] flex flex-col">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 rounded-t-2xl shrink-0">
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">
                   Añadir a: <span className="text-emerald-700">{selectedMealForAdd}</span>
@@ -337,7 +314,7 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
                 ✕
               </button>
             </div>
-            <div className="p-4">
+            <div className="p-4 overflow-visible flex-1">
               <label className="block text-2xs font-bold text-slate-500 mb-2 uppercase">
                 Tiempo de comida
               </label>

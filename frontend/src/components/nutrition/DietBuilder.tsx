@@ -17,8 +17,6 @@ export interface DietBuilderFoodRef {
   protein_g: number | null;
   lipids_g: number | null;
   carbs_total_g: number | null;
-  purchase_unit?: number | string | null;
-  purchase_price?: number | null;
 }
 
 export interface DietMealSlot {
@@ -48,27 +46,8 @@ const DEFAULT_MEALS: DietMealSlot[] = [
 ];
 
 function scale(portionG: number, per100: number | null | undefined): number {
-  if (per100 == null || !Number.isFinite(per100) || portionG <= 0) return 0;
+  if (per100 == null || !Number.isFinite(per100) || !Number.isFinite(portionG) || portionG <= 0) return 0;
   return (portionG / 100) * per100;
-}
-
-function parsePurchaseUnit(raw: number | string | null | undefined): number | null {
-  if (raw == null || raw === '') return null;
-  if (typeof raw === 'number') return Number.isFinite(raw) && raw > 0 ? raw : null;
-  const m = String(raw).replace(',', '.').match(/-?\d+(\.\d+)?/);
-  if (!m) return null;
-  const n = Number(m[0]);
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-function itemCost(item: DietBuilderFoodRef): number | null {
-  const unit = parsePurchaseUnit(item.purchase_unit);
-  const price =
-    item.purchase_price == null || !Number.isFinite(Number(item.purchase_price))
-      ? null
-      : Number(item.purchase_price);
-  if (unit == null || price == null || price < 0) return null;
-  return (item.portion_g / unit) * price;
 }
 
 function foodToRef(food: FoodItem, grams: number): DietBuilderFoodRef {
@@ -80,8 +59,6 @@ function foodToRef(food: FoodItem, grams: number): DietBuilderFoodRef {
     protein_g: food.protein_g,
     lipids_g: food.lipids_g,
     carbs_total_g: food.carbs_total_g,
-    purchase_unit: (food as FoodItem & { purchase_unit?: number | string | null }).purchase_unit ?? null,
-    purchase_price: (food as FoodItem & { purchase_price?: number | null }).purchase_price ?? null,
   };
 }
 
@@ -189,20 +166,15 @@ export const DietBuilder: React.FC<DietBuilderProps> = ({
     let protein = 0;
     let carbs = 0;
     let lipids = 0;
-    let cost = 0;
-    let costMissing = 0;
     for (const meal of meals) {
       for (const it of meal.items) {
         kcal += scale(it.portion_g, it.energy_kcal);
         protein += scale(it.portion_g, it.protein_g);
         carbs += scale(it.portion_g, it.carbs_total_g);
         lipids += scale(it.portion_g, it.lipids_g);
-        const c = itemCost(it);
-        if (c == null) costMissing += 1;
-        else cost += c;
       }
     }
-    return { kcal, protein, carbs, lipids, cost, costMissing };
+    return { kcal, protein, carbs, lipids };
   }, [meals]);
 
   const kcalPct = targetKcal > 0 ? Math.min(100, (totals.kcal / targetKcal) * 100) : 0;
@@ -373,27 +345,8 @@ export const DietBuilder: React.FC<DietBuilderProps> = ({
           <MacroBar label="Lípidos" current={totals.lipids} target={targetLipidsG} colorClass="bg-violet-500" />
         </div>
 
-        {/* Costo estrella */}
-        <div className="rounded-2xl border border-primary/25 bg-primary/5 px-4 py-4">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-xl">payments</span>
-            <p className="text-[11px] font-bold uppercase tracking-wide text-primary">Costo total estimado</p>
-          </div>
-          <p className="mt-2 text-2xl font-black tabular-nums text-on-surface">
-            ${totals.cost.toLocaleString('es-CO', { maximumFractionDigits: 0 })}
-          </p>
-          <p className="text-[11px] text-on-surface-variant mt-1">
-            Basado en precio TCA / unidad de compra
-            {totals.costMissing > 0
-              ? ` · ${totals.costMissing} ítem(s) sin precio`
-              : ' · cobertura completa'}
-          </p>
-        </div>
-
         <p className="text-[10px] leading-relaxed text-on-surface-variant">
-          Los totales se recalculan al cambiar gramos. Listo para persistir en{' '}
-          <code className="text-[10px]">diet_plans.total_kcal</code> /{' '}
-          <code className="text-[10px]">total_cost</code>.
+          Los totales se recalculan al cambiar gramos (calorías y macronutrientes).
         </p>
       </aside>
     </div>

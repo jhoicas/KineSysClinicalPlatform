@@ -1,4 +1,5 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { searchFoodCatalog } from '../../services/dataService';
 import { FoodItem } from '../../types';
 
@@ -9,6 +10,28 @@ export interface FoodSearchComboboxProps {
   defaultGrams?: number;
 }
 
+function formatNutrient(value: number | null | undefined, digits = 1): string {
+  if (value == null || !Number.isFinite(value)) return '—';
+  return Number(value).toLocaleString('es-CO', {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: 0,
+  });
+}
+
+function categoryLabel(food: FoodItem): string {
+  const id = (food.id || '').toLowerCase();
+  const name = (food.name || '').toLowerCase();
+  if (/pollo|carne|pescado|huevo|lenteja|frijol|garbanzo|res|cerdo/.test(name + id)) {
+    return 'Proteína';
+  }
+  if (/arroz|arepa|pan|avena|papa|pasta|maíz|maiz/.test(name + id)) return 'Cereal';
+  if (/leche|yogurt|yogur|queso/.test(name + id)) return 'Lácteo';
+  if (/aceite|aguacate|nuez|almendra/.test(name + id)) return 'Grasa';
+  if (/manzana|banano|naranja|fruta|plátano|platano/.test(name + id)) return 'Fruta';
+  if (/verdura|brócoli|brocoli|espinaca|lechuga|zanahoria/.test(name + id)) return 'Verdura';
+  return 'TCA 2018';
+}
+
 export const FoodSearchCombobox: React.FC<FoodSearchComboboxProps> = ({
   onAddFood,
   placeholder = 'Buscar alimento en la TCA (ej. lenteja, pollo, plátano)...',
@@ -17,6 +40,8 @@ export const FoodSearchCombobox: React.FC<FoodSearchComboboxProps> = ({
 }) => {
   const inputId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputWrapRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [query, setQuery] = useState('');
@@ -26,6 +51,42 @@ export const FoodSearchCombobox: React.FC<FoodSearchComboboxProps> = ({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [selected, setSelected] = useState<FoodItem | null>(null);
   const [grams, setGrams] = useState(String(defaultGrams));
+  const [menuBox, setMenuBox] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+
+  const updateMenuPosition = () => {
+    const el = inputWrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const gap = 6;
+    const top = rect.bottom + gap;
+    const maxAvailable = Math.max(120, window.innerHeight - top - 12);
+    setMenuBox({
+      top,
+      left: rect.left,
+      width: rect.width,
+      maxHeight: Math.min(288, maxAvailable),
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (!isOpen || selected) {
+      setMenuBox(null);
+      return;
+    }
+    updateMenuPosition();
+    const onScrollOrResize = () => updateMenuPosition();
+    window.addEventListener('resize', onScrollOrResize);
+    window.addEventListener('scroll', onScrollOrResize, true);
+    return () => {
+      window.removeEventListener('resize', onScrollOrResize);
+      window.removeEventListener('scroll', onScrollOrResize, true);
+    };
+  }, [isOpen, selected, results.length, query]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -46,6 +107,7 @@ export const FoodSearchCombobox: React.FC<FoodSearchComboboxProps> = ({
       } catch (err) {
         console.error('Error buscando alimentos TCA:', err);
         setResults([]);
+        setIsOpen(true);
       } finally {
         setIsLoading(false);
       }
@@ -57,9 +119,10 @@ export const FoodSearchCombobox: React.FC<FoodSearchComboboxProps> = ({
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target)) return;
+      if (listRef.current?.contains(target)) return;
+      setIsOpen(false);
     };
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
@@ -105,14 +168,90 @@ export const FoodSearchCombobox: React.FC<FoodSearchComboboxProps> = ({
     }
   };
 
+  const showDropdown =
+    isOpen && !selected && Boolean(query.trim()) && (isLoading || results.length >= 0);
+
+  const dropdown =
+    showDropdown && menuBox
+      ? createPortal(
+          <ul
+            ref={listRef}
+            role="listbox"
+            className="fixed z-[80] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl custom-scrollbar"
+            style={{
+              top: menuBox.top,
+              left: menuBox.left,
+              width: menuBox.width,
+              maxHeight: menuBox.maxHeight,
+            }}
+          >
+            {isLoading && results.length === 0 ? (
+              <li className="flex items-center gap-2 px-4 py-4 text-xs text-slate-500">
+                <span className="material-symbols-outlined animate-spin text-sky-600 text-base">
+                  progress_activity
+                </span>
+                Buscando en el catálogo…
+              </li>
+            ) : results.length === 0 ? (
+              <li className="px-4 py-4 text-xs text-slate-500 text-center">
+                No se encontraron alimentos con ese nombre
+              </li>
+            ) : (
+              results.map((food, index) => {
+                const active = index === highlightedIndex;
+                return (
+                  <li key={food.id} role="option" aria-selected={active}>
+                    <button
+                      type="button"
+                      onMouseEnter={() => setHighlightedIndex(index)}
+                      onClick={() => handlePick(food)}
+                      className={`w-full text-left p-3 border-b border-slate-100 last:border-0 transition-colors cursor-pointer rounded-none first:rounded-t-xl last:rounded-b-xl ${
+                        active
+                          ? 'bg-blue-50 dark:bg-slate-800'
+                          : 'hover:bg-blue-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-medium text-slate-800 dark:text-slate-100 text-sm leading-snug">
+                          {food.name}
+                        </p>
+                        <span className="shrink-0 bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold">
+                          {categoryLabel(food)}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                        <span className="font-bold text-sky-700 tabular-nums">
+                          {formatNutrient(food.energy_kcal, 0)} kcal
+                          <span className="font-medium text-slate-400 ml-1">/100g</span>
+                        </span>
+                        <span className="text-blue-700 font-semibold tabular-nums">
+                          P: {formatNutrient(food.protein_g)} g
+                        </span>
+                        <span className="text-emerald-700 font-semibold tabular-nums">
+                          C: {formatNutrient(food.carbs_total_g)} g
+                        </span>
+                        <span className="text-amber-700 font-semibold tabular-nums">
+                          G: {formatNutrient(food.lipids_g)} g
+                        </span>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>,
+          document.body,
+        )
+      : null;
+
   return (
-    <div ref={containerRef} className={`relative w-full ${className}`}>
+    <div ref={containerRef} className={`relative w-full overflow-visible ${className}`}>
       <label htmlFor={inputId} className="sr-only">
         Buscar alimento
       </label>
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
-          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg">
+      <div className="flex flex-col sm:flex-row gap-2 overflow-visible">
+        <div ref={inputWrapRef} className="relative flex-1 overflow-visible">
+          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg pointer-events-none">
             restaurant
           </span>
           <input
@@ -126,22 +265,22 @@ export const FoodSearchCombobox: React.FC<FoodSearchComboboxProps> = ({
               setIsOpen(true);
             }}
             onFocus={() => {
-              if (results.length > 0) setIsOpen(true);
+              if (query.trim()) setIsOpen(true);
             }}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
-            className="w-full rounded-xl border border-outline-variant/50 bg-surface-container-low pl-10 pr-3 py-2.5 text-sm font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500"
           />
           {isLoading && (
-            <span className="material-symbols-outlined animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base">
-              sync
+            <span className="material-symbols-outlined animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-sky-600 text-base">
+              progress_activity
             </span>
           )}
         </div>
 
         {selected && (
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-xs font-bold text-on-surface-variant">
+            <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
               g
               <input
                 type="number"
@@ -149,14 +288,14 @@ export const FoodSearchCombobox: React.FC<FoodSearchComboboxProps> = ({
                 step={1}
                 value={grams}
                 onChange={(e) => setGrams(e.target.value)}
-                className="w-20 rounded-xl border border-outline-variant/50 bg-surface-container-lowest px-2 py-2 text-sm font-black text-on-surface"
+                className="w-20 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm font-black text-slate-800"
               />
             </label>
             <button
               type="button"
               disabled={!canAdd}
               onClick={handleAdd}
-              className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-on-primary disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-xl bg-sky-600 hover:bg-sky-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
             >
               <span className="material-symbols-outlined text-sm">add</span>
               Agregar
@@ -165,31 +304,9 @@ export const FoodSearchCombobox: React.FC<FoodSearchComboboxProps> = ({
         )}
       </div>
 
-      {isOpen && !selected && (results.length > 0 || (query.trim() && !isLoading)) && (
-        <ul className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto rounded-2xl border border-outline-variant/30 bg-surface-container-lowest clinical-shadow">
-          {results.length === 0 ? (
-            <li className="px-3 py-3 text-xs text-on-surface-variant">Sin coincidencias en el catálogo TCA.</li>
-          ) : (
-            results.map((food, index) => (
-              <li key={food.id}>
-                <button
-                  type="button"
-                  onClick={() => handlePick(food)}
-                  className={`w-full text-left px-3 py-2.5 text-xs ${
-                    index === highlightedIndex ? 'bg-primary/10' : 'hover:bg-surface-container-low'
-                  }`}
-                >
-                  <p className="font-bold text-on-surface">{food.name}</p>
-                  <p className="text-[11px] text-on-surface-variant font-mono mt-0.5">
-                    {food.id} · {food.energy_kcal ?? '—'} kcal / 100 g · P {food.protein_g ?? '—'}g · G{' '}
-                    {food.lipids_g ?? '—'}g · C {food.carbs_total_g ?? '—'}g
-                  </p>
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      )}
+      {dropdown}
     </div>
   );
 };
+
+export default FoodSearchCombobox;

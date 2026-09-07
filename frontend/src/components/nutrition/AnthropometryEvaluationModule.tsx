@@ -240,7 +240,7 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
   const onValidSubmit = async (data: AnthropometryFormData) => {
     try {
       const record: EvaluacionAntropometrica = {
-        id: `antropo_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        id: crypto.randomUUID(),
         tenant_id: tenantId,
         patient_id: patient.id,
         nutritionist_id: nutritionistId,
@@ -285,6 +285,7 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
         }
       }, 1500);
     } catch (err) {
+      console.error('Supabase Error:', err);
       console.error('Error saving anthropometric evaluation:', err);
     }
   };

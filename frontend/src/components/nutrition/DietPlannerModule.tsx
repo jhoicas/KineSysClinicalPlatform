@@ -305,7 +305,7 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
   const onValidSubmit = async (data: DietPlanFormData) => {
     try {
       const plan: PlanNutricional = {
-        id: `plan_nutri_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        id: crypto.randomUUID(),
         tenant_id: tenantId,
         patient_id: patient.id,
         nutritionist_id: nutritionistId,
@@ -335,6 +335,7 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
+      console.error('Supabase Error:', err);
       console.error('Error saving nutrition plan:', err);
     }
   };

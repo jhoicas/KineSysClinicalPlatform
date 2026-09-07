@@ -14,3 +14,19 @@ export function getSupabaseErrorMessage(error: unknown, fallback = 'Error inespe
   }
   return fallback;
 }
+
+/** Log detallado de errores PostgREST/Supabase para diagnóstico en producción. */
+export function logSupabaseError(context: string, error: unknown): void {
+  console.error(`Supabase Error [${context}]:`, error);
+  if (error && typeof error === 'object') {
+    const e = error as Record<string, unknown>;
+    console.error('Supabase Error details:', {
+      message: e.message,
+      code: e.code,
+      details: e.details,
+      hint: e.hint,
+      status: e.status,
+      statusCode: e.statusCode,
+    });
+  }
+}

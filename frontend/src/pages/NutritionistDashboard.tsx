@@ -18,6 +18,15 @@ import { TopNavBar } from '../components/layout/TopNavBar';
 import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
 import { EcoExportActions } from '../components/common/EcoExportActions';
 import { useAppStore, ActivePatient } from '../store/useAppStore';
+import { logSupabaseError } from '../utils/supabaseErrors';
+import {
+  mapAnthropometryFromDb,
+  mapFhirOrderFromDb,
+  mapNutritionPlanFromDb,
+  toAnthropometryInsert,
+  toFhirOrderInsert,
+  toNutritionPlanInsert,
+} from '../utils/nutritionDbMappers';
 
 interface NutritionistDashboardProps {
   onNavigate: (path: string) => void;
@@ -135,9 +144,9 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
         .order('evaluation_date', { ascending: false });
 
       if (antError) {
-        console.warn('Note: evaluaciones_antropometricas query issue:', antError.message);
+        logSupabaseError('evaluaciones_antropometricas.select', antError);
       }
-      setEvaluations(antData || []);
+      setEvaluations((antData || []).map((row) => mapAnthropometryFromDb(row as Record<string, unknown>)));
 
       // 2. Nutrition Plans filtered by active patient and tenant
       const { data: planData, error: planError } = await supabase
@@ -148,9 +157,9 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
         .order('created_at', { ascending: false });
 
       if (planError) {
-        console.warn('Note: planes_nutricionales query issue:', planError.message);
+        logSupabaseError('planes_nutricionales.select', planError);
       }
-      setPlans(planData || []);
+      setPlans((planData || []).map((row) => mapNutritionPlanFromDb(row as Record<string, unknown>)));
 
       // 3. FHIR Nutrition Orders filtered by active patient and tenant
       const { data: orderData, error: orderError } = await supabase
@@ -161,9 +170,9 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
         .order('created_at', { ascending: false });
 
       if (orderError) {
-        console.warn('Note: ordenes_nutricion_fhir query issue:', orderError.message);
+        logSupabaseError('ordenes_nutricion_fhir.select', orderError);
       }
-      setFhirOrders(orderData || []);
+      setFhirOrders((orderData || []).map((row) => mapFhirOrderFromDb(row as Record<string, unknown>)));
     } catch (err) {
       console.error('Error loading patient nutrition data:', err);
     } finally {
@@ -195,7 +204,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
     return () => window.removeEventListener('kinesys_data_updated', handleDataUpdate);
   }, [activePatient?.id, tenantId]);
 
-  // Handlers for Save Operations with enforced Foreign Keys
+  // Handlers: columnas fijas + data JSONB (schema 004). Log detallado si PostgREST rechaza el payload.
   const handleSaveEvaluation = async (record: EvaluacionAntropometrica) => {
     if (!activePatient) return;
     const scopedRecord: EvaluacionAntropometrica = {
@@ -204,8 +213,14 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       tenant_id: tenantId,
       nutritionist_id: nutritionistId,
     };
-    await supabase.from('evaluaciones_antropometricas').insert(scopedRecord);
-    loadPatientNutritionData(activePatient.id);
+    const payload = toAnthropometryInsert(scopedRecord);
+    const { error } = await supabase.from('evaluaciones_antropometricas').insert(payload);
+    if (error) {
+      console.error('Supabase Error:', error);
+      logSupabaseError('evaluaciones_antropometricas.insert', error);
+      throw error;
+    }
+    await loadPatientNutritionData(activePatient.id);
   };
 
   const handleSavePlan = async (plan: PlanNutricional) => {
@@ -217,8 +232,14 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       nutritionist_id: nutritionistId,
       nutritionist_name: nutritionistName,
     };
-    await supabase.from('planes_nutricionales').insert(scopedPlan);
-    loadPatientNutritionData(activePatient.id);
+    const payload = toNutritionPlanInsert(scopedPlan);
+    const { error } = await supabase.from('planes_nutricionales').insert(payload);
+    if (error) {
+      console.error('Supabase Error:', error);
+      logSupabaseError('planes_nutricionales.insert', error);
+      throw error;
+    }
+    await loadPatientNutritionData(activePatient.id);
   };
 
   const handleCreateTestFhirOrder = async (order: OrdenNutricionFHIR) => {
@@ -227,9 +248,16 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       ...order,
       patient_id: activePatient.id,
       tenant_id: tenantId,
+      practitioner_id: nutritionistId,
     };
-    await supabase.from('ordenes_nutricion_fhir').insert(scopedOrder);
-    loadPatientNutritionData(activePatient.id);
+    const payload = toFhirOrderInsert(scopedOrder, nutritionistId);
+    const { error } = await supabase.from('ordenes_nutricion_fhir').insert(payload);
+    if (error) {
+      console.error('Supabase Error:', error);
+      logSupabaseError('ordenes_nutricion_fhir.insert', error);
+      throw error;
+    }
+    await loadPatientNutritionData(activePatient.id);
   };
 
   // Find latest evaluation for the active patient
@@ -510,6 +538,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 onSelectPatient={() => {}}
                 onCreateTestOrder={handleCreateTestFhirOrder}
                 tenantId={tenantId}
+                practitionerId={nutritionistId}
               />
             )}
 

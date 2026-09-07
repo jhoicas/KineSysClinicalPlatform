@@ -486,7 +486,10 @@ export async function saveAnthropometry(
   const { error } = await supabase.from('evaluaciones_antropometricas').insert([
     { tenant_id: tenantId, patient_id: patientId, nutritionist_id: nutritionistId, data: record },
   ]);
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase Error:', error);
+    throw error;
+  }
 }
 
 export async function saveNutritionalPlan(
@@ -507,7 +510,10 @@ export async function saveNutritionalPlan(
       data,
     },
   ]);
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase Error:', error);
+    throw error;
+  }
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────

@@ -8,6 +8,8 @@ interface FhirNutritionOrderModuleProps {
   onSelectPatient: (patientId: string) => void;
   onCreateTestOrder: (order: OrdenNutricionFHIR) => Promise<void>;
   tenantId: string;
+  /** UUID del usuario autenticado (FK practitioner_id → kinesys.users). */
+  practitionerId: string;
 }
 
 export const FhirNutritionOrderModule: React.FC<FhirNutritionOrderModuleProps> = ({
@@ -17,6 +19,7 @@ export const FhirNutritionOrderModule: React.FC<FhirNutritionOrderModuleProps> =
   onSelectPatient,
   onCreateTestOrder,
   tenantId,
+  practitionerId,
 }) => {
   const [selectedOrder, setSelectedOrder] = useState<OrdenNutricionFHIR | null>(
     orders.length > 0 ? orders[0] : null
@@ -36,10 +39,10 @@ export const FhirNutritionOrderModule: React.FC<FhirNutritionOrderModuleProps> =
     try {
       const p = patients.find((pat) => pat.id === simPatientId);
       const newOrder: OrdenNutricionFHIR = {
-        id: `fhir_order_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        id: crypto.randomUUID(),
         tenant_id: tenantId,
         patient_id: simPatientId,
-        practitioner_id: 'prof_doctor_01',
+        practitioner_id: practitionerId,
         practitioner_name: simDoctorName,
         order_date: new Date().toISOString().split('T')[0],
         status: 'active',
@@ -115,6 +118,7 @@ export const FhirNutritionOrderModule: React.FC<FhirNutritionOrderModuleProps> =
       await onCreateTestOrder(newOrder);
       setSelectedOrder(newOrder);
     } catch (err) {
+      console.error('Supabase Error:', err);
       console.error('Error creating simulated FHIR nutrition order:', err);
     } finally {
       setIsSimulating(false);

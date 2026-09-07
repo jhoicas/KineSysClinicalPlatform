@@ -1,0 +1,3 @@
+# Preflight OPTIONS sin JWT (CORS desde clinicalplatform.ludoia.com).
+[functions.send-patient-document]
+verify_jwt = false

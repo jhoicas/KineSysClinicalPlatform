@@ -1,38 +1,9 @@
 /**
- * EvaluationDashboard — Fase 4.1 (PLAN_NUTRICION)
- * Centro de comando: captura tri-modal Manual ISAK / Withings / InBody.
+ * EvaluationDashboard — Informe BIA / InBody H30 / Withings (CORE BODY)
  */
 import React, { useMemo, useState } from 'react';
 
 export type EvaluationSourceMode = 'MANUAL_ISAK' | 'WITHINGS' | 'INBODY';
-
-export interface IsaKFormState {
-  // Globales
-  weight_kg: string;
-  height_cm: string;
-  age: string;
-  sex: 'male' | 'female';
-  // 8 pliegues (mm)
-  triceps_mm: string;
-  subscapular_mm: string;
-  biceps_mm: string;
-  iliac_crest_mm: string;
-  suprailiac_mm: string;
-  abdominal_mm: string;
-  thigh_mm: string;
-  calf_mm: string;
-  // Perímetros (cm)
-  arm_relaxed_cm: string;
-  arm_flexed_cm: string;
-  waist_cm: string;
-  hip_cm: string;
-  thigh_cm: string;
-  calf_cm: string;
-  // Diámetros óseos (cm)
-  humerus_cm: string;
-  femur_cm: string;
-  wrist_cm: string;
-}
 
 export interface SegmentalRegionUI {
   right_arm: number | null;
@@ -46,9 +17,14 @@ export interface HardwareReadingPreview {
   source: 'WITHINGS' | 'INBODY';
   measured_at: string;
   weight_kg: number | null;
+  skeletal_muscle_kg?: number | null;
+  fat_mass_kg?: number | null;
   body_fat_pct: number | null;
   visceral_fat_index: number | null;
   bmr: number | null;
+  total_body_water_l?: number | null;
+  protein_kg?: number | null;
+  minerals_kg?: number | null;
   segmental: {
     fat: SegmentalRegionUI;
     muscle: SegmentalRegionUI;
@@ -58,411 +34,366 @@ export interface HardwareReadingPreview {
 export interface EvaluationDashboardProps {
   patientName?: string;
   readOnly?: boolean;
-  onManualChange?: (form: IsaKFormState) => void;
-  /** Callback tras “Obtener última lectura” (el padre puede llamar al adapter real). */
+  initialReading?: HardwareReadingPreview | null;
   onFetchHardware?: (source: 'WITHINGS' | 'INBODY') => Promise<HardwareReadingPreview | void>;
   className?: string;
 }
 
-const SOURCE_TABS: { id: EvaluationSourceMode; label: string; icon: string; hint: string }[] = [
-  { id: 'MANUAL_ISAK', label: 'Manual (ISAK)', icon: 'straighten', hint: 'Pliegues, perímetros y diámetros' },
-  { id: 'WITHINGS', label: 'Withings', icon: 'monitor_weight', hint: 'Body Scan / Measure API' },
-  { id: 'INBODY', label: 'InBody', icon: 'cardiology', hint: 'LookinBody / DSM-BIA' },
-];
-
-const defaultIsaK = (): IsaKFormState => ({
-  weight_kg: '72.5',
-  height_cm: '170',
-  age: '32',
-  sex: 'female',
-  triceps_mm: '14',
-  subscapular_mm: '16',
-  biceps_mm: '8',
-  iliac_crest_mm: '12',
-  suprailiac_mm: '15',
-  abdominal_mm: '18',
-  thigh_mm: '20',
-  calf_mm: '11',
-  arm_relaxed_cm: '28',
-  arm_flexed_cm: '30',
-  waist_cm: '74',
-  hip_cm: '98',
-  thigh_cm: '54',
-  calf_cm: '36',
-  humerus_cm: '6.2',
-  femur_cm: '9.1',
-  wrist_cm: '5.4',
-});
-
-const DEMO_READINGS: Record<'WITHINGS' | 'INBODY', HardwareReadingPreview> = {
+const DEMO: Record<'WITHINGS' | 'INBODY', HardwareReadingPreview> = {
   WITHINGS: {
     source: 'WITHINGS',
     measured_at: new Date().toISOString(),
-    weight_kg: 72.5,
-    body_fat_pct: 22.4,
-    visceral_fat_index: 8.5,
-    bmr: 1485,
+    weight_kg: 72.4,
+    skeletal_muscle_kg: 28.6,
+    fat_mass_kg: 18.2,
+    body_fat_pct: 25.1,
+    visceral_fat_index: 7,
+    bmr: 1480,
+    total_body_water_l: 38.2,
+    protein_kg: 9.8,
+    minerals_kg: 3.4,
     segmental: {
-      fat: { right_arm: 1.2, left_arm: 1.15, trunk: 8.5, right_leg: 3.2, left_leg: 3.1 },
-      muscle: { right_arm: 3.1, left_arm: 3.05, trunk: 22, right_leg: 8.5, left_leg: 8.4 },
+      muscle: { left_arm: 2.4, right_arm: 2.5, trunk: 22.1, left_leg: 7.2, right_leg: 7.4 },
+      fat: { left_arm: 1.1, right_arm: 1.0, trunk: 9.4, left_leg: 3.2, right_leg: 3.1 },
     },
   },
   INBODY: {
     source: 'INBODY',
     measured_at: new Date().toISOString(),
-    weight_kg: 68.4,
-    body_fat_pct: 28.6,
-    visceral_fat_index: 9,
-    bmr: 1320,
+    weight_kg: 71.8,
+    skeletal_muscle_kg: 29.1,
+    fat_mass_kg: 17.4,
+    body_fat_pct: 24.2,
+    visceral_fat_index: 6,
+    bmr: 1510,
+    total_body_water_l: 39.0,
+    protein_kg: 10.1,
+    minerals_kg: 3.5,
     segmental: {
-      fat: { right_arm: 1.1, left_arm: 1.05, trunk: 9.2, right_leg: 3.4, left_leg: 3.3 },
-      muscle: { right_arm: 2.4, left_arm: 2.35, trunk: 18.5, right_leg: 7.1, left_leg: 7.0 },
+      muscle: { left_arm: 2.5, right_arm: 2.6, trunk: 22.8, left_leg: 7.5, right_leg: 7.6 },
+      fat: { left_arm: 1.0, right_arm: 0.95, trunk: 8.8, left_leg: 3.0, right_leg: 2.9 },
     },
   },
 };
 
-const SEGMENT_LABELS: { key: keyof SegmentalRegionUI; label: string }[] = [
-  { key: 'right_arm', label: 'Brazo D' },
-  { key: 'left_arm', label: 'Brazo I' },
-  { key: 'trunk', label: 'Tronco' },
-  { key: 'right_leg', label: 'Pierna D' },
-  { key: 'left_leg', label: 'Pierna I' },
-];
-
-const fieldClass =
-  'mt-1 w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/25 disabled:opacity-60';
-
-function Field({
+function RangeMeter({
   label,
-  children,
+  value,
+  unit,
+  min,
+  max,
+  status,
+  accent = '#0284c7',
 }: {
   label: string;
-  children: React.ReactNode;
+  value: number;
+  unit: string;
+  min: number;
+  max: number;
+  status: string;
+  accent?: string;
 }) {
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min || 1)) * 100));
+  const ok = status.toLowerCase().includes('normal') || status.toLowerCase().includes('adecu');
   return (
-    <label className="block">
-      <span className="text-[11px] font-bold uppercase tracking-wide text-on-surface-variant">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function SegmentalBars({
-  title,
-  values,
-  colorClass,
-  maxHint,
-}: {
-  title: string;
-  values: SegmentalRegionUI;
-  colorClass: string;
-  maxHint: number;
-}) {
-  const max = Math.max(
-    maxHint,
-    ...SEGMENT_LABELS.map((s) => values[s.key] ?? 0),
-    0.1
-  );
-  return (
-    <div className="space-y-2.5">
-      <p className="text-xs font-extrabold text-on-surface">{title}</p>
-      {SEGMENT_LABELS.map(({ key, label }) => {
-        const v = values[key];
-        const pct = v == null ? 0 : Math.min(100, (v / max) * 100);
-        return (
-          <div key={key} className="flex items-center gap-2">
-            <span className="w-16 shrink-0 text-[10px] font-semibold text-on-surface-variant">{label}</span>
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-container-high">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span className="w-12 text-right text-[11px] font-bold tabular-nums text-on-surface">
-              {v == null ? '—' : `${v.toFixed(1)}`}
-            </span>
-          </div>
-        );
-      })}
+    <div className="rounded-2xl border border-slate-200 bg-white p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">{label}</p>
+        <span
+          className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+            ok
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-amber-50 text-amber-800 border-amber-200'
+          }`}
+        >
+          {status}
+        </span>
+      </div>
+      <p className="text-xl font-black text-slate-900 tabular-nums">
+        {value.toLocaleString('es-CO', { maximumFractionDigits: 1 })}
+        <span className="text-xs text-slate-500 ml-1 font-bold">{unit}</span>
+      </p>
+      <div className="h-2 rounded-full bg-slate-100 overflow-hidden relative">
+        <div className="absolute inset-y-0 left-[30%] right-[30%] bg-emerald-100/80" />
+        <div
+          className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-white shadow"
+          style={{ left: `calc(${pct}% - 5px)`, backgroundColor: accent }}
+        />
+      </div>
+      <div className="flex justify-between text-[9px] font-mono text-slate-400">
+        <span>{min}</span>
+        <span>{max}</span>
+      </div>
     </div>
   );
 }
 
+function SegmentalBody({
+  muscle,
+  fat,
+}: {
+  muscle: SegmentalRegionUI;
+  fat: SegmentalRegionUI;
+}) {
+  const Callout = ({
+    title,
+    m,
+    f,
+    style,
+  }: {
+    title: string;
+    m: number | null;
+    f: number | null;
+    style: React.CSSProperties;
+  }) => (
+    <div
+      className="absolute z-10 rounded-xl border border-slate-200 bg-white/95 shadow-sm px-2.5 py-1.5 text-[10px] min-w-[88px]"
+      style={style}
+    >
+      <p className="font-black text-slate-700 mb-0.5">{title}</p>
+      <p className="text-[#0284c7] font-bold">Músc. {m ?? '—'} kg</p>
+      <p className="text-[#f97316] font-bold">Grasa {f ?? '—'} kg</p>
+    </div>
+  );
+
+  return (
+    <div className="relative mx-auto w-full max-w-md h-[420px] rounded-3xl bg-slate-50 border border-slate-200 overflow-hidden">
+      <svg viewBox="0 0 200 360" className="absolute left-1/2 top-6 -translate-x-1/2 w-[180px] h-[340px]">
+        {/* Mitad músculo (izq) / grasa (der) */}
+        <defs>
+          <linearGradient id="muscleHalf" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#0284c7" stopOpacity="0.35" />
+            <stop offset="50%" stopColor="#0284c7" stopOpacity="0.2" />
+            <stop offset="50%" stopColor="#f97316" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#f97316" stopOpacity="0.35" />
+          </linearGradient>
+        </defs>
+        <ellipse cx="100" cy="28" rx="18" ry="20" fill="url(#muscleHalf)" stroke="#64748b" strokeWidth="1.2" />
+        <path
+          d="M70 48 L130 48 L142 150 L120 210 L80 210 L58 150 Z"
+          fill="url(#muscleHalf)"
+          stroke="#64748b"
+          strokeWidth="1.2"
+        />
+        <path d="M70 55 L45 130 L55 135 L78 80 Z" fill="#0284c7" fillOpacity="0.25" stroke="#0284c7" strokeWidth="1" />
+        <path d="M130 55 L155 130 L145 135 L122 80 Z" fill="#f97316" fillOpacity="0.25" stroke="#f97316" strokeWidth="1" />
+        <path d="M80 210 L72 320 L90 320 L95 210 Z" fill="#0284c7" fillOpacity="0.22" stroke="#0284c7" strokeWidth="1" />
+        <path d="M105 210 L110 320 L128 320 L120 210 Z" fill="#f97316" fillOpacity="0.22" stroke="#f97316" strokeWidth="1" />
+        <line x1="100" y1="48" x2="100" y2="210" stroke="#94a3b8" strokeDasharray="3 3" />
+      </svg>
+
+      {/* Líneas guía */}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" aria-hidden>
+        <line x1="28%" y1="28%" x2="42%" y2="32%" stroke="#94a3b8" strokeWidth="1" />
+        <line x1="72%" y1="28%" x2="58%" y2="32%" stroke="#94a3b8" strokeWidth="1" />
+        <line x1="22%" y1="48%" x2="40%" y2="48%" stroke="#94a3b8" strokeWidth="1" />
+        <line x1="78%" y1="48%" x2="60%" y2="48%" stroke="#94a3b8" strokeWidth="1" />
+        <line x1="28%" y1="72%" x2="42%" y2="68%" stroke="#94a3b8" strokeWidth="1" />
+        <line x1="72%" y1="72%" x2="58%" y2="68%" stroke="#94a3b8" strokeWidth="1" />
+      </svg>
+
+      <Callout title="Brazo Izq." m={muscle.left_arm} f={fat.left_arm} style={{ left: '2%', top: '22%' }} />
+      <Callout title="Brazo Der." m={muscle.right_arm} f={fat.right_arm} style={{ right: '2%', top: '22%' }} />
+      <Callout title="Tronco" m={muscle.trunk} f={fat.trunk} style={{ left: '2%', top: '44%' }} />
+      <Callout
+        title="Tronco (esp.)"
+        m={muscle.trunk != null ? round(muscle.trunk * 0.92, 1) : null}
+        f={fat.trunk != null ? round(fat.trunk * 0.88, 1) : null}
+        style={{ right: '2%', top: '44%' }}
+      />
+      <Callout title="Pierna Izq." m={muscle.left_leg} f={fat.left_leg} style={{ left: '2%', top: '68%' }} />
+      <Callout title="Pierna Der." m={muscle.right_leg} f={fat.right_leg} style={{ right: '2%', top: '68%' }} />
+
+      <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-4 text-[10px] font-bold">
+        <span className="inline-flex items-center gap-1 text-[#0284c7]">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#0284c7]" /> Músculo
+        </span>
+        <span className="inline-flex items-center gap-1 text-[#f97316]">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#f97316]" /> Grasa
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function round(n: number, d = 1): number {
+  const f = 10 ** d;
+  return Math.round(n * f) / f;
+}
+
 export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
   patientName,
-  readOnly = false,
-  onManualChange,
   onFetchHardware,
+  initialReading = null,
   className = '',
 }) => {
-  const [source, setSource] = useState<EvaluationSourceMode>('MANUAL_ISAK');
-  const [form, setForm] = useState<IsaKFormState>(defaultIsaK);
-  const [loadingHw, setLoadingHw] = useState(false);
-  const [hwError, setHwError] = useState<string | null>(null);
-  const [reading, setReading] = useState<HardwareReadingPreview | null>(null);
+  const [source, setSource] = useState<'WITHINGS' | 'INBODY'>('INBODY');
+  const [reading, setReading] = useState<HardwareReadingPreview | null>(initialReading || DEMO.INBODY);
+  const [loading, setLoading] = useState(false);
 
-  const patchForm = (patch: Partial<IsaKFormState>) => {
-    setForm((prev) => {
-      const next = { ...prev, ...patch };
-      onManualChange?.(next);
-      return next;
-    });
-  };
+  const metrics = useMemo(() => {
+    const r = reading;
+    if (!r) return null;
+    return {
+      weight: r.weight_kg ?? 0,
+      muscle: r.skeletal_muscle_kg ?? round((r.weight_kg || 0) * 0.4, 1),
+      fat: r.fat_mass_kg ?? round(((r.body_fat_pct || 0) / 100) * (r.weight_kg || 0), 1),
+      fatPct: r.body_fat_pct ?? 0,
+      water: r.total_body_water_l ?? 38,
+      protein: r.protein_kg ?? 10,
+      minerals: r.minerals_kg ?? 3.4,
+      visceral: r.visceral_fat_index ?? 5,
+    };
+  }, [reading]);
 
-  const handleFetch = async () => {
-    if (source === 'MANUAL_ISAK' || readOnly) return;
-    setLoadingHw(true);
-    setHwError(null);
+  const fetchReading = async (src: 'WITHINGS' | 'INBODY') => {
+    setSource(src);
+    setLoading(true);
     try {
-      const result = onFetchHardware
-        ? await onFetchHardware(source)
-        : DEMO_READINGS[source];
-      setReading(result || DEMO_READINGS[source]);
-    } catch (err) {
-      setHwError(err instanceof Error ? err.message : 'No se pudo obtener la lectura.');
-      setReading(null);
+      const custom = onFetchHardware ? await onFetchHardware(src) : undefined;
+      setReading(custom || DEMO[src]);
     } finally {
-      setLoadingHw(false);
+      setLoading(false);
     }
   };
 
-  const bmi = useMemo(() => {
-    const w = Number(form.weight_kg);
-    const h = Number(form.height_cm) / 100;
-    if (!Number.isFinite(w) || !Number.isFinite(h) || h <= 0) return null;
-    return Math.round((w / (h * h)) * 10) / 10;
-  }, [form.weight_kg, form.height_cm]);
-
   return (
-    <div className={`space-y-5 ${className}`}>
-      <header className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+    <div className={`space-y-4 ${className}`}>
+      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wider text-primary">Evaluación</p>
-          <h2 className="text-lg font-black text-on-surface">
-            Tablero tri-modal{patientName ? ` · ${patientName}` : ''}
-          </h2>
-          <p className="text-xs text-on-surface-variant mt-0.5">
-            ISAK manual o sincronización de hardware. El % de grasa del dispositivo no se recalcula con pliegues.
+          <h3 className="text-sm font-black text-slate-800">
+            Informe de composición corporal BIA
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {patientName ? `${patientName} · ` : ''}
+            InBody H30 / Withings Body Scan — análisis segmental
           </p>
         </div>
-      </header>
-
-      {/* Source selector */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {SOURCE_TABS.map((tab) => {
-          const active = source === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              disabled={readOnly}
-              onClick={() => {
-                setSource(tab.id);
-                setHwError(null);
-                if (tab.id === 'MANUAL_ISAK') setReading(null);
-              }}
-              className={`rounded-2xl border px-4 py-3 text-left transition-all ${
-                active
-                  ? 'border-primary bg-primary/10 shadow-sm'
-                  : 'border-outline-variant/30 bg-surface-container-lowest hover:bg-surface-container-low'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span className={`material-symbols-outlined text-xl ${active ? 'text-primary' : 'text-on-surface-variant'}`}>
-                  {tab.icon}
-                </span>
-                <span className="text-sm font-extrabold text-on-surface">{tab.label}</span>
-              </div>
-              <p className="mt-1 text-[11px] text-on-surface-variant">{tab.hint}</p>
-            </button>
-          );
-        })}
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void fetchReading('INBODY')}
+            disabled={loading}
+            className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${
+              source === 'INBODY'
+                ? 'bg-[#0a192f] text-white border-[#0a192f]'
+                : 'bg-slate-50 text-slate-600 border-slate-200'
+            }`}
+          >
+            InBody H30
+          </button>
+          <button
+            type="button"
+            onClick={() => void fetchReading('WITHINGS')}
+            disabled={loading}
+            className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${
+              source === 'WITHINGS'
+                ? 'bg-[#0a192f] text-white border-[#0a192f]'
+                : 'bg-slate-50 text-slate-600 border-slate-200'
+            }`}
+          >
+            Withings
+          </button>
+        </div>
       </div>
 
-      {source === 'MANUAL_ISAK' ? (
-        <div className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-5 clinical-shadow space-y-6">
-          <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Field label="Peso (kg)">
-              <input disabled={readOnly} className={fieldClass} value={form.weight_kg} onChange={(e) => patchForm({ weight_kg: e.target.value })} />
-            </Field>
-            <Field label="Talla (cm)">
-              <input disabled={readOnly} className={fieldClass} value={form.height_cm} onChange={(e) => patchForm({ height_cm: e.target.value })} />
-            </Field>
-            <Field label="Edad">
-              <input disabled={readOnly} className={fieldClass} value={form.age} onChange={(e) => patchForm({ age: e.target.value })} />
-            </Field>
-            <Field label="Sexo biológico">
-              <select
-                disabled={readOnly}
-                className={fieldClass}
-                value={form.sex}
-                onChange={(e) => patchForm({ sex: e.target.value as 'male' | 'female' })}
-              >
-                <option value="female">Femenino</option>
-                <option value="male">Masculino</option>
-              </select>
-            </Field>
-          </section>
-
-          {bmi != null && (
-            <p className="text-xs text-on-surface-variant">
-              IMC estimado: <span className="font-bold text-on-surface">{bmi}</span> kg/m²
-            </p>
-          )}
-
-          <section>
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-on-surface">
-              <span className="material-symbols-outlined text-primary text-lg">architecture</span>
-              Pliegues cutáneos (mm) — protocolo 8 sitios
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {(
-                [
-                  ['triceps_mm', 'Tríceps'],
-                  ['subscapular_mm', 'Subescapular'],
-                  ['biceps_mm', 'Bíceps'],
-                  ['iliac_crest_mm', 'Cresta ilíaca'],
-                  ['suprailiac_mm', 'Suprailiaco'],
-                  ['abdominal_mm', 'Abdominal'],
-                  ['thigh_mm', 'Muslo'],
-                  ['calf_mm', 'Pierna'],
-                ] as const
-              ).map(([key, label]) => (
-                <div key={key}>
-                  <Field label={label}>
-                    <input
-                      disabled={readOnly}
-                      className={fieldClass}
-                      value={form[key]}
-                      onChange={(e) => patchForm({ [key]: e.target.value })}
-                    />
-                  </Field>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section>
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-on-surface">
-              <span className="material-symbols-outlined text-primary text-lg">oval</span>
-              Perímetros (cm)
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {(
-                [
-                  ['arm_relaxed_cm', 'Brazo relajado'],
-                  ['arm_flexed_cm', 'Brazo flexionado'],
-                  ['waist_cm', 'Cintura'],
-                  ['hip_cm', 'Cadera'],
-                  ['thigh_cm', 'Muslo'],
-                  ['calf_cm', 'Pierna'],
-                ] as const
-              ).map(([key, label]) => (
-                <div key={key}>
-                  <Field label={label}>
-                    <input
-                      disabled={readOnly}
-                      className={fieldClass}
-                      value={form[key]}
-                      onChange={(e) => patchForm({ [key]: e.target.value })}
-                    />
-                  </Field>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section>
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-extrabold text-on-surface">
-              <span className="material-symbols-outlined text-primary text-lg">square_foot</span>
-              Diámetros óseos (cm)
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {(
-                [
-                  ['humerus_cm', 'Húmero (biepicondilar)'],
-                  ['femur_cm', 'Fémur (biepicondilar)'],
-                  ['wrist_cm', 'Muñeca'],
-                ] as const
-              ).map(([key, label]) => (
-                <div key={key}>
-                  <Field label={label}>
-                    <input
-                      disabled={readOnly}
-                      className={fieldClass}
-                      value={form[key]}
-                      onChange={(e) => patchForm({ [key]: e.target.value })}
-                    />
-                  </Field>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
+      {!metrics ? (
+        <p className="text-sm text-slate-500">Sin lectura BIA disponible.</p>
       ) : (
-        <div className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-5 clinical-shadow space-y-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-sm font-extrabold text-on-surface">
-                Sincronizar {source === 'WITHINGS' ? 'Withings' : 'InBody'}
-              </h3>
-              <p className="text-xs text-on-surface-variant mt-0.5">
-                Obtiene la última lectura del adaptador de hardware y muestra composición segmental.
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled={readOnly || loadingHw}
-              onClick={() => void handleFetch()}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-2.5 text-sm font-bold text-on-primary disabled:opacity-60"
-            >
-              <span className={`material-symbols-outlined text-lg ${loadingHw ? 'animate-spin' : ''}`}>
-                {loadingHw ? 'sync' : 'cloud_download'}
-              </span>
-              {loadingHw ? 'Obteniendo…' : 'Obtener última lectura'}
-            </button>
+        <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)_240px] gap-4">
+          {/* A. Composición general */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+              Composición general
+            </p>
+            <RangeMeter
+              label="Peso corporal"
+              value={metrics.weight}
+              unit="kg"
+              min={45}
+              max={110}
+              status="Normal"
+              accent="#0a192f"
+            />
+            <RangeMeter
+              label="Masa muscular esquelética"
+              value={metrics.muscle}
+              unit="kg"
+              min={18}
+              max={40}
+              status="Adecuada"
+              accent="#0284c7"
+            />
+            <RangeMeter
+              label="Masa grasa"
+              value={metrics.fat}
+              unit="kg"
+              min={8}
+              max={35}
+              status="Normal"
+              accent="#f97316"
+            />
+            <RangeMeter
+              label="% Grasa corporal"
+              value={metrics.fatPct}
+              unit="%"
+              min={10}
+              max={40}
+              status="Normal"
+              accent="#f97316"
+            />
           </div>
 
-          {hwError && (
-            <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
-              {hwError}
+          {/* B. Segmental */}
+          <div className="space-y-2">
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 text-center">
+              Análisis segmental — músculo / grasa
             </p>
-          )}
+            <SegmentalBody muscle={reading!.segmental.muscle} fat={reading!.segmental.fat} />
+          </div>
 
-          {!reading ? (
-            <div className="flex h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-outline-variant/40 bg-surface-container-low/50 text-center px-4">
-              <span className="material-symbols-outlined text-3xl text-on-surface-variant mb-2">analytics</span>
-              <p className="text-sm font-bold text-on-surface">Sin lectura cargada</p>
-              <p className="text-xs text-on-surface-variant mt-1 max-w-sm">
-                Pulsa “Obtener última lectura” para visualizar grasa y músculo por segmento.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[
-                  { label: 'Peso', value: reading.weight_kg != null ? `${reading.weight_kg} kg` : '—' },
-                  { label: '% Grasa', value: reading.body_fat_pct != null ? `${reading.body_fat_pct}%` : '—' },
-                  { label: 'Grasa visceral', value: reading.visceral_fat_index ?? '—' },
-                  { label: 'TMB', value: reading.bmr != null ? `${reading.bmr} kcal` : '—' },
-                ].map((kpi) => (
-                  <div key={kpi.label} className="rounded-2xl bg-surface-container-low px-3 py-3">
-                    <p className="text-[10px] font-bold uppercase text-on-surface-variant">{kpi.label}</p>
-                    <p className="mt-1 text-base font-black text-on-surface">{kpi.value}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <SegmentalBars title="Masa grasa segmental (kg)" values={reading.segmental.fat} colorClass="bg-amber-500" maxHint={10} />
-                <SegmentalBars title="Masa muscular segmental (kg)" values={reading.segmental.muscle} colorClass="bg-primary" maxHint={25} />
-              </div>
-
-              <p className="text-[11px] text-on-surface-variant">
-                Lectura {reading.source} · {new Date(reading.measured_at).toLocaleString()}
-              </p>
-            </div>
-          )}
+          {/* C. Otros indicadores */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+              Otros indicadores
+            </p>
+            <RangeMeter
+              label="Agua corporal total"
+              value={metrics.water}
+              unit="L"
+              min={28}
+              max={50}
+              status="Normal"
+              accent="#0284c7"
+            />
+            <RangeMeter
+              label="Proteína"
+              value={metrics.protein}
+              unit="kg"
+              min={6}
+              max={14}
+              status="Adecuada"
+              accent="#10b981"
+            />
+            <RangeMeter
+              label="Minerales"
+              value={metrics.minerals}
+              unit="kg"
+              min={2.2}
+              max={4.5}
+              status="Normal"
+              accent="#64748b"
+            />
+            <RangeMeter
+              label="Grasa visceral"
+              value={metrics.visceral}
+              unit="nivel"
+              min={1}
+              max={9}
+              status={metrics.visceral <= 9 ? 'Normal' : 'Elevado'}
+              accent="#f97316"
+            />
+          </div>
         </div>
       )}
     </div>

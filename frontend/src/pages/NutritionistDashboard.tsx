@@ -9,6 +9,7 @@ import {
   OrdenNutricionFHIR,
 } from '../types';
 import { AnthropometryEvaluationModule } from '../components/nutrition/AnthropometryEvaluationModule';
+import { EvaluationDashboard } from '../components/nutrition/EvaluationDashboard';
 import { DietPlannerModule } from '../components/nutrition/DietPlannerModule';
 import { FhirNutritionOrderModule } from '../components/nutrition/FhirNutritionOrderModule';
 import { AnthropometryPdfModal } from '../components/nutrition/AnthropometryPdfModal';
@@ -67,7 +68,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
 
   // Active Navigation Tab
   const [activeTab, setActiveTab] = useState<
-    'antropometria' | 'planificador' | 'fhir_orders' | 'historial'
+    'antropometria' | 'bia' | 'planificador' | 'fhir_orders' | 'historial'
   >('antropometria');
 
   // Nutrition Domain Records State for Active Patient
@@ -462,7 +463,19 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 }`}
               >
                 <span className="material-symbols-outlined text-base">straighten</span>
-                <span>Evaluación Antropométrica (Mifflin-St Jeor)</span>
+                <span>Antropometría ISAK (Manual)</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('bia')}
+                className={`px-4 py-2.5 rounded-2xl font-black text-xs transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+                  activeTab === 'bia'
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined text-base">cardiology</span>
+                <span>Informe BIA / InBody</span>
               </button>
 
               <button
@@ -502,7 +515,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               </button>
             </div>
 
-            {/* Tab 1: Antropometría & Mifflin-St Jeor */}
+            {/* Tab 1: Antropometría ISAK Manual */}
             {activeTab === 'antropometria' && (
               <AnthropometryEvaluationModule
                 patient={currentClinico}
@@ -513,6 +526,13 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 tenantId={tenantId}
                 onSaveEvaluation={handleSaveEvaluation}
                 onGoToDietPlanner={() => setActiveTab('planificador')}
+              />
+            )}
+
+            {/* Tab 1b: Informe BIA / InBody / Withings */}
+            {activeTab === 'bia' && (
+              <EvaluationDashboard
+                patientName={`${currentClinico.first_name} ${currentClinico.last_name}`}
               />
             )}
 

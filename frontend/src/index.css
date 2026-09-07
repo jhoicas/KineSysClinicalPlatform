@@ -189,3 +189,13 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 72, 112, 0.3);
 }
+
+/* Core Body / fisiotest micro-typography */
+@utility text-2xs {
+  font-size: 0.65rem;
+  line-height: 0.9rem;
+}
+@utility text-3xs {
+  font-size: 0.6rem;
+  line-height: 0.8rem;
+}

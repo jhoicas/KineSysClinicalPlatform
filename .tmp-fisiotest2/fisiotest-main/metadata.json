@@ -1,0 +1,6 @@
+{
+  "name": "Core Body - Software de Fisioterapia",
+  "description": "Software clínico de fisioterapia y nutrición para valoración postural, mapa del dolor, antropometría ISAK, composición corporal BIA InBody/Withings, dietética TCA 2018 y evolución de pacientes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

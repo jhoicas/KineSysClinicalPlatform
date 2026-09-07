@@ -8,16 +8,16 @@ import {
   PlanNutricional,
   OrdenNutricionFHIR,
 } from '../types';
-import { AnthropometryEvaluationModule } from '../components/nutrition/AnthropometryEvaluationModule';
-import { EvaluationDashboard } from '../components/nutrition/EvaluationDashboard';
-import { DietPlannerModule } from '../components/nutrition/DietPlannerModule';
+import { AnthropometryModule } from '../components/nutrition/AnthropometryModule';
+import { BodyCompositionModule } from '../components/nutrition/BodyCompositionModule';
+import { NutritionPlanningModule } from '../components/nutrition/NutritionPlanningModule';
 import { FhirNutritionOrderModule } from '../components/nutrition/FhirNutritionOrderModule';
 import { AnthropometryPdfModal } from '../components/nutrition/AnthropometryPdfModal';
-
-import { SideNavBar } from '../components/layout/SideNavBar';
-import { TopNavBar } from '../components/layout/TopNavBar';
-import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
-import { EcoExportActions } from '../components/common/EcoExportActions';
+import {
+  toCoreBodyPatient,
+  coreBodyAnthroToKinesys,
+  coreBodyPlanToKinesys,
+} from '../utils/coreBodyAdapters';
 import { useAppStore, ActivePatient } from '../store/useAppStore';
 import { logSupabaseError } from '../utils/supabaseErrors';
 import {
@@ -28,6 +28,10 @@ import {
   toFhirOrderInsert,
   toNutritionPlanInsert,
 } from '../utils/nutritionDbMappers';
+import { SideNavBar } from '../components/layout/SideNavBar';
+import { TopNavBar } from '../components/layout/TopNavBar';
+import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
+import { EcoExportActions } from '../components/common/EcoExportActions';
 
 interface NutritionistDashboardProps {
   onNavigate: (path: string) => void;
@@ -515,37 +519,75 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               </button>
             </div>
 
-            {/* Tab 1: Antropometría ISAK Manual */}
+            {/* Tab 1: Antropometría ISAK Manual (Core Body) */}
             {activeTab === 'antropometria' && (
-              <AnthropometryEvaluationModule
-                patient={currentClinico}
-                historyEvaluations={evaluations}
-                nutritionistId={nutritionistId}
-                nutritionistName={nutritionistName}
-                clinicName={tenant?.name || 'KineSys Salud'}
-                tenantId={tenantId}
-                onSaveEvaluation={handleSaveEvaluation}
-                onGoToDietPlanner={() => setActiveTab('planificador')}
+              <AnthropometryModule
+                patient={toCoreBodyPatient(currentClinico, {
+                  nutritionistName,
+                  nutritionistId,
+                  weightKg: latestEvaluation?.weight_kg,
+                  heightCm: latestEvaluation?.height_cm,
+                })}
+                onSave={async (assessment) => {
+                  const gender =
+                    currentClinico.gender === 'female'
+                      ? 'female'
+                      : currentClinico.gender === 'other'
+                        ? 'other'
+                        : 'male';
+                  const corePatient = toCoreBodyPatient(currentClinico, {
+                    nutritionistName,
+                    nutritionistId,
+                    weightKg: latestEvaluation?.weight_kg,
+                    heightCm: latestEvaluation?.height_cm,
+                  });
+                  await handleSaveEvaluation(
+                    coreBodyAnthroToKinesys(assessment, {
+                      tenantId,
+                      nutritionistId,
+                      age: corePatient.age,
+                      gender,
+                      weightKg: corePatient.weightKg || 70,
+                      heightCm: corePatient.heightCm || 170,
+                    }),
+                  );
+                  setActiveTab('planificador');
+                }}
               />
             )}
 
-            {/* Tab 1b: Informe BIA / InBody / Withings */}
+            {/* Tab 1b: Informe BIA / InBody / Withings (Core Body) */}
             {activeTab === 'bia' && (
-              <EvaluationDashboard
-                patientName={`${currentClinico.first_name} ${currentClinico.last_name}`}
+              <BodyCompositionModule
+                patient={toCoreBodyPatient(currentClinico, {
+                  nutritionistName,
+                  nutritionistId,
+                  weightKg: latestEvaluation?.weight_kg,
+                  heightCm: latestEvaluation?.height_cm,
+                })}
+                onSave={async (bia) => {
+                  useAppStore.getState().patchNutritionDraft({
+                    patientId: currentClinico.id,
+                    biaSource: bia.deviceModel.includes('Withings') ? 'WITHINGS' : 'INBODY',
+                    biaSnapshot: bia as unknown as Record<string, unknown>,
+                    weightKg: bia.pesoKg.value,
+                  });
+                }}
               />
             )}
 
-            {/* Tab 2: Diet & Menu Planner */}
+            {/* Tab 2: Diet & Menu Planner TCA 2018 + costeo COP */}
             {activeTab === 'planificador' && (
-              <DietPlannerModule
-                patient={currentClinico}
-                nutritionistId={nutritionistId}
-                nutritionistName={nutritionistName}
-                tenantId={tenantId}
-                activeFhirOrders={fhirOrders}
-                latestEvaluation={latestEvaluation}
-                onSavePlan={handleSavePlan}
+              <NutritionPlanningModule
+                patient={toCoreBodyPatient(currentClinico, {
+                  nutritionistName,
+                  nutritionistId,
+                  weightKg: latestEvaluation?.weight_kg,
+                  heightCm: latestEvaluation?.height_cm,
+                })}
+                onSave={async (plan) => {
+                  await handleSavePlan(coreBodyPlanToKinesys(plan, { tenantId }));
+                }}
               />
             )}
 

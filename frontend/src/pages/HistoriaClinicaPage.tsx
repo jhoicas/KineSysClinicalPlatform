@@ -5,11 +5,53 @@ import { TopNavBar } from '../components/layout/TopNavBar';
 import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
 import { ToastContainer, ToastMessage } from '../components/common/Toast';
 import { useAppStore } from '../store/useAppStore';
-import { getHistoriaClinicaByPatient, saveHistoriaClinica } from '../services/dataService';
-import { HistoriaClinica, NivelDeporte } from '../types';
+import { getHistoriaClinicaByPatient, getKinesiologyEvaluations, saveHistoriaClinica } from '../services/dataService';
+import { HistoriaClinica, KinesiologyEvaluation, NivelDeporte, PacienteClinico } from '../types';
+import { KinesiologyPdfModal } from '../components/medical/KinesiologyPdfModal';
 
 interface HistoriaClinicaPageProps {
   onNavigate?: (path: string) => void;
+}
+
+function mapActiveToPacienteClinico(
+  active: {
+    id: string;
+    full_name?: string;
+    first_name?: string;
+    last_name?: string;
+    tenant_id?: string;
+    rut_or_dni?: string;
+    gender?: string;
+    birth_date?: string;
+    phone?: string;
+    email?: string;
+    allergies?: string[];
+    medical_conditions?: string[];
+    created_at?: string;
+  },
+  tenantId: string,
+): PacienteClinico {
+  const parts = (active.full_name || 'Paciente').trim().split(/\s+/);
+  return {
+    id: active.id,
+    tenant_id: active.tenant_id || tenantId,
+    identifier_type: 'RUT',
+    identifier_number: active.rut_or_dni || '—',
+    first_name: active.first_name || parts[0] || 'Paciente',
+    last_name: active.last_name || parts.slice(1).join(' ') || '',
+    gender: (active.gender === 'female'
+      ? 'female'
+      : active.gender === 'other'
+        ? 'other'
+        : 'male') as PacienteClinico['gender'],
+    birth_date: active.birth_date || '',
+    telecom_phone: active.phone || '',
+    telecom_email: active.email || '',
+    known_allergies: active.allergies || [],
+    chronic_conditions: active.medical_conditions || [],
+    active: true,
+    created_at: active.created_at || new Date().toISOString(),
+  };
 }
 
 function calcAge(birthDate?: string): string {
@@ -55,6 +97,8 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [evaluationForPdf, setEvaluationForPdf] = useState<Partial<KinesiologyEvaluation> | null>(null);
 
   const addToast = (type: ToastMessage['type'], title: string, message: string) => {
     const id = Date.now().toString();
@@ -153,6 +197,36 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
     }
   };
 
+  const historiaForPdf: HistoriaClinica = {
+    id: recordId || '',
+    tenant_id: tenantId || '',
+    patient_id: activePatient?.id || '',
+    professional_id: user?.id || '',
+    ocupacion: form.ocupacion,
+    motivo_consulta: form.motivo_consulta,
+    deporte_practica: form.deporte_practica,
+    nivel_deporte: form.nivel_deporte || undefined,
+    frecuencia_semanal: form.frecuencia_semanal,
+    lesiones_anteriores: form.lesiones_anteriores,
+    habitos_estilo_vida: form.habitos_estilo_vida,
+    created_at: new Date().toISOString(),
+  };
+
+  const openPdfExport = async () => {
+    if (!activePatient?.id || !tenantId) {
+      addToast('error', 'Sin paciente', 'Selecciona un paciente para exportar el informe.');
+      return;
+    }
+    try {
+      const rows = await getKinesiologyEvaluations(tenantId, activePatient.id);
+      setEvaluationForPdf(rows[0] || null);
+    } catch (err) {
+      console.error(err);
+      setEvaluationForPdf(null);
+    }
+    setPdfOpen(true);
+  };
+
   return (
     <div className="min-h-screen flex bg-background font-sans text-on-background overflow-hidden">
       <SideNavBar currentPath="/historia-clinica" onNavigate={onNavigate} />
@@ -175,6 +249,34 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
                 Antecedentes médicos y deportivos para fisioterapia y nutrición.
               </p>
             </div>
+            {activePatient && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void openPdfExport()}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-xs font-bold text-on-surface"
+                >
+                  <span className="material-symbols-outlined text-base text-primary">visibility</span>
+                  Vista Previa PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void openPdfExport()}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-outline-variant/40 bg-surface-container-high px-3 py-2.5 text-xs font-bold text-on-surface"
+                >
+                  <span className="material-symbols-outlined text-base text-primary">download</span>
+                  Descargar PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void openPdfExport()}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2.5 text-xs font-extrabold"
+                >
+                  <span className="material-symbols-outlined text-base">eco</span>
+                  Envío Eco-Friendly
+                </button>
+              </div>
+            )}
           </div>
 
           {!activePatient ? (
@@ -354,6 +456,18 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
       </main>
 
       <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
+
+      {pdfOpen && activePatient && (
+        <KinesiologyPdfModal
+          isOpen={pdfOpen}
+          onClose={() => setPdfOpen(false)}
+          patient={mapActiveToPacienteClinico(activePatient, tenantId || '')}
+          evaluation={evaluationForPdf}
+          historia={historiaForPdf}
+          physiotherapistName={user?.full_name}
+          onToast={(type, title, message) => addToast(type, title, message)}
+        />
+      )}
     </div>
   );
 }

@@ -5,10 +5,12 @@ import { TopNavBar } from '../components/layout/TopNavBar';
 import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
 import { ToastContainer, ToastMessage } from '../components/common/Toast';
 import { useAppStore } from '../store/useAppStore';
-import { getKinesiologyEvaluations, saveKinesiologyEvaluation } from '../services/dataService';
+import { getHistoriaClinicaByPatient, getKinesiologyEvaluations, saveKinesiologyEvaluation } from '../services/dataService';
 import {
+  HistoriaClinica,
   KinesiologyEvaluation,
   MobilityAssessment,
+  PacienteClinico,
   PostureAssessment,
   PostureSeverity,
   StrengthAssessment,
@@ -30,12 +32,47 @@ import { MobilityDashboard } from '../components/medical/MobilityDashboard';
 import { PostureModule } from '../components/medical/PostureModule';
 import { MovementControlModule } from '../components/medical/MovementControlModule';
 import { TreatmentPlanModule } from '../components/medical/TreatmentPlanModule';
+import { KinesiologyPdfModal } from '../components/medical/KinesiologyPdfModal';
 
 interface EvaluacionKinesicaPageProps {
   onNavigate?: (path: string) => void;
 }
 
 type EvalTab = 'postura' | 'movilidad' | 'fuerza' | 'control' | 'diagnostico' | 'plan';
+
+function mapActiveToPacienteClinico(active: {
+  id: string;
+  full_name?: string;
+  first_name?: string;
+  last_name?: string;
+  tenant_id?: string;
+  rut_or_dni?: string;
+  gender?: string;
+  birth_date?: string;
+  phone?: string;
+  email?: string;
+  allergies?: string[];
+  medical_conditions?: string[];
+  created_at?: string;
+}, tenantId: string): PacienteClinico {
+  const parts = (active.full_name || 'Paciente').trim().split(/\s+/);
+  return {
+    id: active.id,
+    tenant_id: active.tenant_id || tenantId,
+    identifier_type: 'RUT',
+    identifier_number: active.rut_or_dni || '—',
+    first_name: active.first_name || parts[0] || 'Paciente',
+    last_name: active.last_name || parts.slice(1).join(' ') || '',
+    gender: (active.gender === 'female' ? 'female' : active.gender === 'other' ? 'other' : 'male') as PacienteClinico['gender'],
+    birth_date: active.birth_date || '',
+    telecom_phone: active.phone || '',
+    telecom_email: active.email || '',
+    known_allergies: active.allergies || [],
+    chronic_conditions: active.medical_conditions || [],
+    active: true,
+    created_at: active.created_at || new Date().toISOString(),
+  };
+}
 
 const TABS: { id: EvalTab; label: string; icon: string }[] = [
   { id: 'postura', label: 'Postura', icon: 'accessibility_new' },
@@ -90,6 +127,8 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [historiaForPdf, setHistoriaForPdf] = useState<HistoriaClinica | null>(null);
 
   const addToast = (type: ToastMessage['type'], title: string, message: string) => {
     const id = Date.now().toString();
@@ -144,6 +183,36 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
     setReadOnly(false);
     setForm(emptyForm(activePatient?.id || ''));
     setTab('postura');
+  };
+
+  const openPdfExport = async () => {
+    if (!activePatient?.id || !tenantId) {
+      addToast('error', 'Sin paciente', 'Selecciona un paciente para exportar el informe.');
+      return;
+    }
+    try {
+      const historia = await getHistoriaClinicaByPatient(tenantId, activePatient.id);
+      setHistoriaForPdf(historia);
+    } catch (err) {
+      console.error(err);
+      setHistoriaForPdf(null);
+    }
+    setPdfOpen(true);
+  };
+
+  const evaluationForPdf: Partial<KinesiologyEvaluation> = {
+    id: currentId,
+    tenant_id: tenantId || '',
+    patient_id: activePatient?.id || '',
+    professional_id: user?.id || '',
+    postura: form.postura,
+    movilidad: form.movilidad,
+    fuerza: form.fuerza,
+    gestos_movimiento: form.gestos_movimiento,
+    diagnostico_kinesico: form.diagnostico_kinesico,
+    plan_tratamiento: form.plan_tratamiento,
+    observaciones_generales: form.observaciones_generales,
+    created_at: history.find((h) => h.id === currentId)?.created_at || new Date().toISOString(),
   };
 
   const updatePostureLandmark = (
@@ -244,14 +313,43 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
               </p>
             </div>
             {activePatient && (
-              <button
-                type="button"
-                onClick={startNewEvaluation}
-                className="inline-flex items-center gap-2 rounded-2xl bg-primary text-on-primary px-4 py-2.5 text-sm font-bold"
-              >
-                <span className="material-symbols-outlined text-lg">add</span>
-                Nueva Evaluación
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void openPdfExport()}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2.5 text-xs font-bold text-on-surface"
+                  title="Vista previa del informe PDF consolidado"
+                >
+                  <span className="material-symbols-outlined text-base text-primary">visibility</span>
+                  Vista Previa PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void openPdfExport()}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-outline-variant/40 bg-surface-container-high px-3 py-2.5 text-xs font-bold text-on-surface"
+                  title="Descargar o enviar informe kinésico"
+                >
+                  <span className="material-symbols-outlined text-base text-primary">download</span>
+                  Descargar PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void openPdfExport()}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2.5 text-xs font-extrabold"
+                  title="Envío Eco-Friendly al correo del paciente"
+                >
+                  <span className="material-symbols-outlined text-base">eco</span>
+                  Envío Eco-Friendly
+                </button>
+                <button
+                  type="button"
+                  onClick={startNewEvaluation}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-primary text-on-primary px-4 py-2.5 text-sm font-bold"
+                >
+                  <span className="material-symbols-outlined text-lg">add</span>
+                  Nueva Evaluación
+                </button>
+              </div>
             )}
           </div>
 
@@ -549,6 +647,18 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
       </main>
 
       <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />
+
+      {pdfOpen && activePatient && (
+        <KinesiologyPdfModal
+          isOpen={pdfOpen}
+          onClose={() => setPdfOpen(false)}
+          patient={mapActiveToPacienteClinico(activePatient, tenantId || '')}
+          evaluation={evaluationForPdf}
+          historia={historiaForPdf}
+          physiotherapistName={user?.full_name}
+          onToast={(type, title, message) => addToast(type, title, message)}
+        />
+      )}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import {
   PerimeterMeasurements,
   BoneDiameterMeasurements,
 } from '../../types/coreBodyNutrition';
-import { RotateCw, Check, Info, X, Compass, ChevronRight, ChevronLeft, Ruler } from 'lucide-react';
+import { RotateCw, Check, Info, Compass, ChevronRight, ChevronLeft, Ruler } from 'lucide-react';
 
 export interface AnatomicalPointDef {
   key: string;
@@ -260,18 +260,23 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
   const currentPoint = tabPoints.find((p) => p.key === selectedKey) || tabPoints[0];
 
   // Temporary edit value for popover input
-  const getCurrentValue = (point: AnatomicalPointDef): number => {
+  const getCurrentValue = (point: AnatomicalPointDef): number | null => {
     if (point.category === 'skinfolds') {
-      return (skinfolds as Record<string, number>)[point.key] ?? 0;
+      const v = (skinfolds as Record<string, number>)[point.key];
+      return v != null && v > 0 ? v : null;
     }
     if (point.category === 'perimeters') {
-      return (perimeters as Record<string, number>)[point.key] ?? 0;
+      const v = (perimeters as Record<string, number>)[point.key];
+      return v != null && v > 0 ? v : null;
     }
-    return (diameters as Record<string, number>)[point.key] ?? 0;
+    const v = (diameters as Record<string, number>)[point.key];
+    return v != null && v > 0 ? v : null;
   };
 
   const [inputVal, setInputVal] = useState<string>(
-    currentPoint ? getCurrentValue(currentPoint).toFixed(1) : '0'
+    currentPoint && getCurrentValue(currentPoint) != null
+      ? getCurrentValue(currentPoint)!.toFixed(1)
+      : ''
   );
 
   const handleSelectPoint = (pointKey: string) => {
@@ -281,7 +286,8 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
     }
     const pt = tabPoints.find((p) => p.key === pointKey);
     if (pt) {
-      setInputVal(getCurrentValue(pt).toFixed(1));
+      const v = getCurrentValue(pt);
+      setInputVal(v != null ? v.toFixed(1) : '');
     }
   };
 
@@ -474,7 +480,7 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
                         top: `${coords.y}%`,
                         transform: 'translate(-50%, -50%)',
                       }}
-                      title={`${pt.name}: ${val} ${pt.unit}`}
+                      title={`${pt.name}${val != null ? `: ${val} ${pt.unit}` : ''}`}
                       className={`absolute z-10 transition-all duration-200 cursor-pointer flex items-center justify-center rounded-full ${
                         isSelected ? themeColor.dotActive : `${themeColor.dot} hover:scale-110 shadow-sm`
                       } w-4 h-4 text-2xs font-bold ring-2`}
@@ -583,7 +589,7 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
                         top: `${coords.y}%`,
                         transform: 'translate(-50%, -50%)',
                       }}
-                      title={`${pt.name}: ${val} ${pt.unit}`}
+                      title={`${pt.name}${val != null ? `: ${val} ${pt.unit}` : ''}`}
                       className={`absolute z-10 transition-all duration-200 cursor-pointer flex items-center justify-center rounded-full ${
                         isSelected ? themeColor.dotActive : `${themeColor.dot} hover:scale-110 shadow-sm`
                       } w-4 h-4 text-2xs font-bold ring-2`}
@@ -595,17 +601,27 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Interactive Measurement Callout Popover Card (matching the mockups!) */}
-        {currentPoint && (
-          <div
-            id="anthropometry-popover-card"
-            className={`absolute right-4 md:right-8 top-6 z-20 w-80 bg-white/95 backdrop-blur-md rounded-xl border p-4 shadow-xl ${themeColor.cardBorder} transition-all`}
-          >
-            {/* Popover Header */}
-            <div className="flex items-start justify-between border-b border-slate-100 pb-2 mb-3">
-              <div>
-                <div className="flex items-center gap-1.5">
+      {/* Dock inferior de medición — fuera del canvas anatómico (sin superposición) */}
+      {currentPoint && (
+        <div
+          id="anthropometry-measure-dock"
+          className={`border-t border-slate-200 bg-white px-4 py-3 ${themeColor.cardBorder}`}
+        >
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4 max-w-5xl mx-auto">
+            <div className="flex items-start gap-3 flex-1 min-w-0">
+              <div className="w-12 h-12 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0">
+                {currentPoint.illustrationType === 'caliper_fold' ? (
+                  <Ruler className="w-5 h-5 text-blue-600" />
+                ) : currentPoint.illustrationType === 'tape_perimeter' ? (
+                  <Compass className="w-5 h-5 text-emerald-600" />
+                ) : (
+                  <Ruler className="w-5 h-5 text-amber-600" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
                   <span className="text-2xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
                     {currentPoint.category === 'skinfolds'
                       ? 'Pliegue Cutáneo'
@@ -613,85 +629,43 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
                       ? 'Perímetro'
                       : 'Diámetro Óseo'}
                   </span>
-                  <span className="text-2xs text-slate-400">ISAK 1</span>
+                  <span className="text-2xs text-slate-400">ISAK · KineSys</span>
                 </div>
-                <h4 className="text-sm font-bold text-slate-900 mt-1">
-                  {currentPoint.name}
-                </h4>
-              </div>
-              <button
-                onClick={() => setInternalSelectedKey('')}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors"
-                title="Cerrar panel flotante"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Technique visual guide */}
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 mb-3 flex items-center gap-3">
-              <div className="w-14 h-14 rounded-md bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
-                {currentPoint.illustrationType === 'caliper_fold' ? (
-                  <div className="text-center p-1">
-                    <Ruler className="w-6 h-6 text-blue-600 mx-auto" />
-                    <span className="text-3xs text-blue-700 font-bold block">Plicómetro</span>
-                  </div>
-                ) : currentPoint.illustrationType === 'tape_perimeter' ? (
-                  <div className="text-center p-1">
-                    <Compass className="w-6 h-6 text-emerald-600 mx-auto" />
-                    <span className="text-3xs text-emerald-700 font-bold block">Cinta ISAK</span>
-                  </div>
-                ) : (
-                  <div className="text-center p-1">
-                    <Ruler className="w-6 h-6 text-amber-600 mx-auto" />
-                    <span className="text-3xs text-amber-700 font-bold block">Calibre Óseo</span>
-                  </div>
-                )}
-              </div>
-              <div className="text-2xs text-slate-600 leading-relaxed">
-                <p className="font-medium text-slate-800 line-clamp-2">{currentPoint.techniqueGuide}</p>
-                <p className="text-slate-400 text-3xs mt-1">{currentPoint.normalRangeText}</p>
+                <h4 className="text-sm font-bold text-slate-900 truncate">{currentPoint.name}</h4>
+                <p className="text-2xs text-slate-500 line-clamp-2">{currentPoint.techniqueGuide}</p>
               </div>
             </div>
 
-            {/* Input field with unit */}
-            <div className="mb-3">
-              <label className="block text-2xs font-semibold text-slate-700 mb-1">
-                Medida ({currentPoint.unit}):
-              </label>
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="number"
-                    step="0.1"
-                    id={`input-measure-${currentPoint.key}`}
-                    value={inputVal}
-                    onChange={(e) => setInputVal(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleSaveCurrentVal();
-                    }}
-                    className="w-full text-lg font-bold text-slate-900 bg-white border-2 border-slate-300 rounded-lg px-3 py-1.5 focus:border-blue-600 focus:outline-hidden text-right pr-12 transition-all shadow-inner"
-                    placeholder="0.0"
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 pointer-events-none">
-                    {currentPoint.unit}
-                  </span>
-                </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="relative w-36">
+                <input
+                  type="number"
+                  step="0.1"
+                  id={`input-measure-${currentPoint.key}`}
+                  value={inputVal}
+                  onChange={(e) => setInputVal(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveCurrentVal();
+                  }}
+                  className="w-full text-base font-bold text-slate-900 bg-white border-2 border-slate-300 rounded-lg px-3 py-2 focus:border-blue-600 focus:outline-hidden text-right pr-10 transition-all"
+                  placeholder="—"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 pointer-events-none">
+                  {currentPoint.unit}
+                </span>
               </div>
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex items-center gap-2">
               <button
                 id="btn-save-measure"
+                type="button"
                 onClick={handleSaveCurrentVal}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all shadow-sm ${themeColor.btnPrimary}`}
+                className={`inline-flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg text-xs font-semibold transition-all shadow-sm ${themeColor.btnPrimary}`}
               >
                 <Check className="w-3.5 h-3.5" />
-                Guardar medida
+                Guardar
               </button>
               <button
                 id="btn-repeat-measure"
+                type="button"
                 onClick={handleRepeatMeasurement}
                 className="py-2 px-2.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 text-xs font-medium transition-colors"
                 title="Limpiar para repetir medición"
@@ -700,10 +674,10 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
               </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Bottom Progress and Step Navigator Bar (matching mockup) */}
+      {/* Bottom Progress and Step Navigator Bar */}
       <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-slate-200">
         <button
           id="btn-step-prev"

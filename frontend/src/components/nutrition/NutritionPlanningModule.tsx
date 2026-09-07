@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Patient,
   NutritionPlan,
-  TcaFoodItem,
   MealTimeType,
-  MealPlanSection,
   MealFoodEntry,
 } from '../../types/coreBodyNutrition';
-import { TCA_2018_DATABASE } from '../../data/tca2018Catalog';
+import type { FoodItem } from '../../types';
+import { FoodSearchCombobox } from './FoodSearchCombobox';
+import { scaleNutrientPer100g, roundNutrient } from '../../utils/nutritionCalculations';
 import {
   Apple,
   DollarSign,
@@ -19,12 +19,7 @@ import {
   Flame,
   PieChart,
   ShoppingBag,
-  Sparkles,
-  Search,
-  Filter,
   Utensils,
-  ChevronDown,
-  Info,
 } from 'lucide-react';
 
 interface NutritionPlanningModuleProps {
@@ -33,93 +28,56 @@ interface NutritionPlanningModuleProps {
   onSave: (plan: NutritionPlan) => void;
 }
 
+const EMPTY_MEALS: NutritionPlan['meals'] = [
+  { mealTime: 'Desayuno', recommendedHour: '07:30 AM', clinicalTip: '', entries: [] },
+  { mealTime: 'Media Mañana', recommendedHour: '10:30 AM', clinicalTip: '', entries: [] },
+  { mealTime: 'Almuerzo', recommendedHour: '01:30 PM', clinicalTip: '', entries: [] },
+  { mealTime: 'Media Tarde', recommendedHour: '04:45 PM', clinicalTip: '', entries: [] },
+  { mealTime: 'Cena', recommendedHour: '08:00 PM', clinicalTip: '', entries: [] },
+];
+
+function buildEmptyPlan(patient: Patient): NutritionPlan {
+  const weight = patient.weightKg || 70;
+  const targetCalories = 0;
+  return {
+    id: crypto.randomUUID(),
+    patientId: patient.id,
+    date: new Date().toISOString().slice(0, 10),
+    nutritionist: patient.nutritionist || '',
+    nutritionistId: patient.nutritionistId || '',
+    targetObjective: 'Recomposición Corporal',
+    basalMetabolicRateKcal: 0,
+    totalDailyEnergyExpenditureKcal: 0,
+    targetCaloriesKcal: targetCalories,
+    macroTargets: {
+      proteinPct: 30,
+      proteinGrams: Math.round(weight * 1.6),
+      carbsPct: 40,
+      carbsGrams: 0,
+      lipidsPct: 30,
+      lipidsGrams: 0,
+    },
+    hydrationDailyLiters: 0,
+    micronutrientAlerts: { calciumMg: 0, ironMg: 0, sodiumMg: 0 },
+    dailyBasketEstimatedCostCOP: 0,
+    monthlyBasketEstimatedCostCOP: 0,
+    generalIndications: '',
+    meals: EMPTY_MEALS.map((m) => ({ ...m, entries: [] })),
+  };
+}
+
 export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = ({
   patient,
   plan,
   onSave,
 }) => {
-  // State for nutrition plan
   const [currentPlan, setCurrentPlan] = useState<NutritionPlan>(
-    plan || {
-      id: `nutri-${patient.id}`,
-      patientId: patient.id,
-      date: '2026-07-11',
-      nutritionist: patient.nutritionist || 'Dra. Juliana Mesa V.',
-      nutritionistId: patient.nutritionistId || 'T.P. NUT-98421',
-      targetObjective: 'Recomposición Corporal',
-      basalMetabolicRateKcal: 1280,
-      totalDailyEnergyExpenditureKcal: 1850,
-      targetCaloriesKcal: 1720,
-      macroTargets: {
-        proteinPct: 28,
-        proteinGrams: 120,
-        carbsPct: 47,
-        carbsGrams: 202,
-        lipidsPct: 25,
-        lipidsGrams: 48,
-      },
-      hydrationDailyLiters: 2.2,
-      micronutrientAlerts: {
-        calciumMg: 950,
-        ironMg: 15.5,
-        sodiumMg: 1650,
-      },
-      dailyBasketEstimatedCostCOP: 21900,
-      monthlyBasketEstimatedCostCOP: 657000,
-      generalIndications:
-        'Plan estructurado con alimentos locales de la TCA 2018 para maximizar la síntesis proteica post-calistenia y mantener energía sostenida.',
-      meals: [
-        {
-          mealTime: 'Desayuno',
-          recommendedHour: '07:30 AM',
-          clinicalTip: 'Priorizar hidratación y absorción de proteína magra.',
-          entries: [],
-        },
-        {
-          mealTime: 'Media Mañana',
-          recommendedHour: '10:30 AM',
-          clinicalTip: 'Snack previo a sesión de movilidad articular.',
-          entries: [],
-        },
-        {
-          mealTime: 'Almuerzo',
-          recommendedHour: '01:30 PM',
-          clinicalTip: 'Comida principal con carbohidratos complejos y micronutrientes.',
-          entries: [],
-        },
-        {
-          mealTime: 'Media Tarde',
-          recommendedHour: '04:45 PM',
-          clinicalTip: 'Volumen y fibra antes de la práctica de dominadas y fondos.',
-          entries: [],
-        },
-        {
-          mealTime: 'Cena',
-          recommendedHour: '08:00 PM',
-          clinicalTip: 'Cena ligera facilitadora del descanso y recuperación nocturna.',
-          entries: [],
-        },
-      ],
-    }
+    plan || buildEmptyPlan(patient),
   );
-
-  const [searchFoodQuery, setSearchFoodQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedMealForAdd, setSelectedMealForAdd] = useState<MealTimeType>('Desayuno');
   const [showAddFoodModal, setShowAddFoodModal] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
-  // Filtered food catalog
-  const filteredTcaFoods = TCA_2018_DATABASE.filter((food) => {
-    const matchesQuery =
-      food.name.toLowerCase().includes(searchFoodQuery.toLowerCase()) ||
-      food.category.toLowerCase().includes(searchFoodQuery.toLowerCase());
-    const matchesCategory =
-      selectedCategory === 'all' || food.category === selectedCategory;
-    return matchesQuery && matchesCategory;
-  });
-
-  // Calculate totals from meal entries
   const allEntries = currentPlan.meals.flatMap((m) => m.entries);
   const totalCalories = allEntries.reduce((acc, curr) => acc + curr.caloriesKcal, 0);
   const totalProteinG = Number(allEntries.reduce((acc, curr) => acc + curr.proteinG, 0).toFixed(1));
@@ -128,51 +86,48 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
   const totalCostDailyCOP = allEntries.reduce((acc, curr) => acc + curr.estimatedCostCOP, 0);
   const totalCostMonthlyCOP = totalCostDailyCOP * 30;
 
-  // Add food to meal
-  const handleAddFoodToMeal = (food: TcaFoodItem, portionFactor: number = 1) => {
+  const proteinPerKg = useMemo(() => {
+    const w = patient.weightKg;
+    if (!w || w <= 0) return null;
+    return Number((totalProteinG / w).toFixed(1));
+  }, [patient.weightKg, totalProteinG]);
+
+  /** Catálogo real kinesys.food_catalog (valores por 100 g). Sin precio en schema → costeo 0. */
+  const handleAddFoodFromCatalog = (food: FoodItem, grams: number) => {
+    const factor = grams / 100;
     const newEntry: MealFoodEntry = {
-      id: `mfe-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: crypto.randomUUID(),
       foodId: food.id,
       foodName: food.name,
-      grams: Math.round(food.portionGrams * portionFactor),
-      portionCount: Number(portionFactor.toFixed(2)),
-      caloriesKcal: Math.round(food.caloriesKcal * portionFactor),
-      proteinG: Number((food.proteinG * portionFactor).toFixed(1)),
-      lipidsG: Number((food.lipidsG * portionFactor).toFixed(1)),
-      carbsTotalG: Number((food.carbsTotalG * portionFactor).toFixed(1)),
-      estimatedCostCOP: Math.round(food.estimatedPricePerPortionCOP * portionFactor),
+      grams: Math.round(grams),
+      portionCount: Number(factor.toFixed(2)),
+      caloriesKcal: Math.round(scaleNutrientPer100g(food.energy_kcal, grams)),
+      proteinG: roundNutrient(scaleNutrientPer100g(food.protein_g, grams)),
+      lipidsG: roundNutrient(scaleNutrientPer100g(food.lipids_g, grams)),
+      carbsTotalG: roundNutrient(scaleNutrientPer100g(food.carbs_total_g, grams)),
+      estimatedCostCOP: 0,
     };
 
     setCurrentPlan((prev) => ({
       ...prev,
-      meals: prev.meals.map((m) => {
-        if (m.mealTime === selectedMealForAdd) {
-          return {
-            ...m,
-            entries: [...m.entries, newEntry],
-          };
-        }
-        return m;
-      }),
+      meals: prev.meals.map((m) =>
+        m.mealTime === selectedMealForAdd
+          ? { ...m, entries: [...m.entries, newEntry] }
+          : m,
+      ),
     }));
-
     setShowAddFoodModal(false);
     setIsSaved(false);
   };
 
-  // Remove food from meal
   const handleRemoveEntry = (mealTime: MealTimeType, entryId: string) => {
     setCurrentPlan((prev) => ({
       ...prev,
-      meals: prev.meals.map((m) => {
-        if (m.mealTime === mealTime) {
-          return {
-            ...m,
-            entries: m.entries.filter((e) => e.id !== entryId),
-          };
-        }
-        return m;
-      }),
+      meals: prev.meals.map((m) =>
+        m.mealTime === mealTime
+          ? { ...m, entries: m.entries.filter((e) => e.id !== entryId) }
+          : m,
+      ),
     }));
     setIsSaved(false);
   };
@@ -190,7 +145,6 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
 
   return (
     <div id="nutrition-planning-module" className="space-y-6">
-      {/* Top Header */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -203,11 +157,11 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
                   Planificación Dietética (TCA 2018 Colombia)
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  Costeo en COP
+                  Catálogo Supabase
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Minuta individualizada basada en la Tabla de Composición de Alimentos de Colombia y costeo de canasta sugerida
+                Minuta basada en <strong>kinesys.food_catalog</strong> · Clínica KineSys Demo
               </p>
             </div>
           </div>
@@ -215,21 +169,18 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
           <div className="flex items-center gap-2">
             <button
               id="btn-open-add-food-modal"
+              type="button"
               onClick={() => setShowAddFoodModal(true)}
               className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all"
             >
               <Plus className="w-4 h-4" />
-              Añadir Alimento TCA
+              Añadir Alimento
             </button>
-
             <button
               id="btn-save-nutrition-plan"
+              type="button"
               onClick={handleSavePlan}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold shadow-xs transition-all ${
-                isSaved
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-slate-900 hover:bg-slate-800 text-white'
-              }`}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-xs transition-all"
             >
               {isSaved ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
               {isSaved ? 'Plan Guardado' : 'Guardar Minuta'}
@@ -237,197 +188,128 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
           </div>
         </div>
 
-        {/* Nutritional Summary Dashboard Ribbon */}
         <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
-          {/* Calorías */}
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
-            <span className="text-2xs text-slate-400 block font-semibold uppercase tracking-wider">
-              Calorías / Meta
+            <span className="text-2xs text-slate-400 block font-semibold uppercase tracking-wider flex items-center gap-1">
+              <Flame className="w-3 h-3" /> Calorías
             </span>
             <div className="flex items-baseline gap-1 mt-0.5">
-              <span className="text-lg font-black text-slate-900">{totalCalories}</span>
-              <span className="text-2xs text-slate-500 font-bold">/ {currentPlan.targetCaloriesKcal} kcal</span>
-            </div>
-            <div className="w-full h-1.5 bg-slate-200 rounded-full mt-1.5 overflow-hidden">
-              <div
-                className="h-full bg-emerald-600 rounded-full transition-all"
-                style={{ width: `${Math.min(100, (totalCalories / currentPlan.targetCaloriesKcal) * 100)}%` }}
-              />
+              <span className="text-lg font-black text-slate-900">{totalCalories || '—'}</span>
+              <span className="text-2xs text-slate-500 font-bold">
+                / {currentPlan.targetCaloriesKcal || '—'} kcal
+              </span>
             </div>
           </div>
-
-          {/* Proteína */}
           <div className="bg-blue-50/60 border border-blue-200 rounded-lg p-3">
             <span className="text-2xs text-blue-700 block font-semibold uppercase tracking-wider">
-              Proteína (P)
+              Proteína
             </span>
             <div className="flex items-baseline gap-1 mt-0.5">
-              <span className="text-lg font-black text-blue-900">{totalProteinG}g</span>
-              <span className="text-2xs text-blue-600 font-bold">/ {currentPlan.macroTargets.proteinGrams}g</span>
+              <span className="text-lg font-black text-blue-900">{totalProteinG || '—'}g</span>
             </div>
             <span className="text-3xs text-blue-700 block mt-1 font-medium">
-              {patient.weightKg ? (totalProteinG / patient.weightKg).toFixed(1) : '2.2'} g/kg peso
+              {proteinPerKg != null ? `${proteinPerKg} g/kg peso` : 'Sin peso paciente'}
             </span>
           </div>
-
-          {/* Carbohidratos */}
           <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-3">
             <span className="text-2xs text-amber-800 block font-semibold uppercase tracking-wider">
-              Carbohidratos (C)
+              Carbohidratos
             </span>
-            <div className="flex items-baseline gap-1 mt-0.5">
-              <span className="text-lg font-black text-amber-950">{totalCarbsG}g</span>
-              <span className="text-2xs text-amber-700 font-bold">/ {currentPlan.macroTargets.carbsGrams}g</span>
-            </div>
-            <span className="text-3xs text-amber-750 block mt-1 font-medium">Energía glucolítica</span>
+            <span className="text-lg font-black text-amber-900 mt-0.5 block">{totalCarbsG || '—'}g</span>
           </div>
-
-          {/* Grasas / Lípidos */}
           <div className="bg-orange-50/60 border border-orange-200 rounded-lg p-3">
-            <span className="text-2xs text-orange-800 block font-semibold uppercase tracking-wider">
-              Lípidos (G)
+            <span className="text-2xs text-orange-800 block font-semibold uppercase tracking-wider flex items-center gap-1">
+              <PieChart className="w-3 h-3" /> Grasas
             </span>
-            <div className="flex items-baseline gap-1 mt-0.5">
-              <span className="text-lg font-black text-orange-950">{totalLipidsG}g</span>
-              <span className="text-2xs text-orange-700 font-bold">/ {currentPlan.macroTargets.lipidsGrams}g</span>
-            </div>
-            <span className="text-3xs text-orange-750 block mt-1 font-medium">Ácidos mono/poliinsaturados</span>
+            <span className="text-lg font-black text-orange-900 mt-0.5 block">{totalLipidsG || '—'}g</span>
           </div>
-
-          {/* Costo Diario COP (Innovación Financiera) */}
-          <div className="bg-emerald-50 border border-emerald-300 rounded-lg p-3">
-            <span className="text-2xs text-emerald-800 block font-bold uppercase tracking-wider flex items-center gap-1">
-              <DollarSign className="w-3 h-3 text-emerald-700" />
-              Canasta Diaria
+          <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg p-3">
+            <span className="text-2xs text-emerald-800 block font-semibold uppercase tracking-wider flex items-center gap-1">
+              <DollarSign className="w-3 h-3" /> Canasta / día
             </span>
-            <div className="text-lg font-black text-emerald-950 mt-0.5">
-              ${totalCostDailyCOP.toLocaleString('es-CO')}{' '}
-              <span className="text-3xs font-semibold text-emerald-700">COP</span>
-            </div>
-            <span className="text-3xs text-emerald-700 block mt-1">Alimentos locales frescos</span>
+            <span className="text-lg font-black text-emerald-900 mt-0.5 block">
+              ${totalCostDailyCOP.toLocaleString('es-CO')}
+            </span>
           </div>
-
-          {/* Costo Mensual Estimado */}
-          <div className="bg-emerald-50/50 border border-emerald-200 rounded-lg p-3">
-            <span className="text-2xs text-emerald-800 block font-bold uppercase tracking-wider flex items-center gap-1">
-              <ShoppingBag className="w-3 h-3 text-emerald-700" />
-              Presupuesto Mes
+          <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg p-3">
+            <span className="text-2xs text-emerald-800 block font-semibold uppercase tracking-wider flex items-center gap-1">
+              <ShoppingBag className="w-3 h-3" /> Mensual
             </span>
-            <div className="text-lg font-black text-emerald-950 mt-0.5">
-              ${totalCostMonthlyCOP.toLocaleString('es-CO')}{' '}
-              <span className="text-3xs font-semibold text-emerald-700">COP</span>
-            </div>
-            <span className="text-3xs text-emerald-750 block mt-1">Base mensual estimada</span>
+            <span className="text-lg font-black text-emerald-900 mt-0.5 block">
+              ${totalCostMonthlyCOP.toLocaleString('es-CO')}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Main Meal Planner Sections */}
       <div className="space-y-4">
         {currentPlan.meals.map((meal) => {
-          const mealCalories = meal.entries.reduce((acc, curr) => acc + curr.caloriesKcal, 0);
-          const mealProtein = meal.entries.reduce((acc, curr) => acc + curr.proteinG, 0);
-          const mealCost = meal.entries.reduce((acc, curr) => acc + curr.estimatedCostCOP, 0);
-
+          const mealKcal = meal.entries.reduce((s, e) => s + e.caloriesKcal, 0);
+          const mealProt = meal.entries.reduce((s, e) => s + e.proteinG, 0);
+          const mealCost = meal.entries.reduce((s, e) => s + e.estimatedCostCOP, 0);
           return (
             <div
               key={meal.mealTime}
-              className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs"
+              className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden"
             >
-              {/* Meal Header */}
-              <div className="p-3.5 bg-slate-50/90 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
-                    <Utensils className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-slate-900">{meal.mealTime}</h3>
-                      <span className="text-2xs text-slate-500 font-semibold flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {meal.recommendedHour}
-                      </span>
-                    </div>
-                    {meal.clinicalTip && (
-                      <p className="text-2xs text-slate-500">{meal.clinicalTip}</p>
-                    )}
-                  </div>
+              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Utensils className="w-4 h-4 text-slate-500" />
+                  <h3 className="text-sm font-bold text-slate-900">{meal.mealTime}</h3>
+                  <span className="text-2xs text-slate-500 flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> {meal.recommendedHour}
+                  </span>
                 </div>
-
-                <div className="flex items-center gap-3 text-xs">
-                  <div className="flex items-center gap-2 font-semibold">
-                    <span className="text-slate-700">
-                      <strong>{mealCalories}</strong> kcal
-                    </span>
-                    <span className="text-blue-700">
-                      <strong>{mealProtein.toFixed(1)}g</strong> prot
-                    </span>
-                    <span className="text-emerald-800 font-bold">
-                      ${mealCost.toLocaleString('es-CO')} COP
-                    </span>
-                  </div>
-
+                <div className="flex items-center gap-3 text-2xs font-semibold text-slate-600">
+                  <span>{mealKcal} kcal</span>
+                  <span>P {mealProt.toFixed(1)}g</span>
+                  <span className="text-emerald-700">${mealCost.toLocaleString('es-CO')}</span>
                   <button
-                    id={`btn-add-to-${meal.mealTime}`}
+                    type="button"
                     onClick={() => {
                       setSelectedMealForAdd(meal.mealTime);
                       setShowAddFoodModal(true);
                     }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 text-2xs font-semibold shadow-2xs transition-colors"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-2xs font-bold"
                   >
-                    <Plus className="w-3 h-3 text-emerald-600" />
-                    Añadir alimento
+                    <Plus className="w-3 h-3" /> Alimento
                   </button>
                 </div>
               </div>
-
-              {/* Meal Food Entries Table */}
-              <div className="p-3">
+              <div className="p-3 space-y-2">
                 {meal.entries.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-slate-400">
-                    No hay alimentos asignados a esta toma. Haz clic en "Añadir alimento" para seleccionar de la TCA 2018.
-                  </div>
+                  <p className="text-xs text-slate-400 text-center py-4">
+                    Sin alimentos. Use «Añadir» para buscar en el catálogo TCA (Supabase).
+                  </p>
                 ) : (
-                  <div className="divide-y divide-slate-100">
-                    {meal.entries.map((entry) => (
-                      <div
-                        key={entry.id}
-                        className="py-2.5 flex items-center justify-between gap-3 text-xs hover:bg-slate-50/50 px-2 rounded-lg transition-colors"
-                      >
-                        <div className="flex-1">
-                          <div className="font-bold text-slate-800">{entry.foodName}</div>
-                          <div className="text-2xs text-slate-400">
-                            Porción: {entry.grams}g ({entry.portionCount}x unidad estándar)
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-4 text-right">
-                          <div>
-                            <span className="font-bold text-slate-900 block">{entry.caloriesKcal} kcal</span>
-                            <span className="text-3xs text-slate-400">
-                              P: {entry.proteinG}g • C: {entry.carbsTotalG}g • G: {entry.lipidsG}g
-                            </span>
-                          </div>
-
-                          <div className="min-w-20 text-right">
-                            <span className="font-bold text-emerald-700 block">
-                              ${entry.estimatedCostCOP.toLocaleString('es-CO')}
-                            </span>
-                            <span className="text-3xs text-slate-400">COP</span>
-                          </div>
-
-                          <button
-                            id={`btn-remove-entry-${entry.id}`}
-                            onClick={() => handleRemoveEntry(meal.mealTime, entry.id)}
-                            className="p-1 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50 transition-colors"
-                            title="Eliminar alimento de la minuta"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                  meal.entries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between gap-3 py-2 px-2 rounded-lg hover:bg-slate-50"
+                    >
+                      <div>
+                        <span className="font-bold text-slate-900 text-xs block">{entry.foodName}</span>
+                        <span className="text-3xs text-slate-400">Porción: {entry.grams} g</span>
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex items-center gap-4 text-right">
+                        <div>
+                          <span className="font-bold text-slate-900 block text-xs">
+                            {entry.caloriesKcal} kcal
+                          </span>
+                          <span className="text-3xs text-slate-400">
+                            P: {entry.proteinG}g · C: {entry.carbsTotalG}g · G: {entry.lipidsG}g
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveEntry(meal.mealTime, entry.id)}
+                          className="p-1 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
@@ -435,95 +317,46 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
         })}
       </div>
 
-      {/* Modal: TCA 2018 Food Selector */}
       {showAddFoodModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-fadeIn">
-            {/* Modal Header */}
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-lg w-full shadow-2xl overflow-hidden">
             <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div>
-                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <Apple className="w-4 h-4 text-emerald-600" />
-                  Añadir alimento a: <span className="text-emerald-700">{selectedMealForAdd}</span>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  Añadir a: <span className="text-emerald-700">{selectedMealForAdd}</span>
                 </h3>
                 <p className="text-2xs text-slate-500">
-                  Tabla de Composición de Alimentos de Colombia (TCA 2018) con costeo en COP
+                  Búsqueda en tiempo real · tabla <code>food_catalog</code>
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setShowAddFoodModal(false)}
                 className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200/60"
               >
                 ✕
               </button>
             </div>
-
-            {/* Search & Category Filter */}
-            <div className="p-3 border-b border-slate-100 flex flex-col sm:flex-row gap-2">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar arepa, pollo, ahuyama, frijoles..."
-                  value={searchFoodQuery}
-                  onChange={(e) => setSearchFoodQuery(e.target.value)}
-                  className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-600"
-                />
-              </div>
-
+            <div className="p-4">
+              <label className="block text-2xs font-bold text-slate-500 mb-2 uppercase">
+                Tiempo de comida
+              </label>
               <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:outline-hidden"
+                value={selectedMealForAdd}
+                onChange={(e) => setSelectedMealForAdd(e.target.value as MealTimeType)}
+                className="w-full mb-3 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2"
               >
-                <option value="all">Todas las categorías</option>
-                <option value="Cereales y Raíces">Cereales y Raíces</option>
-                <option value="Carnes, Huevos y Leguminosas">Carnes y Leguminosas</option>
-                <option value="Platos Típicos Tradicionales">Platos Típicos</option>
-                <option value="Frutas y Verduras">Frutas y Verduras</option>
-                <option value="Lácteos y Derivados">Lácteos</option>
-                <option value="Grasas y Aceites">Grasas y Aceites</option>
+                {currentPlan.meals.map((m) => (
+                  <option key={m.mealTime} value={m.mealTime}>
+                    {m.mealTime}
+                  </option>
+                ))}
               </select>
-            </div>
-
-            {/* Food List */}
-            <div className="flex-1 overflow-y-auto p-3 divide-y divide-slate-100">
-              {filteredTcaFoods.map((food) => (
-                <div
-                  key={food.id}
-                  className="py-3 px-2 flex items-center justify-between gap-3 hover:bg-slate-50 rounded-lg transition-colors"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-900 text-xs">{food.name}</span>
-                      <span className="text-3xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                        {food.category}
-                      </span>
-                    </div>
-                    <div className="text-2xs text-slate-500 mt-0.5">
-                      Porción estándar: <strong>{food.servingPortionName}</strong> • {food.notes}
-                    </div>
-                    <div className="text-3xs text-slate-400 mt-0.5">
-                      P: {food.proteinG}g • C: {food.carbsTotalG}g • G: {food.lipidsG}g • Calcio: {food.calciumMg}mg • Hierro: {food.ironMg}mg
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <span className="text-xs font-black text-emerald-800 block">
-                      ${food.estimatedPricePerPortionCOP.toLocaleString('es-CO')} COP
-                    </span>
-                    <span className="text-3xs text-slate-400 block">{food.caloriesKcal} kcal</span>
-
-                    <button
-                      id={`btn-add-food-${food.id}`}
-                      onClick={() => handleAddFoodToMeal(food, 1)}
-                      className="mt-1.5 px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-2xs font-bold transition-all shadow-2xs"
-                    >
-                      + Añadir (1x)
-                    </button>
-                  </div>
-                </div>
-              ))}
+              <FoodSearchCombobox
+                onAddFood={handleAddFoodFromCatalog}
+                placeholder="Buscar en food_catalog (ej. pollo, arepa, lenteja)..."
+                defaultGrams={100}
+              />
             </div>
           </div>
         </div>
@@ -531,3 +364,5 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
     </div>
   );
 };
+
+export default NutritionPlanningModule;

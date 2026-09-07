@@ -1,4 +1,4 @@
-/** Tipos Core Body / fisiotest — Nutrición & Antropometría (portados) */
+/** Tipos nutrición / antropometría (protocolo ISAK + BIA + planes dietéticos). */
 
 export interface Patient {
   id: string;

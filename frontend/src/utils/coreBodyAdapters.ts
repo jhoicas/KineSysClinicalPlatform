@@ -12,7 +12,7 @@ function calcAge(birthDate?: string): number {
   return Math.max(12, new Date().getFullYear() - y);
 }
 
-/** Mapea PacienteClinico KineSys → Patient Core Body (fisiotest). */
+/** Mapea PacienteClinico KineSys → Patient clínico (módulo nutrición). */
 export function toCoreBodyPatient(
   p: PacienteClinico,
   opts?: {
@@ -42,15 +42,15 @@ export function toCoreBodyPatient(
     physiotherapistId: '',
     nutritionist: opts?.nutritionistName,
     nutritionistId: opts?.nutritionistId,
-    heightCm: opts?.heightCm ?? (gender === 'F' ? 158.1 : 175),
-    weightKg: opts?.weightKg ?? (gender === 'F' ? 53.5 : 78),
+    heightCm: opts?.heightCm,
+    weightKg: opts?.weightKg,
     evalNumber: '1/1',
     isakCertification: 'ISAK Nivel 3',
     activityLevel: 'Moderado (3-5 veces/semana)',
   };
 }
 
-/** Convierte assessment Core Body → EvaluacionAntropometrica KineSys (persistencia). */
+/** Convierte assessment ISAK → EvaluacionAntropometrica KineSys (persistencia). */
 export function coreBodyAnthroToKinesys(
   a: AnthropometryAssessment,
   ctx: {
@@ -112,7 +112,7 @@ export function coreBodyAnthroToKinesys(
   };
 }
 
-/** Convierte NutritionPlan Core Body → PlanNutricional KineSys. */
+/** Convierte NutritionPlan UI → PlanNutricional KineSys. */
 export function coreBodyPlanToKinesys(
   plan: NutritionPlan,
   ctx: { tenantId: string },

@@ -1,5 +1,5 @@
 /**
- * Cálculos ISAK / composición corporal para el frontend CORE BODY.
+ * Cálculos ISAK / composición corporal para el frontend KineSys.
  * Espejo clínico de backend/services/AnthropometryService.ts
  */
 

@@ -70,43 +70,16 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
   const [moduleView, setModuleView] = useState<'isak' | 'progreso'>('isak');
   const [activeTab, setActiveTab] = useState<IsakMeasureTab>('pliegues');
   const [selectedId, setSelectedId] = useState<IsakNodeId | null>('triceps');
-  const [draftValue, setDraftValue] = useState('14.5');
+  const [draftValue, setDraftValue] = useState('');
   const [equation, setEquation] = useState<IsaKEquationId>(
     (draftForPatient?.equation as IsaKEquationId) || 'faulkner',
   );
-  const [weightKg, setWeightKg] = useState(
-    draftForPatient?.weightKg ??
-      (typeof patient.weight_kg === 'number' ? patient.weight_kg : gender === 'male' ? 78 : 62.4),
-  );
-  const [heightCm, setHeightCm] = useState(
-    draftForPatient?.heightCm ??
-      (typeof patient.height_cm === 'number' ? patient.height_cm : gender === 'male' ? 175 : 167),
-  );
+  const [weightKg, setWeightKg] = useState(draftForPatient?.weightKg ?? 0);
+  const [heightCm, setHeightCm] = useState(draftForPatient?.heightCm ?? 0);
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
 
-  const defaultMeasures: MeasureMap = {
-    biceps: 8.5,
-    triceps: gender === 'male' ? 14.5 : 16,
-    subscapular: gender === 'male' ? 18 : 14.5,
-    iliac_crest: 12,
-    suprailiac: gender === 'male' ? 19.5 : 15,
-    abdominal: gender === 'male' ? 22 : 17.5,
-    thigh_sf: 16,
-    calf_sf: 11,
-    arm_relaxed: 32,
-    arm_flexed: 34.5,
-    waist: gender === 'male' ? 88 : 70,
-    hip: gender === 'male' ? 98 : 96,
-    thigh_cir: 56,
-    calf_cir: 37,
-    biacromial: 38,
-    humerus: 6.8,
-    femur: 9.2,
-  };
-
   const [measures, setMeasures] = useState<MeasureMap>(() => ({
-    ...defaultMeasures,
     ...(draftForPatient?.isakMeasures as MeasureMap | undefined),
   }));
 

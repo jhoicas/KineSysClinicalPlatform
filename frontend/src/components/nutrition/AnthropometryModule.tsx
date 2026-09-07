@@ -39,17 +39,17 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
   const [activePointKey, setActivePointKey] = useState<string>('triceps');
   const [isSaved, setIsSaved] = useState(false);
 
-  // State initialized with existing assessment or default
+  // State: solo datos reales del assessment previo; si no hay, vacío (0 = sin medir)
   const [skinfolds, setSkinfolds] = useState<SkinfoldMeasurements>(
     assessment?.skinfolds || {
-      triceps: 14.4,
-      subescapular: 14.9,
-      biceps: 8.1,
-      crestaIliaca: 18.2,
-      supraespinal: 17.3,
-      abdominal: 19.5,
-      muslo: 23.0,
-      pierna: 18.4,
+      triceps: 0,
+      subescapular: 0,
+      biceps: 0,
+      crestaIliaca: 0,
+      supraespinal: 0,
+      abdominal: 0,
+      muslo: 0,
+      pierna: 0,
     }
   );
 
@@ -59,20 +59,20 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
 
   const [perimeters, setPerimeters] = useState<PerimeterMeasurements>(
     assessment?.perimeters || {
-      brazoRelajado: 26.0,
-      brazoContraido: 27.3,
-      cintura: 71.8,
-      cadera: 91.0,
-      muslo: 46.9,
-      pierna: 31.5,
+      brazoRelajado: 0,
+      brazoContraido: 0,
+      cintura: 0,
+      cadera: 0,
+      muslo: 0,
+      pierna: 0,
     }
   );
 
   const [diameters, setDiameters] = useState<BoneDiameterMeasurements>(
     assessment?.diameters || {
-      biacromial: 36.3,
-      humero: 6.8,
-      femur: 9.4,
+      biacromial: 0,
+      humero: 0,
+      femur: 0,
     }
   );
 
@@ -81,8 +81,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
   );
 
   const [generalNotes, setGeneralNotes] = useState<string>(
-    assessment?.generalObservations ||
-      'Excelente densidad musculoesquelética y adecuada linealidad para calistenia y control de peso corporal.'
+    assessment?.generalObservations || ''
   );
 
   // Dynamic calculations
@@ -107,8 +106,15 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     skinfolds.muslo;
   const jp7Fat = Number((0.12 * sum7JP + 7.1).toFixed(1));
 
-  const calculatedFatPct =
-    equation === 'faulkner_4'
+  const hasSkinfoldData =
+    skinfolds.triceps > 0 ||
+    skinfolds.subescapular > 0 ||
+    skinfolds.supraespinal > 0 ||
+    skinfolds.crestaIliaca > 0;
+
+  const calculatedFatPct = !hasSkinfoldData
+    ? 0
+    : equation === 'faulkner_4'
       ? faulknerFat
       : equation === 'jackson_pollock_3'
       ? jpFat

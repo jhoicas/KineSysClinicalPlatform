@@ -27,82 +27,47 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
   data,
   onSave,
 }) => {
+  const emptyRange = (
+    unit: string,
+    minNormal: number,
+    maxNormal: number,
+  ): RangeIndicator => ({
+    value: 0,
+    minNormal,
+    maxNormal,
+    unit,
+    status: 'Normal',
+  });
+
+  const fatMin = patient.gender === 'F' ? 18 : 10;
+  const fatMax = patient.gender === 'F' ? 28 : 20;
+
   const [composition, setComposition] = useState<BodyCompositionBIA>(
     data || {
       id: `bia-${patient.id}`,
       patientId: patient.id,
-      date: '2026-07-11',
+      date: new Date().toISOString().slice(0, 10),
       deviceModel: 'InBody H30',
-      sourceMode: 'hardware_auto',
-      lastSyncTimestamp: '11-07-2026 | 12:24',
-      pesoKg: {
-        value: 53.5,
-        minNormal: 47.2,
-        maxNormal: 63.8,
-        unit: 'kg',
-        status: 'Normal',
-      },
-      masaMuscularEsqueleticaKg: {
-        value: 21.5,
-        minNormal: 18.6,
-        maxNormal: 25.8,
-        unit: 'kg',
-        status: 'Adecuada',
-      },
-      masaGrasaKg: {
-        value: 13.3,
-        minNormal: 9.1,
-        maxNormal: 17.4,
-        unit: 'kg',
-        status: 'Normal',
-      },
-      porcentajeGrasaCorporal: {
-        value: 24.8,
-        minNormal: 18.0,
-        maxNormal: 28.0,
-        unit: '%',
-        status: 'Adecuada',
-      },
+      sourceMode: 'manual_entry',
+      lastSyncTimestamp: '',
+      pesoKg: emptyRange('kg', 45, 100),
+      masaMuscularEsqueleticaKg: emptyRange('kg', 18, 40),
+      masaGrasaKg: emptyRange('kg', 8, 35),
+      porcentajeGrasaCorporal: emptyRange('%', fatMin, fatMax),
       segmental: {
-        brazoIzq: { muscleKg: 1.7, fatKg: 0.8 },
-        brazoDer: { muscleKg: 1.8, fatKg: 0.9 },
-        tronco: { muscleKg: 19.1, fatKg: 6.3 },
-        troncoEspalda: { muscleKg: 19.1, fatKg: 6.2 },
-        piernaIzq: { muscleKg: 7.4, fatKg: 2.9 },
-        piernaDer: { muscleKg: 7.3, fatKg: 2.8 },
+        brazoIzq: { muscleKg: 0, fatKg: 0 },
+        brazoDer: { muscleKg: 0, fatKg: 0 },
+        tronco: { muscleKg: 0, fatKg: 0 },
+        piernaIzq: { muscleKg: 0, fatKg: 0 },
+        piernaDer: { muscleKg: 0, fatKg: 0 },
       },
       otherIndicators: {
-        aguaCorporalTotalL: {
-          value: 29.4,
-          minNormal: 25.1,
-          maxNormal: 33.8,
-          unit: 'L',
-          status: 'Normal',
-        },
-        proteinaKg: {
-          value: 7.9,
-          minNormal: 6.7,
-          maxNormal: 9.1,
-          unit: 'kg',
-          status: 'Normal',
-        },
-        mineralesKg: {
-          value: 3.0,
-          minNormal: 2.5,
-          maxNormal: 3.4,
-          unit: 'kg',
-          status: 'Normal',
-        },
-        grasaVisceralNivel: {
-          value: 6,
-          minNormal: 1,
-          maxNormal: 9,
-          unit: 'nivel',
-          status: 'Normal',
-        },
+        aguaCorporalTotalL: emptyRange('L', 25, 45),
+        proteinaKg: emptyRange('kg', 6, 14),
+        mineralesKg: emptyRange('kg', 2.2, 4.5),
+        grasaVisceralNivel: emptyRange('nivel', 1, 9),
       },
-      evaluatorNotes:
-        'Excelente balance hídrico y densidad mineral ósea. Masa muscular homogénea con leve predominio funcional en miembro superior derecho.',
+      evaluatorNotes: '',
     }
   );
 
@@ -133,8 +98,11 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
   }, [isFemale]);
 
   // Calculate BMI
-  const heightM = (patient.heightCm || (isFemale ? 158.1 : 175)) / 100;
-  const bmi = Number((composition.pesoKg.value / (heightM * heightM)).toFixed(1));
+  const heightM = (patient.heightCm || 0) / 100;
+  const bmi =
+    heightM > 0 && composition.pesoKg.value > 0
+      ? Number((composition.pesoKg.value / (heightM * heightM)).toFixed(1))
+      : 0;
 
   // Hardware sync simulator (InBody H30 / Withings Body Scan API)
   const handleHardwareSync = () => {
@@ -228,13 +196,15 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
               <input
                 type="number"
                 step="0.1"
-                value={indicator.value}
+                value={indicator.value > 0 ? indicator.value : ''}
                 onChange={(e) => onValueChange(parseFloat(e.target.value) || 0)}
+                placeholder="—"
                 className="w-20 text-right font-black text-sm text-slate-900 border border-slate-300 rounded-md px-1.5 py-0.5 bg-white"
               />
             ) : (
               <span className="text-base font-black text-slate-900 tracking-tight">
-                {indicator.value} <span className="text-xs font-semibold text-slate-500">{indicator.unit}</span>
+                {indicator.value > 0 ? indicator.value : '—'}{' '}
+                <span className="text-xs font-semibold text-slate-500">{indicator.unit}</span>
               </span>
             )}
             <span
@@ -351,18 +321,18 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
 
       {/* Official Clinical Sheet Container (Matching Image 3 exact aesthetic) */}
       <div className="bg-white rounded-2xl border-2 border-slate-200 p-6 sm:p-8 shadow-md space-y-6 print:border-none print:shadow-none print:p-2">
-        {/* Core Body Brand Top Ribbon in the Report */}
+        {/* Brand Top Ribbon — KineSys Clinical Platform */}
         <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-slate-950 text-white flex items-center justify-center font-black text-xl tracking-tighter">
-              CB
+            <div className="w-10 h-10 rounded-lg bg-slate-950 text-white flex items-center justify-center font-black text-sm tracking-tighter">
+              KS
             </div>
             <div>
               <h2 className="text-lg font-black tracking-tight text-slate-950 uppercase">
-                Core Body
+                Clínica KineSys Demo
               </h2>
               <p className="text-2xs font-bold text-emerald-700 tracking-widest uppercase">
-                Rendimiento Físico & Nutrición
+                KineSys Clinical Platform
               </p>
             </div>
           </div>
@@ -403,11 +373,13 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Estatura:</span>
-            <span className="font-bold text-slate-800">{patient.heightCm || 158.1} cm</span>
+            <span className="font-bold text-slate-800">{patient.heightCm || '—'} cm</span>
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Peso:</span>
-            <span className="font-bold text-slate-900">{composition.pesoKg.value} kg</span>
+            <span className="font-bold text-slate-900">
+              {composition.pesoKg.value > 0 ? composition.pesoKg.value : '—'} kg
+            </span>
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">IMC:</span>
@@ -706,21 +678,19 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
           </p>
         </div>
 
-        {/* Bottom Banner (Exact Slogan from Image 3!) */}
+        {/* Bottom Banner — marca oficial KineSys */}
         <div className="border-t-2 border-slate-900 pt-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-2xs text-slate-500 font-semibold">
           <div className="flex items-center gap-2">
-            <span className="font-black text-slate-900 tracking-wider">CORE BODY</span>
+            <span className="font-black text-slate-900 tracking-wider">KINESYS CLINICAL PLATFORM</span>
             <span>•</span>
-            <span>Evaluación</span>
+            <span>Nutrición</span>
             <span>•</span>
-            <span>Prevención</span>
+            <span>Antropometría</span>
             <span>•</span>
-            <span>Rendimiento</span>
-            <span>•</span>
-            <span>Bienestar</span>
+            <span>Composición corporal</span>
           </div>
           <div className="font-black tracking-widest text-slate-800 uppercase text-3xs">
-            Disciplina hoy, resultados mañana
+            Clínica KineSys Demo
           </div>
         </div>
       </div>

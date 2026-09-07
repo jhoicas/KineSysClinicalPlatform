@@ -519,7 +519,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               </button>
             </div>
 
-            {/* Tab 1: Antropometría ISAK Manual (Core Body) */}
+            {/* Tab 1: Antropometría ISAK Manual */}
             {activeTab === 'antropometria' && (
               <AnthropometryModule
                 patient={toCoreBodyPatient(currentClinico, {
@@ -547,8 +547,8 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                       nutritionistId,
                       age: corePatient.age,
                       gender,
-                      weightKg: corePatient.weightKg || 70,
-                      heightCm: corePatient.heightCm || 170,
+                      weightKg: corePatient.weightKg || 0,
+                      heightCm: corePatient.heightCm || 0,
                     }),
                   );
                   setActiveTab('planificador');
@@ -556,7 +556,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               />
             )}
 
-            {/* Tab 1b: Informe BIA / InBody / Withings (Core Body) */}
+            {/* Tab 1b: Informe BIA / InBody / Withings */}
             {activeTab === 'bia' && (
               <BodyCompositionModule
                 patient={toCoreBodyPatient(currentClinico, {
@@ -570,13 +570,13 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                     patientId: currentClinico.id,
                     biaSource: bia.deviceModel.includes('Withings') ? 'WITHINGS' : 'INBODY',
                     biaSnapshot: bia as unknown as Record<string, unknown>,
-                    weightKg: bia.pesoKg.value,
+                    weightKg: bia.pesoKg.value || undefined,
                   });
                 }}
               />
             )}
 
-            {/* Tab 2: Diet & Menu Planner TCA 2018 + costeo COP */}
+            {/* Tab 2: Diet & Menu Planner TCA via food_catalog */}
             {activeTab === 'planificador' && (
               <NutritionPlanningModule
                 patient={toCoreBodyPatient(currentClinico, {

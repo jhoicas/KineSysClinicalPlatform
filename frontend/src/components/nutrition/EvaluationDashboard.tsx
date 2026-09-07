@@ -1,5 +1,5 @@
 /**
- * EvaluationDashboard — Informe BIA / InBody H30 / Withings (CORE BODY)
+ * EvaluationDashboard — Informe BIA / InBody H30 / Withings (KineSys Clinical Platform)
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
@@ -40,42 +40,28 @@ export interface EvaluationDashboardProps {
   className?: string;
 }
 
-const DEMO: Record<'WITHINGS' | 'INBODY', HardwareReadingPreview> = {
-  WITHINGS: {
-    source: 'WITHINGS',
-    measured_at: new Date().toISOString(),
-    weight_kg: 72.4,
-    skeletal_muscle_kg: 28.6,
-    fat_mass_kg: 18.2,
-    body_fat_pct: 25.1,
-    visceral_fat_index: 7,
-    bmr: 1480,
-    total_body_water_l: 38.2,
-    protein_kg: 9.8,
-    minerals_kg: 3.4,
-    segmental: {
-      muscle: { left_arm: 2.4, right_arm: 2.5, trunk: 22.1, left_leg: 7.2, right_leg: 7.4 },
-      fat: { left_arm: 1.1, right_arm: 1.0, trunk: 9.4, left_leg: 3.2, right_leg: 3.1 },
-    },
-  },
-  INBODY: {
-    source: 'INBODY',
-    measured_at: new Date().toISOString(),
-    weight_kg: 71.8,
-    skeletal_muscle_kg: 29.1,
-    fat_mass_kg: 17.4,
-    body_fat_pct: 24.2,
-    visceral_fat_index: 6,
-    bmr: 1510,
-    total_body_water_l: 39.0,
-    protein_kg: 10.1,
-    minerals_kg: 3.5,
-    segmental: {
-      muscle: { left_arm: 2.5, right_arm: 2.6, trunk: 22.8, left_leg: 7.5, right_leg: 7.6 },
-      fat: { left_arm: 1.0, right_arm: 0.95, trunk: 8.8, left_leg: 3.0, right_leg: 2.9 },
-    },
-  },
-};
+const emptySegmental = (): SegmentalRegionUI => ({
+  left_arm: null,
+  right_arm: null,
+  trunk: null,
+  left_leg: null,
+  right_leg: null,
+});
+
+const EMPTY_READING = (source: 'WITHINGS' | 'INBODY'): HardwareReadingPreview => ({
+  source,
+  measured_at: '',
+  weight_kg: null,
+  skeletal_muscle_kg: null,
+  fat_mass_kg: null,
+  body_fat_pct: null,
+  visceral_fat_index: null,
+  bmr: null,
+  total_body_water_l: null,
+  protein_kg: null,
+  minerals_kg: null,
+  segmental: { fat: emptySegmental(), muscle: emptySegmental() },
+});
 
 function RangeMeter({
   label,
@@ -235,7 +221,7 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
     nutritionDraft?.biaSource || 'INBODY',
   );
   const [reading, setReading] = useState<HardwareReadingPreview | null>(
-    initialReading || storedBia || DEMO.INBODY,
+    initialReading || storedBia || null,
   );
   const [loading, setLoading] = useState(false);
 
@@ -252,15 +238,18 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
   const metrics = useMemo(() => {
     const r = reading;
     if (!r) return null;
+    if (r.weight_kg == null && r.body_fat_pct == null && r.skeletal_muscle_kg == null) {
+      return null;
+    }
     return {
       weight: r.weight_kg ?? 0,
-      muscle: r.skeletal_muscle_kg ?? round((r.weight_kg || 0) * 0.4, 1),
-      fat: r.fat_mass_kg ?? round(((r.body_fat_pct || 0) / 100) * (r.weight_kg || 0), 1),
+      muscle: r.skeletal_muscle_kg ?? 0,
+      fat: r.fat_mass_kg ?? 0,
       fatPct: r.body_fat_pct ?? 0,
-      water: r.total_body_water_l ?? 38,
-      protein: r.protein_kg ?? 10,
-      minerals: r.minerals_kg ?? 3.4,
-      visceral: r.visceral_fat_index ?? 5,
+      water: r.total_body_water_l ?? 0,
+      protein: r.protein_kg ?? 0,
+      minerals: r.minerals_kg ?? 0,
+      visceral: r.visceral_fat_index ?? 0,
     };
   }, [reading]);
 
@@ -269,7 +258,7 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
     setLoading(true);
     try {
       const custom = onFetchHardware ? await onFetchHardware(src) : undefined;
-      setReading(custom || DEMO[src]);
+      setReading(custom || EMPTY_READING(src));
     } finally {
       setLoading(false);
     }

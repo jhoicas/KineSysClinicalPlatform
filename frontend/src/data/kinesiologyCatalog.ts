@@ -90,6 +90,11 @@ export const MOVEMENT_ALTERATIONS = [
   'Elevación de talones',
   'Rodillas excesivamente adelante',
   'Pérdida de equilibrio',
+  'Columna lumbar desalineado',
+  'Barra se aleja del cuerpo',
+  'Pérdida de alineación corporal',
+  'Pelvis cae o se eleva',
+  'Codos excesivamente abiertos',
 ] as const;
 
 function landmarks(names: readonly string[]) {

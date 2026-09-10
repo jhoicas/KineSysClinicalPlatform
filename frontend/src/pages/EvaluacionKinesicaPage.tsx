@@ -33,12 +33,13 @@ import { PostureModule } from '../components/medical/PostureModule';
 import { MovementControlModule } from '../components/medical/MovementControlModule';
 import { TreatmentPlanModule } from '../components/medical/TreatmentPlanModule';
 import { KinesiologyPdfModal } from '../components/medical/KinesiologyPdfModal';
+import { AiBiomechanicsDashboard } from '../components/medical/biomechanics/AiBiomechanicsDashboard';
 
 interface EvaluacionKinesicaPageProps {
   onNavigate?: (path: string) => void;
 }
 
-type EvalTab = 'postura' | 'movilidad' | 'fuerza' | 'control' | 'diagnostico' | 'plan';
+type EvalTab = 'postura' | 'movilidad' | 'fuerza' | 'control' | 'biomecanica' | 'diagnostico' | 'plan';
 
 function mapActiveToPacienteClinico(active: {
   id: string;
@@ -79,6 +80,7 @@ const TABS: { id: EvalTab; label: string; icon: string }[] = [
   { id: 'movilidad', label: 'Movilidad', icon: '360' },
   { id: 'fuerza', label: 'Fuerza', icon: 'fitness_center' },
   { id: 'control', label: 'Control de movimiento', icon: 'directions_run' },
+  { id: 'biomecanica', label: 'Biomecánica IA', icon: 'monitor_heart' },
   { id: 'diagnostico', label: 'Diagnóstico', icon: 'clinical_notes' },
   { id: 'plan', label: 'Plan de tratamiento', icon: 'assignment' },
 ];
@@ -127,6 +129,7 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [biomechanicsEvidences, setBiomechanicsEvidences] = useState<string[]>([]);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [historiaForPdf, setHistoriaForPdf] = useState<HistoriaClinica | null>(null);
 
@@ -181,6 +184,7 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
   const startNewEvaluation = () => {
     setCurrentId(undefined);
     setReadOnly(false);
+    setBiomechanicsEvidences([]);
     setForm(emptyForm(activePatient?.id || ''));
     setTab('postura');
   };
@@ -546,6 +550,51 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
                   </div>
                 )}
 
+                {tab === 'biomecanica' && (
+                  <AiBiomechanicsDashboard
+                    onSaveEvidence={(imageBase64) =>
+                      setBiomechanicsEvidences((previous) => [...previous, imageBase64])
+                    }
+                  />
+                )}
+
+                {biomechanicsEvidences.length > 0 && (
+                  <section className="rounded-3xl border border-outline-variant/30 bg-surface-container-lowest p-5 md:p-6 clinical-shadow">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-black text-on-surface">Galería de Evidencias Biomecánicas</h3>
+                        <p className="mt-1 text-xs text-on-surface-variant">
+                          {biomechanicsEvidences.length} captura{biomechanicsEvidences.length === 1 ? '' : 's'} de esta evaluación
+                        </p>
+                      </div>
+                      <span className="material-symbols-outlined text-primary">photo_library</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                      {biomechanicsEvidences.map((image, index) => (
+                        <div key={`${image.slice(-24)}-${index}`} className="group relative overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container-low">
+                          <img
+                            src={image}
+                            alt={`Evidencia biomecánica ${index + 1}`}
+                            className="aspect-video w-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            aria-label={`Eliminar evidencia ${index + 1}`}
+                            title="Eliminar evidencia"
+                            onClick={() =>
+                              setBiomechanicsEvidences((previous) => previous.filter((_, evidenceIndex) => evidenceIndex !== index))
+                            }
+                            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-950/75 text-white opacity-100 transition-colors hover:bg-error focus:outline-none focus:ring-2 focus:ring-white"
+                          >
+                            <span className="material-symbols-outlined text-base">close</span>
+                          </button>
+                          <div className="px-2.5 py-2 text-[11px] font-bold text-on-surface-variant">Captura {index + 1}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
                 {tab === 'plan' && (
                   <div className="col-span-full">
                     <TreatmentPlanModule
@@ -559,7 +608,7 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
                   </div>
                 )}
 
-                <section className={`bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow space-y-5 ${(tab === 'postura' || tab === 'movilidad' || tab === 'fuerza' || tab === 'control' || tab === 'plan') ? 'hidden' : ''}`}>
+                <section className={`bg-surface-container-lowest rounded-3xl border border-outline-variant/30 p-6 md:p-8 clinical-shadow space-y-5 ${(tab === 'postura' || tab === 'movilidad' || tab === 'fuerza' || tab === 'control' || tab === 'biomecanica' || tab === 'plan') ? 'hidden' : ''}`}>
 
                   {tab === 'diagnostico' && (
                     <div className="space-y-4">

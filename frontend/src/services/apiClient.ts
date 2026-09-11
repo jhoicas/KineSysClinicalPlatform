@@ -34,24 +34,18 @@ import type {
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
-const configuredApiBaseUrl =
-  (import.meta as any).env?.VITE_API_URL?.trim() ||
-  (import.meta as any).env?.VITE_API_BASE_URL?.trim();
-const API_BASE_URL =
-  configuredApiBaseUrl ||
-  ((import.meta as any).env?.DEV ? 'http://localhost:8080' : '') ||
-  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+function buildApiUrl(endpoint: string): string {
+  const base =
+    (import.meta as any).env?.VITE_API_BASE_URL ||
+    (import.meta as any).env?.VITE_API_URL ||
+    '/api';
+  const cleanBase = base.replace(/\/$/, '');
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const finalUrl = cleanBase.startsWith('http')
+    ? `${cleanBase}${cleanEndpoint}`
+    : `${window.location.origin}${cleanBase}${cleanEndpoint}`;
 
-function buildApiUrl(endpoint: string): URL {
-  const baseURL = API_BASE_URL.replace(/\/$/, '');
-  const normalizedEndpoint = `/${endpoint.replace(/^\/+/, '')}`;
-
-  try {
-    return new URL(`${baseURL}${normalizedEndpoint}`);
-  } catch (error) {
-    console.error('Error construyendo URL. Base:', baseURL, 'Endpoint:', endpoint, error);
-    throw error;
-  }
+  return finalUrl;
 }
 
 // ─── Generic Response Types ───────────────────────────────────────────────────
@@ -100,7 +94,8 @@ async function request<T>(
 ): Promise<ApiResponse<T>> {
   try {
     // Build URL with query params
-    const url = buildApiUrl(path);
+    const finalUrl = buildApiUrl(path);
+    const url = new URL(finalUrl);
     if (queryParams) {
       Object.entries(queryParams).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') {

@@ -89,10 +89,39 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
     }
   }, [initialExercise, isOpen]);
 
+  const formValues = {
+    name,
+    category,
+    targetMuscle,
+    sets,
+    repsOrDuration,
+    restSeconds,
+    frequencyDaysPerWeek,
+    instructions,
+    imageUrl,
+    difficulty,
+    saveToLibrary,
+  };
+
+  const onInvalidSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const errors = Array.from(event.currentTarget.elements)
+      .filter((element): element is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLSelectElement ||
+        element instanceof HTMLTextAreaElement
+      )
+      .filter((element) => !element.checkValidity())
+      .map((element) => ({ field: element.name || element.id, message: element.validationMessage }));
+    console.log('Errores de validación:', errors);
+    onToast?.('error', 'Formulario incompleto', 'Revisa los campos obligatorios.');
+  };
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Intentando guardar ejercicio...', formValues);
     if (readOnly || !name.trim() || isSubmitting) return;
 
     const exerciseData: Exercise = {
@@ -118,15 +147,20 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
     setIsSubmitting(true);
     try {
       if (saveToLibrary && persistToLibrary && mode === 'create') {
-        const result = await api.exercises.create({
-          name: exerciseData.name,
-          description: exerciseData.instructions,
-          category: exerciseData.category,
-          target_muscle: exerciseData.targetMuscle,
-          difficulty: exerciseData.difficulty || 'Medio',
-          media_url: exerciseData.imageUrl,
-        });
-        if (result.error) throw new Error(result.error);
+        try {
+          const result = await api.exercises.create({
+            name: exerciseData.name,
+            description: exerciseData.instructions,
+            category: exerciseData.category,
+            target_muscle: exerciseData.targetMuscle,
+            difficulty: exerciseData.difficulty || 'Medio',
+            media_url: exerciseData.imageUrl,
+          });
+          if (result.error) throw new Error(result.error);
+        } catch (error) {
+          console.error('Error en la API:', error);
+          throw error;
+        }
       }
 
       await onSave(exerciseData, saveToLibrary);
@@ -179,13 +213,18 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+        <form
+          onSubmit={handleSubmit}
+          onInvalid={onInvalidSubmit}
+          className="p-6 space-y-4 overflow-y-auto flex-1 text-xs"
+        >
           <div>
             <label className="font-bold text-slate-700 block mb-1">
               Nombre del Ejercicio *
             </label>
             <input
               type="text"
+              name="name"
               required
               disabled={readOnly}
               placeholder="Ej. Sentadilla Búlgara con mancuerna contralateral"

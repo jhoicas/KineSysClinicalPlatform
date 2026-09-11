@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Exercise, LibraryExercise } from '../../types';
 import { ExerciseImageUploader } from './ExerciseImageUploader';
+import { api } from '../../services/apiClient';
 
 interface ExerciseModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (exercise: Exercise, saveToLibrary: boolean) => void;
+  onSave: (exercise: Exercise, saveToLibrary: boolean) => void | Promise<void>;
+  onToast?: (type: 'success' | 'error', title: string, message: string) => void;
+  persistToLibrary?: boolean;
   initialExercise?: Exercise | LibraryExercise | null;
   mode: 'create' | 'edit';
   title?: string;
@@ -20,6 +23,8 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
   mode,
   title,
   readOnly = false,
+  onToast,
+  persistToLibrary = true,
 }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<Exercise['category']>('Fuerza');
@@ -32,6 +37,21 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
   const [imageUrl, setImageUrl] = useState('');
   const [difficulty, setDifficulty] = useState<'Bajo' | 'Medio' | 'Avanzado'>('Medio');
   const [saveToLibrary, setSaveToLibrary] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const resetForm = () => {
+    setName('');
+    setCategory('Fuerza');
+    setTargetMuscle('');
+    setSets(3);
+    setRepsOrDuration('10 - 12 reps');
+    setRestSeconds(60);
+    setFrequencyDaysPerWeek(3);
+    setInstructions('');
+    setImageUrl('');
+    setDifficulty('Medio');
+    setSaveToLibrary(true);
+  };
 
   useEffect(() => {
     if (initialExercise) {
@@ -71,9 +91,9 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (readOnly || !name.trim()) return;
+    if (readOnly || !name.trim() || isSubmitting) return;
 
     const exerciseData: Exercise = {
       id: initialExercise?.id || `ex-${Date.now()}`,
@@ -95,8 +115,40 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
           : 'active',
     };
 
-    onSave(exerciseData, saveToLibrary);
-    onClose();
+    setIsSubmitting(true);
+    try {
+      if (saveToLibrary && persistToLibrary && mode === 'create') {
+        const result = await api.exercises.create({
+          name: exerciseData.name,
+          description: exerciseData.instructions,
+          category: exerciseData.category,
+          target_muscle: exerciseData.targetMuscle,
+          difficulty: exerciseData.difficulty || 'Medio',
+          media_url: exerciseData.imageUrl,
+        });
+        if (result.error) throw new Error(result.error);
+      }
+
+      await onSave(exerciseData, saveToLibrary);
+      onToast?.(
+        'success',
+        mode === 'create' ? 'Ejercicio prescrito' : 'Ejercicio actualizado',
+        saveToLibrary && persistToLibrary
+          ? 'El ejercicio se agregó al plan y al banco permanente.'
+          : 'El ejercicio se agregó al plan de tratamiento.'
+      );
+      resetForm();
+      onClose();
+    } catch (error) {
+      console.error('Error guardando ejercicio:', error);
+      onToast?.(
+        'error',
+        'No se pudo guardar el ejercicio',
+        error instanceof Error ? error.message : 'Intenta nuevamente.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -304,6 +356,7 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
             {!readOnly && (
               <button
                 type="submit"
+                disabled={isSubmitting}
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
               >
                 {mode === 'create' ? (
@@ -311,7 +364,7 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
                 ) : (
                   <span className="material-symbols-outlined text-[16px]">save</span>
                 )}
-                <span>{mode === 'create' ? 'Guardar y Prescribir' : 'Guardar Cambios'}</span>
+                <span>{isSubmitting ? 'Guardando...' : mode === 'create' ? 'Guardar y Prescribir' : 'Guardar Cambios'}</span>
               </button>
             )}
           </div>

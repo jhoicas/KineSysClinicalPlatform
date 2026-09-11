@@ -486,6 +486,7 @@ export const ExerciseLibraryModal: React.FC<ExerciseLibraryModalProps> = ({
               ? 'Registrar Nuevo Ejercicio en el Banco'
               : 'Editar Ejercicio del Banco'
           }
+          persistToLibrary={false}
         />
       )}
     </div>

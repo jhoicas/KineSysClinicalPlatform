@@ -816,49 +816,89 @@ export function generateKinesiologyPdf(options: GenerateKinesiologyPdfOptions): 
   // ═══════════════════════════════════════════════════════════
   // 7. DIAGNÓSTICO, OBJETIVOS Y PLAN
   // ═══════════════════════════════════════════════════════════
-  sectionTitle(7, 'Diagnóstico Kinésico, Objetivos y Plan Terapéutico');
+  sectionTitle(7, 'Plan de Tratamiento Kinésico y Ejercicios Domiciliarios');
 
   subHead('Diagnóstico Fisioterapéutico');
   paragraph(evaluation?.diagnostico_kinesico || 'Sin diagnóstico kinésico registrado.');
 
   const plan = normalizeTreatmentPlan(evaluation?.plan_tratamiento, patient.id) as TreatmentPlan;
 
-  subHead('Objetivos Terapéuticos');
-  if (plan?.objective) {
-    paragraph(plan.objective);
-  } else {
+  subHead('Fase de Rehabilitación y Objetivos Clínicos');
+  ensureSpace(32);
+  doc.setFillColor(...surface);
+  doc.roundedRect(margin, y, contentWidth, 27, 2.5, 2.5, 'F');
+  doc.setDrawColor(...border);
+  doc.roundedRect(margin, y, contentWidth, 27, 2.5, 2.5, 'S');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(...muted);
+  doc.text('FASE DE REHABILITACIÓN', margin + 4, y + 6);
+  doc.setFontSize(9);
+  doc.setTextColor(...primary);
+  doc.text(String(plan.currentPhase || '—'), margin + 4, y + 11);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(...muted);
+  doc.text('OBJETIVOS CLÍNICOS', margin + contentWidth / 2, y + 6);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...slate);
+  const objectiveLines = wrapText(doc, plan.objective || 'Sin objetivos clínicos registrados.', contentWidth / 2 - 8);
+  doc.text(objectiveLines.slice(0, 4), margin + contentWidth / 2, y + 11);
+  y += 31;
+
+  if (plan.startDate || plan.estimatedEndDate || plan.sessionsCompleted != null) {
     paragraph(
-      'Objetivos a corto plazo: control del dolor, restauración de movilidad y educación postural. Objetivos a largo plazo: readaptación funcional y prevención de recidivas.',
+      `Sesiones: ${plan.sessionsCompleted ?? 0} / ${plan.totalSessionsPlanned ?? 0} · Periodo: ${plan.startDate || '—'} → ${plan.estimatedEndDate || '—'}`,
     );
   }
 
-  subHead('Plan de Tratamiento');
-  if (plan) {
-    paragraph(
-      `Fase actual: ${plan.currentPhase || '—'} · Sesiones ejecutadas: ${plan.sessionsCompleted ?? 0} / programadas: ${plan.totalSessionsPlanned ?? 0}`,
-    );
-    if (plan.startDate || plan.estimatedEndDate) {
-      paragraph(
-        `Periodo estimado: ${plan.startDate || '—'} → ${plan.estimatedEndDate || '—'}`,
-      );
-    }
-    const exercises = plan.exercises || [];
-    if (exercises.length) {
-      ensureSpace(8);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(...muted);
-      doc.text('Ejercicios prescritos', margin + 2, y);
-      y += 4;
-      for (const ex of exercises.slice(0, 12)) {
-        paragraph(
-          `· ${ex.name} (${ex.category}) — ${ex.sets}×${ex.repsOrDuration}, descanso ${ex.restSeconds}s, ${ex.frequencyDaysPerWeek}×/sem`,
-        );
-      }
-    }
-    if (plan.clinicalNotes) paragraph(`Notas del plan: ${plan.clinicalNotes}`);
+  const exercises = plan.exercises || [];
+  subHead('Ejercicios Prescritos para el Domicilio');
+  if (exercises.length === 0) {
+    paragraph('No hay ejercicios prescritos registrados en este plan.');
   } else {
-    paragraph('Plan terapéutico no estructurado en esta evaluación.');
+    for (const ex of exercises) {
+      const dosage = `Series: ${ex.sets ?? '—'} · Repeticiones/Tiempo: ${ex.repsOrDuration || '—'} · Descanso: ${ex.restSeconds ?? '—'} s · Frecuencia: ${ex.frequencyDaysPerWeek ?? '—'} días/semana`;
+      const instructionLines = wrapText(doc, ex.instructions || 'Sin indicaciones técnicas registradas.', contentWidth - 12);
+      const cardHeight = Math.max(30, 23 + instructionLines.length * 3.8);
+      ensureSpace(cardHeight + 4);
+
+      doc.setFillColor(...surface);
+      doc.roundedRect(margin, y, contentWidth, cardHeight, 2.5, 2.5, 'F');
+      doc.setDrawColor(...border);
+      doc.roundedRect(margin, y, contentWidth, cardHeight, 2.5, 2.5, 'S');
+      doc.setFillColor(...primary);
+      doc.roundedRect(margin, y, 3, cardHeight, 1.2, 1.2, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...slate);
+      doc.text(ex.name || 'Ejercicio sin nombre', margin + 8, y + 7);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(...muted);
+      doc.text(String(ex.category || 'Ejercicio terapéutico'), margin + contentWidth - 4, y + 7, { align: 'right' });
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...primary);
+      doc.text(dosage, margin + 8, y + 13);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(...muted);
+      doc.text('INDICACIONES TÉCNICAS', margin + 8, y + 19);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(...slate);
+      doc.text(instructionLines, margin + 8, y + 23);
+      y += cardHeight + 4;
+    }
+  }
+  if (plan.clinicalNotes) {
+    subHead('Notas del Plan');
+    paragraph(plan.clinicalNotes);
   }
 
   subHead('Observaciones Generales y Recomendaciones');

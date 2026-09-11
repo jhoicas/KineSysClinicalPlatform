@@ -16,6 +16,7 @@ interface TreatmentPlanModuleProps {
   onUpdatePlan: (plan: TreatmentPlan) => void;
   readOnly?: boolean;
   tenantId?: string;
+  onToast?: (type: 'success' | 'error', title: string, message: string) => void;
 }
 
 export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
@@ -23,6 +24,7 @@ export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
   onUpdatePlan,
   readOnly = false,
   tenantId,
+  onToast,
 }) => {
   const [currentPlan, setCurrentPlan] = useState<TreatmentPlan>(planData);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -177,7 +179,7 @@ export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
     }
   };
 
-  const handleSaveExerciseModal = async (exercise: Exercise, saveToLib: boolean) => {
+  const handleSaveExerciseModal = async (exercise: Exercise, _saveToLib: boolean) => {
     if (readOnly) return;
 
     let updatedExercises: Exercise[];
@@ -193,33 +195,6 @@ export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
     const nextPlan = { ...currentPlan, exercises: updatedExercises };
     setCurrentPlan(nextPlan);
     onUpdatePlan(nextPlan);
-
-    if (saveToLib && tenantId) {
-      const existingInLib = library.find(
-        (l) => l.name.toLowerCase() === exercise.name.toLowerCase()
-      );
-      if (!existingInLib) {
-        const newLibItem: LibraryExercise = {
-          id: `lib-${Date.now()}`,
-          name: exercise.name,
-          category: exercise.category,
-          targetMuscle: exercise.targetMuscle,
-          defaultSets: exercise.sets,
-          defaultRepsOrDuration: exercise.repsOrDuration,
-          defaultRestSeconds: exercise.restSeconds,
-          defaultFrequencyDaysPerWeek: exercise.frequencyDaysPerWeek,
-          instructions: exercise.instructions,
-          imageUrl: exercise.imageUrl,
-          tags: [exercise.category, exercise.targetMuscle],
-          difficulty: exercise.difficulty || 'Medio',
-          equipment: 'Material kinésico',
-          createdAt: new Date().toISOString().split('T')[0],
-        };
-        await handleAddLibraryExercise(newLibItem);
-      } else if (exercise.imageUrl && !existingInLib.imageUrl) {
-        await handleEditLibraryExercise({ ...existingInLib, imageUrl: exercise.imageUrl });
-      }
-    }
 
     setModalMode(null);
     setEditingExercise(null);
@@ -707,6 +682,7 @@ export const TreatmentPlanModule: React.FC<TreatmentPlanModuleProps> = ({
               : `Editar "${editingExercise?.name}"`
           }
           readOnly={readOnly}
+          onToast={onToast}
         />
       )}
 

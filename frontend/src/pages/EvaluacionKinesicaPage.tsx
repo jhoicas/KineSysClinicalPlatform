@@ -604,6 +604,7 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
                       }
                       readOnly={readOnly}
                       tenantId={tenantId}
+                      onToast={addToast}
                     />
                   </div>
                 )}

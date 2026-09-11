@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Exercise, LibraryExercise } from '../../types';
 import { ExerciseImageUploader } from './ExerciseImageUploader';
 import { api } from '../../services/apiClient';
@@ -185,7 +186,7 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-xl w-full my-8 overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
@@ -409,6 +410,7 @@ export const ExerciseModal: React.FC<ExerciseModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

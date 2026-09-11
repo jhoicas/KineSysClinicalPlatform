@@ -55,9 +55,20 @@ export async function getAccessToken(): Promise<string | null> {
   if (!nativeAuth) return null;
   try {
     const { data } = await nativeAuth.getSession();
-    return data?.session?.access_token || null;
+    const session = data?.session;
+    if (session?.access_token && (!session.expires_at || session.expires_at * 1000 > Date.now() + 30_000)) {
+      return session.access_token;
+    }
+
+    const refreshed = await nativeAuth.refreshSession();
+    return refreshed.data.session?.access_token || null;
   } catch {
-    return null;
+    try {
+      const refreshed = await nativeAuth.refreshSession();
+      return refreshed.data.session?.access_token || null;
+    } catch {
+      return null;
+    }
   }
 }
 

@@ -121,6 +121,12 @@ async function request<T>(
       body: body ? JSON.stringify(body) : undefined,
     });
 
+    if (response.status === 401) {
+      const authError = 'Sesión expirada. Por favor, vuelve a iniciar sesión';
+      console.error(`[KineSys API] ${authError}`, { method, path: url.pathname });
+      return { data: null, error: authError, status: 401 };
+    }
+
     // Handle no-content responses
     if (response.status === 204) {
       return { data: null, error: null, status: 204 };

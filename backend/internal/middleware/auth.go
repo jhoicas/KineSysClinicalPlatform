@@ -19,6 +19,10 @@ const (
 func SupabaseAuth(jwtSecret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.TrimSpace(jwtSecret) == "" {
+				http.Error(w, "Supabase JWT secret is not configured", http.StatusInternalServerError)
+				return
+			}
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
 				http.Error(w, "Missing or invalid Authorization header", http.StatusUnauthorized)
@@ -28,7 +32,7 @@ func SupabaseAuth(jwtSecret string) func(http.Handler) http.Handler {
 			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
 			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-				if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				if token.Method != jwt.SigningMethodHS256 {
 					return nil, jwt.ErrSignatureInvalid
 				}
 				return []byte(jwtSecret), nil

@@ -41,9 +41,10 @@ function buildApiUrl(endpoint: string): string {
     '/api';
   const cleanBase = base.replace(/\/$/, '');
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const finalUrl = cleanBase.startsWith('http')
+  let finalUrl = cleanBase.startsWith('http')
     ? `${cleanBase}${cleanEndpoint}`
     : `${window.location.origin}${cleanBase}${cleanEndpoint}`;
+  finalUrl = finalUrl.replace(/\/api\/api\//g, '/api/');
 
   return finalUrl;
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/kinesys/clinical-platform-backend/internal/core/domain"
@@ -22,7 +23,7 @@ type SupabaseExerciseRepository struct {
 
 func NewSupabaseExerciseRepository(supabaseURL, serviceRoleKey string) ports.ExerciseRepository {
 	return &SupabaseExerciseRepository{
-		baseURL: supabaseURL + "/rest/v1/exercises",
+		baseURL: strings.TrimRight(supabaseURL, "/") + "/rest/v1/exercise_library",
 		key:     serviceRoleKey,
 		client:  http.DefaultClient,
 	}
@@ -41,17 +42,60 @@ func (r *SupabaseExerciseRepository) List(ctx context.Context, userID, tenantID 
 		query.Set("name", "ilike.*"+search+"*")
 	}
 
-	var exercises []domain.Exercise
-	if err := r.doJSON(ctx, http.MethodGet, "?"+query.Encode(), nil, &exercises); err != nil {
+	var rows []exerciseLibraryRow
+	if err := r.doJSON(ctx, http.MethodGet, "?"+query.Encode(), nil, &rows); err != nil {
 		return nil, err
+	}
+	exercises := make([]domain.Exercise, 0, len(rows))
+	for _, row := range rows {
+		exercises = append(exercises, row.toDomain())
 	}
 	return exercises, nil
 }
 
 func (r *SupabaseExerciseRepository) Create(ctx context.Context, exercise *domain.Exercise) error {
-	return r.doJSON(ctx, http.MethodPost, "", exercise, nil)
+	payload := exerciseLibraryRow{
+		ID:          exercise.ID,
+		TenantID:    exercise.TenantID,
+		UserID:      exercise.UserID,
+		IsSystem:    exercise.IsSystem,
+		Name:        exercise.Name,
+		Category:    exercise.Category,
+		Target:      exercise.TargetMuscle,
+		Difficulty:  exercise.Difficulty,
+		Description: exercise.Description,
+		ImageURL:    exercise.MediaURL,
+	}
+	return r.doJSON(ctx, http.MethodPost, "", payload, nil)
 }
 
+type exerciseLibraryRow struct {
+	ID          uuid.UUID  `json:"id"`
+	TenantID    uuid.UUID  `json:"tenant_id"`
+	UserID      *uuid.UUID `json:"user_id,omitempty"`
+	IsSystem    bool       `json:"is_system"`
+	Name        string     `json:"name"`
+	Category    string     `json:"category"`
+	Target      string     `json:"target"`
+	Difficulty  string     `json:"difficulty"`
+	Description string     `json:"description"`
+	ImageURL    string     `json:"image_url"`
+}
+
+func (row exerciseLibraryRow) toDomain() domain.Exercise {
+	return domain.Exercise{
+		ID:           row.ID,
+		TenantID:     row.TenantID,
+		UserID:       row.UserID,
+		IsSystem:     row.IsSystem,
+		Name:         row.Name,
+		Category:     row.Category,
+		TargetMuscle: row.Target,
+		Difficulty:   row.Difficulty,
+		Description:  row.Description,
+		MediaURL:     row.ImageURL,
+	}
+}
 func (r *SupabaseExerciseRepository) doJSON(ctx context.Context, method, suffix string, body any, result any) error {
 	var reader io.Reader
 	if body != nil {

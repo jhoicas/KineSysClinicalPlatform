@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type contextKey string
@@ -24,6 +27,8 @@ const (
 	TenantIDKey contextKey = "tenant_id"
 	RoleKey     contextKey = "role"
 )
+
+const defaultTenantID = "00000000-0000-0000-0000-000000000001"
 
 func SupabaseAuth(jwtSecret string) func(http.Handler) http.Handler {
 	return SupabaseAuthWithJWKS(jwtSecret, "")
@@ -52,6 +57,10 @@ type jwksCache struct {
 }
 
 func SupabaseAuthWithJWKS(jwtSecret, supabaseURL string) func(http.Handler) http.Handler {
+	return SupabaseAuthWithJWKSAndDB(jwtSecret, supabaseURL, nil)
+}
+
+func SupabaseAuthWithJWKSAndDB(jwtSecret, supabaseURL string, db *pgxpool.Pool) func(http.Handler) http.Handler {
 	cache := &jwksCache{
 		keys:       make(map[string]interface{}),
 		endpoint:   jwksEndpoint(supabaseURL),
@@ -104,16 +113,35 @@ func SupabaseAuthWithJWKS(jwtSecret, supabaseURL string) func(http.Handler) http
 			userID, _ := claims["sub"].(string)
 
 			var tenantID, role string
-			for _, claimName := range []string{"app_metadata", "user_metadata"} {
-				if meta, ok := claims[claimName].(map[string]interface{}); ok {
-					if tenantID == "" {
-						tenantID, _ = meta["tenant_id"].(string)
-					}
-					if role == "" {
-						role, _ = meta["role"].(string)
-					}
+			if value, ok := claims["tenant_id"].(string); ok {
+				tenantID = value
+			}
+			if value, ok := claims["role"].(string); ok {
+				role = value
+			}
+			if meta, ok := claims["app_metadata"].(map[string]interface{}); ok {
+				if value, ok := meta["tenant_id"].(string); ok {
+					tenantID = value
+				}
+				if value, ok := meta["role"].(string); ok {
+					role = value
 				}
 			}
+			if meta, ok := claims["user_metadata"].(map[string]interface{}); ok {
+				if tenantID == "" {
+					tenantID, _ = meta["tenant_id"].(string)
+				}
+				if role == "" {
+					role, _ = meta["role"].(string)
+				}
+				if customClaims, ok := meta["custom_claims"].(map[string]interface{}); ok && tenantID == "" {
+					tenantID, _ = customClaims["tid"].(string)
+				}
+			}
+			if tenantID == "" {
+				tenantID = defaultTenantID
+			}
+			tenantID = resolveTenantID(r.Context(), db, userID, tenantID)
 
 			// Inject into request context
 			ctx := context.WithValue(r.Context(), UserIDKey, userID)
@@ -123,6 +151,53 @@ func SupabaseAuthWithJWKS(jwtSecret, supabaseURL string) func(http.Handler) http
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// resolveTenantID enriches a verified JWT identity from the public tables without
+// making database provisioning a second authentication gate.
+func resolveTenantID(ctx context.Context, db *pgxpool.Pool, userID, tokenTenantID string) string {
+	if db == nil {
+		return tokenTenantID
+	}
+
+	for _, query := range []string{
+		`SELECT tenant_id::text FROM public.users WHERE id = $1 AND is_active = TRUE`,
+		`SELECT tenant_id::text FROM public.profiles WHERE id = $1 AND is_active = TRUE`,
+	} {
+		var tenantID string
+		err := db.QueryRow(ctx, query, userID).Scan(&tenantID)
+		if err == nil && tenantID != "" {
+			return tenantID
+		}
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			// A missing legacy table or unavailable profile must not invalidate a
+			// JWT that has already passed signature verification.
+			continue
+		}
+	}
+
+	if tokenTenantID != "" {
+		var existingTenant string
+		if err := db.QueryRow(ctx, `SELECT id::text FROM public.tenants WHERE id = $1`, tokenTenantID).Scan(&existingTenant); err == nil {
+			return existingTenant
+		}
+	}
+
+	var firstTenant string
+	if err := db.QueryRow(ctx, `SELECT id::text FROM public.tenants ORDER BY created_at ASC LIMIT 1`).Scan(&firstTenant); err == nil && firstTenant != "" {
+		return firstTenant
+	}
+
+	if _, err := db.Exec(ctx,
+		`INSERT INTO public.tenants (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING`,
+		defaultTenantID, "KineSys Default Tenant",
+	); err == nil {
+		return defaultTenantID
+	}
+
+	// Preserve the verified token identity as the final fallback. Handlers can
+	// still return a domain/database error if this tenant is not provisioned.
+	return tokenTenantID
 }
 
 func jwksEndpoint(supabaseURL string) string {

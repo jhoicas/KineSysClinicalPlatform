@@ -91,7 +91,7 @@ func main() {
 
 	// Protected Routes (Require Supabase JWT)
 	r.Group(func(r chi.Router) {
-		r.Use(customMiddleware.SupabaseAuthWithJWKS(cfg.SupabaseJWTSecret, cfg.SupabaseURL))
+		r.Use(customMiddleware.SupabaseAuthWithJWKSAndDB(cfg.SupabaseJWTSecret, cfg.SupabaseURL, dbPool))
 
 		// Patients
 		r.Get("/api/v1/patients", patientHandler.List)

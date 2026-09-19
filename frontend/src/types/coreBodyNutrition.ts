@@ -36,6 +36,7 @@ export interface SkinfoldMeasurements {
   crestaIliaca: number; // mm
   supraespinal: number; // mm
   abdominal: number; // mm
+  pecho?: number; // mm
   muslo: number; // mm
   pierna: number; // mm
 }

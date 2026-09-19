@@ -5,6 +5,7 @@ import {
   emptyPatientFormValues,
   patientRegistrationSchema,
   PatientRegistrationFormData,
+  PatientRegistrationFormInput,
 } from '../../schemas/patientSchema';
 import { PhoneInputWithCountry } from '../common/PhoneInputWithCountry';
 import { useI18n } from '../../app/providers/I18nProvider';
@@ -81,7 +82,7 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
     control,
     reset,
     formState: { errors, isSubmitting },
-  } = useForm<PatientRegistrationFormData>({
+  } = useForm<PatientRegistrationFormInput, unknown, PatientRegistrationFormData>({
     resolver: zodResolver(patientRegistrationSchema),
     defaultValues: emptyPatientFormValues,
     mode: 'onBlur',
@@ -300,6 +301,32 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
               )}
             </div>
 
+              <div>
+                <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
+                  Estatura (cm)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="300"
+                  step="0.01"
+                  {...register('height_cm', { valueAsNumber: true })}
+                  placeholder="Ej: 170"
+                  disabled={isSubmitting}
+                  className={`w-full bg-surface-container-low border rounded-xl p-2 text-xs font-semibold text-on-surface outline-none transition-all ${
+                    errors.height_cm
+                      ? 'border-error ring-1 ring-error/50 bg-error-container/10'
+                      : 'border-outline-variant/40 focus:border-primary focus:ring-1 focus:ring-primary/40'
+                  }`}
+                />
+                {errors.height_cm && (
+                  <p className="text-[11px] font-bold text-error mt-1 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs">error</span>
+                    <span>{errors.height_cm.message}</span>
+                  </p>
+                )}
+              </div>
+
             <div>
               <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
                 Diagnóstico o Motivo de Consulta
@@ -420,29 +447,3 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
     </div>
   );
 };
-
-            <div>
-              <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
-                Estatura (cm)
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="300"
-                step="0.01"
-                {...register('height_cm', { valueAsNumber: true })}
-                placeholder="Ej: 170"
-                disabled={isSubmitting}
-                className={`w-full bg-surface-container-low border rounded-xl p-2 text-xs font-semibold text-on-surface outline-none transition-all ${
-                  errors.height_cm
-                    ? 'border-error ring-1 ring-error/50 bg-error-container/10'
-                    : 'border-outline-variant/40 focus:border-primary focus:ring-1 focus:ring-primary/40'
-                }`}
-              />
-              {errors.height_cm && (
-                <p className="text-[11px] font-bold text-error mt-1 flex items-center gap-1">
-                  <span className="material-symbols-outlined text-xs">error</span>
-                  <span>{errors.height_cm.message}</span>
-                </p>
-              )}
-            </div>

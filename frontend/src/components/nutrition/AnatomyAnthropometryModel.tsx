@@ -262,14 +262,14 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
   // Temporary edit value for popover input
   const getCurrentValue = (point: AnatomicalPointDef): number | null => {
     if (point.category === 'skinfolds') {
-      const v = (skinfolds as Record<string, number>)[point.key];
+      const v = (skinfolds as unknown as Record<string, number>)[point.key];
       return v != null && v > 0 ? v : null;
     }
     if (point.category === 'perimeters') {
-      const v = (perimeters as Record<string, number>)[point.key];
+      const v = (perimeters as unknown as Record<string, number>)[point.key];
       return v != null && v > 0 ? v : null;
     }
-    const v = (diameters as Record<string, number>)[point.key];
+    const v = (diameters as unknown as Record<string, number>)[point.key];
     return v != null && v > 0 ? v : null;
   };
 

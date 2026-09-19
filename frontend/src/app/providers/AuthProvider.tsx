@@ -179,7 +179,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!isSigningOutRef.current) {
         isSigningOutRef.current = true;
         try {
-          await supabaseAuthClient.auth.signOut();
+          await supabaseAuthClient?.auth.signOut();
         } catch {
           /* ignore */
         } finally {
@@ -326,7 +326,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const {
       data: { subscription },
-    } = supabaseAuthClient.auth.onAuthStateChange((event, session) => {
+    } = supabaseAuthClient?.auth.onAuthStateChange((event, session) => {
       if (isSigningOutRef.current) return;
 
       if (event === 'SIGNED_OUT') {
@@ -343,7 +343,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ) {
         void syncFromSession(session);
       }
-    });
+    }) ?? { data: { subscription: { unsubscribe: () => undefined } } };
 
     return () => {
       subscription.unsubscribe();

@@ -38,9 +38,8 @@ export const patientRegistrationSchema = z.object({
       return !isNaN(date.getTime()) && date <= now;
     }, 'La fecha de nacimiento no puede ser futura.'),
   height_cm: z.preprocess(
-    (value) => (value === '' || (typeof value === 'number' && Number.isNaN(value)) ? undefined : value),
-    z.coerce
-      .number({ message: 'Ingrese una estatura válida.' })
+    (value) => (value === '' || value === null ? undefined : Number(value)),
+    z.number({ message: 'Ingrese una estatura válida.' })
       .positive('La estatura debe ser mayor que cero.')
       .max(300, 'La estatura no puede superar 300 cm.')
       .optional(),
@@ -72,6 +71,7 @@ export const patientRegistrationSchema = z.object({
 });
 
 export type PatientRegistrationFormData = z.infer<typeof patientRegistrationSchema>;
+export type PatientRegistrationFormInput = z.input<typeof patientRegistrationSchema>;
 
 export const emptyPatientFormValues: PatientRegistrationFormData = {
   full_name: '',

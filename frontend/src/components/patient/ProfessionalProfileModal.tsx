@@ -8,11 +8,7 @@ import {
   Languages, 
   ShieldCheck, 
   CheckCircle2, 
-  Instagram, 
-  Linkedin, 
   Globe, 
-  Youtube, 
-  Facebook, 
   Send, 
   MessageCircle, 
   ThumbsUp, 
@@ -195,7 +191,7 @@ export const ProfessionalProfileModal: React.FC<ProfessionalProfileModalProps> =
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/30 text-xs font-medium transition-colors"
                 >
-                  <Instagram className="w-3.5 h-3.5" />
+                  <Globe className="w-3.5 h-3.5" />
                   <span>Instagram</span>
                 </a>
               )}
@@ -207,7 +203,7 @@ export const ProfessionalProfileModal: React.FC<ProfessionalProfileModalProps> =
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border border-blue-500/30 text-xs font-medium transition-colors"
                 >
-                  <Linkedin className="w-3.5 h-3.5" />
+                  <Globe className="w-3.5 h-3.5" />
                   <span>LinkedIn</span>
                 </a>
               )}
@@ -255,7 +251,7 @@ export const ProfessionalProfileModal: React.FC<ProfessionalProfileModalProps> =
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/30 text-xs font-medium transition-colors"
                 >
-                  <Youtube className="w-3.5 h-3.5" />
+                  <Globe className="w-3.5 h-3.5" />
                   <span>YouTube</span>
                 </a>
               )}
@@ -267,7 +263,7 @@ export const ProfessionalProfileModal: React.FC<ProfessionalProfileModalProps> =
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 border border-blue-600/30 text-xs font-medium transition-colors"
                 >
-                  <Facebook className="w-3.5 h-3.5" />
+                  <Globe className="w-3.5 h-3.5" />
                   <span>Facebook</span>
                 </a>
               )}

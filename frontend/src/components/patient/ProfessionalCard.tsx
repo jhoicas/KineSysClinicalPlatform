@@ -5,8 +5,6 @@ import {
   ShieldCheck, 
   Info, 
   CalendarPlus, 
-  Instagram, 
-  Linkedin, 
   Globe, 
   Sparkles,
   CheckCircle2
@@ -139,7 +137,7 @@ export const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                 title="Instagram"
                 onClick={(e) => e.stopPropagation()}
               >
-                <Instagram className="w-3.5 h-3.5" />
+                <Globe className="w-3.5 h-3.5" />
               </a>
             )}
             {socialLinks.linkedin && (
@@ -152,7 +150,7 @@ export const ProfessionalCard: React.FC<ProfessionalCardProps> = ({
                 title="LinkedIn"
                 onClick={(e) => e.stopPropagation()}
               >
-                <Linkedin className="w-3.5 h-3.5" />
+                <Globe className="w-3.5 h-3.5" />
               </a>
             )}
             {(socialLinks.x || socialLinks.twitter) && (

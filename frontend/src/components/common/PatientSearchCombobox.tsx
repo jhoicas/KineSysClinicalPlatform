@@ -41,7 +41,7 @@ export const PatientSearchCombobox: React.FC<PatientSearchComboboxProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounced search effect
   useEffect(() => {

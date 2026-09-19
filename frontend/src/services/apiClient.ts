@@ -85,6 +85,21 @@ export interface CreateExerciseInput {
   media_url?: string;
 }
 
+export interface WithingsHardwareReading {
+  patient_id: string;
+  source: 'WITHINGS';
+  evaluation_date: string;
+  weight_kg: number | null;
+  height_cm: number | null;
+  body_fat_pct: number | null;
+  visceral_fat_index: number | null;
+  bmr: number | null;
+  provider_meta?: {
+    device_model?: string;
+    measured_at?: string;
+  };
+}
+
 // ─── Core HTTP Client ─────────────────────────────────────────────────────────
 
 async function request<T>(
@@ -158,6 +173,14 @@ export const api = {
   // ──── Health ────
   health: {
     check: () => request<{ status: string; timestamp: string }>('GET', '/api/v1/health'),
+  },
+
+  hardware: {
+    syncWithings: (patientId: string) =>
+      request<WithingsHardwareReading>(
+        'GET',
+        `/api/v1/patients/${patientId}/hardware/withings/sync`,
+      ),
   },
 
   exercises: {

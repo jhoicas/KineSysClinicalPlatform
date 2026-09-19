@@ -534,7 +534,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 }`}
               >
                 <span className="material-symbols-outlined text-base">cardiology</span>
-                <span>Informe BIA / InBody</span>
+                <span>Informe BIA / Withings</span>
               </button>
 
               <button
@@ -611,7 +611,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               />
             )}
 
-            {/* Tab 1b: Informe BIA / InBody / Withings */}
+            {/* Tab 1b: Informe BIA Withings */}
             {activeTab === 'bia' && (
               <BodyCompositionModule
                 patient={toCoreBodyPatient(currentClinico, {
@@ -623,7 +623,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 onSave={async (bia) => {
                   useAppStore.getState().patchNutritionDraft({
                     patientId: currentClinico.id,
-                    biaSource: bia.deviceModel.includes('Withings') ? 'WITHINGS' : 'INBODY',
+                    biaSource: 'WITHINGS',
                     biaSnapshot: bia as unknown as Record<string, unknown>,
                     weightKg: bia.pesoKg.value || undefined,
                   });

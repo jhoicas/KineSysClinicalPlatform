@@ -9,15 +9,12 @@
 
 export * from './HardwareAdapter.interface';
 export * from './WithingsAdapter';
-export * from './InBodyAdapter';
 
 import { INutritionHardwareAdapter, HardwareEvaluationSource } from './HardwareAdapter.interface';
 import { WithingsAdapter, WithingsAdapterConfig } from './WithingsAdapter';
-import { InBodyAdapter, InBodyAdapterConfig } from './InBodyAdapter';
 
 export type HardwareAdapterFactoryOptions = {
   withings?: WithingsAdapterConfig;
-  inbody?: InBodyAdapterConfig;
 };
 
 export function createHardwareAdapter(
@@ -27,8 +24,6 @@ export function createHardwareAdapter(
   switch (source) {
     case 'WITHINGS':
       return new WithingsAdapter(options.withings);
-    case 'INBODY':
-      return new InBodyAdapter(options.inbody);
     default: {
       const _exhaustive: never = source;
       throw new Error(`Adapter no soportado: ${String(_exhaustive)}`);

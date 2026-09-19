@@ -1,7 +1,7 @@
 /**
  * PdfReportGenerator — Fase 5.1 (PLAN_NUTRICION)
  *
- * Reporte clínico unificado (agnóstico Manual / Withings / InBody) con jsPDF:
+ * Reporte clínico unificado (agnóstico Manual / Withings) con jsPDF:
  *  A) Diagnóstico corporal
  *  B) Plan de nutrición (minuta por comidas)
  *  C) Lista de mercado inteligente (GroceryListService)
@@ -14,7 +14,7 @@ import {
   SmartGroceryList,
 } from '../services/nutrition/GroceryListService';
 
-export type ReportSource = 'MANUAL_ISAK' | 'WITHINGS' | 'INBODY' | string;
+export type ReportSource = 'MANUAL_ISAK' | 'WITHINGS' | string;
 
 export interface SegmentalReportValues {
   right_arm?: number | null;
@@ -124,8 +124,6 @@ function sourceLabel(source: ReportSource): string {
       return 'Manual ISAK';
     case 'WITHINGS':
       return 'Withings';
-    case 'INBODY':
-      return 'InBody';
     default:
       return String(source);
   }
@@ -193,7 +191,7 @@ export function generateUnifiedNutritionReportPdf(input: UnifiedNutritionReportI
   const contact = [clinic.clinic_address, clinic.clinic_phone, clinic.clinic_email]
     .filter(Boolean)
     .join(' · ');
-  doc.text(contact || 'Reporte unificado multi-hardware (ISAK / Withings / InBody)', margin + 5, y + 15);
+  doc.text(contact || 'Reporte unificado (ISAK / Withings)', margin + 5, y + 15);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(255, 255, 255);
@@ -480,7 +478,7 @@ export function generateUnifiedNutritionReportPdf(input: UnifiedNutritionReportI
   y += 4;
   doc.setFontSize(6.5);
   doc.text(
-    'Documento generado por KineSys. Los valores de hardware (Withings/InBody) no se recalculan con ecuaciones de pliegues. Precios según TCA 2018.',
+    'Documento generado por KineSys. Los valores de Withings no se recalculan con ecuaciones de pliegues. Precios según TCA 2018.',
     margin,
     y,
     { maxWidth: contentWidth }

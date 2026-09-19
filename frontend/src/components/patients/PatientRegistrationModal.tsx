@@ -37,6 +37,7 @@ function toFormValues(patient?: PatientFormSource): PatientRegistrationFormData 
       rut_or_dni: p.identifier_number || '',
       gender,
       birth_date: p.birth_date ? String(p.birth_date).slice(0, 10) : '',
+      height_cm: p.height_cm,
       address_line: p.address_line || '',
       medical_conditions: p.chronic_conditions?.[0] || '',
       allergies: p.known_allergies?.[0] || '',
@@ -55,6 +56,7 @@ function toFormValues(patient?: PatientFormSource): PatientRegistrationFormData 
     rut_or_dni: u.rut_or_dni || '',
     gender,
     birth_date: u.birth_date ? String(u.birth_date).slice(0, 10) : '',
+    height_cm: u.height_cm,
     address_line: (u as User & { address_line?: string }).address_line || '',
     medical_conditions: u.medical_conditions?.[0] || '',
     allergies: u.allergies?.[0] || '',
@@ -418,3 +420,29 @@ export const PatientRegistrationModal: React.FC<PatientRegistrationModalProps> =
     </div>
   );
 };
+
+            <div>
+              <label className="block text-xs font-black uppercase text-on-surface-variant mb-1">
+                Estatura (cm)
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="300"
+                step="0.01"
+                {...register('height_cm', { valueAsNumber: true })}
+                placeholder="Ej: 170"
+                disabled={isSubmitting}
+                className={`w-full bg-surface-container-low border rounded-xl p-2 text-xs font-semibold text-on-surface outline-none transition-all ${
+                  errors.height_cm
+                    ? 'border-error ring-1 ring-error/50 bg-error-container/10'
+                    : 'border-outline-variant/40 focus:border-primary focus:ring-1 focus:ring-primary/40'
+                }`}
+              />
+              {errors.height_cm && (
+                <p className="text-[11px] font-bold text-error mt-1 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-xs">error</span>
+                  <span>{errors.height_cm.message}</span>
+                </p>
+              )}
+            </div>

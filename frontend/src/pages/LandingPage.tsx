@@ -105,7 +105,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
         </h1>
 
         <p className="mt-5 text-sm sm:text-base text-on-surface-variant max-w-2xl mx-auto leading-relaxed">
-          Centraliza fichas médicas, mapa de dolor 2D interactivo, composición corporal InBody, recetas electrónicas y pasarela de cobros Wompi. Todo con control de acceso por roles (RBAC) y 7 días de prueba gratis.
+              Centraliza fichas médicas, mapa de dolor 2D interactivo, composición corporal Withings, recetas electrónicas y pasarela de cobros Wompi. Todo con control de acceso por roles (RBAC) y 7 días de prueba gratis.
         </p>
 
         {/* Hero CTAs */}
@@ -173,7 +173,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 <div className="space-y-2">
                   {[
                     { time: '09:00', prof: 'Klgo. Mateo Gómez', pat: 'Camila Soto', spec: 'Fisioterapia (LCA)', badge: 'Confirmado' },
-                    { time: '11:30', prof: 'Nut. Valeria Benítez', pat: 'Valentina Ríos', spec: 'Nutrición (InBody)', badge: 'En Espera' },
+                    { time: '11:30', prof: 'Nut. Valeria Benítez', pat: 'Valentina Ríos', spec: 'Nutrición (Withings)', badge: 'En Espera' },
                     { time: '14:00', prof: 'Dr. Fernando Castillo', pat: 'Diego Alarcón', spec: 'Medicina General', badge: 'Completado' },
                   ].map((row, idx) => (
                     <div key={idx} className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200/80 text-xs shadow-2xs">
@@ -293,7 +293,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
                 <span className="text-xs font-bold text-teal-700 uppercase tracking-wider bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
                   Módulo Nutrición
                 </span>
-                <h4 className="text-2xl font-black text-slate-900 mt-2">Composición Corporal InBody & Macronutrientes</h4>
+                <h4 className="text-2xl font-black text-slate-900 mt-2">Composición Corporal Withings & Macronutrientes</h4>
                 <p className="text-xs sm:text-sm text-slate-600 mt-3 leading-relaxed">
                   Registra porcentaje de grasa, masa muscular en kilogramos, grasa visceral, gasto calórico basal (BMR) y diseña pautas alimentarias personalizadas con distribución de macros (proteínas, carbohidratos, lípidos).
                 </p>

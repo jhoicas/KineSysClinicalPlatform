@@ -15,6 +15,9 @@ type Config struct {
 	SupabaseServiceRoleKey string
 	SupabaseJWTSecret      string
 	CorsOrigins            string
+	WithingsAccessToken    string
+	WithingsUserID         string
+	WithingsAPIBaseURL     string
 }
 
 func LoadConfig() *Config {
@@ -31,6 +34,9 @@ func LoadConfig() *Config {
 		SupabaseServiceRoleKey: getEnv("SUPABASE_SERVICE_ROLE_KEY", ""),
 		SupabaseJWTSecret:      getEnv("SUPABASE_JWT_SECRET", ""),
 		CorsOrigins:            getEnv("CORS_ORIGINS", "http://localhost:3000"),
+		WithingsAccessToken:    getEnv("WITHINGS_ACCESS_TOKEN", ""),
+		WithingsUserID:         getEnv("WITHINGS_USER_ID", ""),
+		WithingsAPIBaseURL:     getEnv("WITHINGS_API_BASE_URL", "https://wbsapi.withings.net"),
 	}
 }
 

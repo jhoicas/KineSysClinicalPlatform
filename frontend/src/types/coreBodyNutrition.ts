@@ -125,7 +125,7 @@ export interface BodyCompositionBIA {
   id: string;
   patientId: string;
   date: string;
-  deviceModel: 'InBody H30' | 'Withings Body Scan';
+  deviceModel: 'Withings Body Scan';
   sourceMode: 'hardware_auto' | 'manual_entry';
   lastSyncTimestamp: string;
   pesoKg: RangeIndicator;

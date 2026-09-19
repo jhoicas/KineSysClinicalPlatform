@@ -1,15 +1,15 @@
 /**
  * Hardware Adapter — contratos base (Fase 3 / PLAN_NUTRICION)
  *
- * Abstrae Withings, InBody (y futuros dispositivos) hacia un DTO listo
+ * Abstrae Withings hacia un DTO listo
  * para persistir en `kinesys.nutrition_evaluations`.
  *
- * Regla de negocio: cuando `source` es WITHINGS | INBODY, el % de grasa
+ * Regla de negocio: cuando `source` es WITHINGS, el % de grasa
  * del hardware prevalece; no se recalcula con Jackson-Pollock / Faulkner.
  */
 
 /** Coincide con `kinesys.nutrition_eval_source` (excluye MANUAL_ISAK en adapters). */
-export type HardwareEvaluationSource = 'WITHINGS' | 'INBODY';
+export type HardwareEvaluationSource = 'WITHINGS';
 
 export type NutritionEvalSource = 'MANUAL_ISAK' | HardwareEvaluationSource;
 
@@ -24,7 +24,7 @@ export interface SegmentalRegionValues {
 
 /**
  * Forma canónica de `segmental_composition_json` en nutrition_evaluations.
- * Ambos adaptadores deben producir este shape.
+ * El adaptador Withings produce este shape.
  */
 export interface SegmentalCompositionJson {
   /** Masa grasa segmental (kg) o % — ver `unit` en `meta`. */
@@ -79,13 +79,7 @@ export interface OAuthHardwareAuth {
   externalUserId?: string | number;
 }
 
-/** Payload crudo InBody / LookinBody / Health Connect. */
-export interface HardwareWebhookPayload {
-  kind: 'lookinbody' | 'health_connect' | 'csv' | 'json';
-  body: unknown;
-}
-
-export type HardwareAdapterAuthOrPayload = OAuthHardwareAuth | HardwareWebhookPayload;
+export type HardwareAdapterAuthOrPayload = OAuthHardwareAuth;
 
 export interface FetchEvaluationOptions {
   /** Si true, no llama red: usa fixtures internas (dev / demos). */
@@ -103,7 +97,7 @@ export interface INutritionHardwareAdapter {
   /**
    * Obtiene la última evaluación del paciente y la normaliza al DTO estándar.
    * @param patientId UUID de `kinesys.pacientes_clinicos`
-   * @param authOrPayload OAuth (Withings) o webhook/archivo (InBody)
+  * @param authOrPayload OAuth de Withings
    */
   fetchEvaluation(
     patientId: string,

@@ -1,10 +1,10 @@
 /**
- * EvaluationDashboard — Informe BIA / InBody H30 / Withings (KineSys Clinical Platform)
+ * EvaluationDashboard — Informe BIA Withings (KineSys Clinical Platform)
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 
-export type EvaluationSourceMode = 'MANUAL_ISAK' | 'WITHINGS' | 'INBODY';
+export type EvaluationSourceMode = 'MANUAL_ISAK' | 'WITHINGS';
 
 export interface SegmentalRegionUI {
   right_arm: number | null;
@@ -15,7 +15,7 @@ export interface SegmentalRegionUI {
 }
 
 export interface HardwareReadingPreview {
-  source: 'WITHINGS' | 'INBODY';
+  source: 'WITHINGS';
   measured_at: string;
   weight_kg: number | null;
   skeletal_muscle_kg?: number | null;
@@ -36,7 +36,7 @@ export interface EvaluationDashboardProps {
   patientName?: string;
   readOnly?: boolean;
   initialReading?: HardwareReadingPreview | null;
-  onFetchHardware?: (source: 'WITHINGS' | 'INBODY') => Promise<HardwareReadingPreview | void>;
+  onFetchHardware?: (source: 'WITHINGS') => Promise<HardwareReadingPreview | void>;
   className?: string;
 }
 
@@ -48,8 +48,8 @@ const emptySegmental = (): SegmentalRegionUI => ({
   right_leg: null,
 });
 
-const EMPTY_READING = (source: 'WITHINGS' | 'INBODY'): HardwareReadingPreview => ({
-  source,
+const EMPTY_READING = (): HardwareReadingPreview => ({
+  source: 'WITHINGS',
   measured_at: '',
   weight_kg: null,
   skeletal_muscle_kg: null,
@@ -217,9 +217,7 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
       ? (nutritionDraft.biaSnapshot as unknown as HardwareReadingPreview)
       : null;
 
-  const [source, setSource] = useState<'WITHINGS' | 'INBODY'>(
-    nutritionDraft?.biaSource || 'INBODY',
-  );
+  const [source, setSource] = useState<'WITHINGS'>('WITHINGS');
   const [reading, setReading] = useState<HardwareReadingPreview | null>(
     initialReading || storedBia || null,
   );
@@ -253,12 +251,12 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
     };
   }, [reading]);
 
-  const fetchReading = async (src: 'WITHINGS' | 'INBODY') => {
-    setSource(src);
+  const fetchReading = async () => {
+    setSource('WITHINGS');
     setLoading(true);
     try {
-      const custom = onFetchHardware ? await onFetchHardware(src) : undefined;
-      setReading(custom || EMPTY_READING(src));
+      const custom = onFetchHardware ? await onFetchHardware('WITHINGS') : undefined;
+      setReading(custom || EMPTY_READING());
     } finally {
       setLoading(false);
     }
@@ -273,25 +271,13 @@ export const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             {patientName ? `${patientName} · ` : ''}
-            InBody H30 / Withings Body Scan — análisis segmental
+            Withings Body Scan — análisis segmental
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => void fetchReading('INBODY')}
-            disabled={loading}
-            className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${
-              source === 'INBODY'
-                ? 'bg-[#0a192f] text-white border-[#0a192f]'
-                : 'bg-slate-50 text-slate-600 border-slate-200'
-            }`}
-          >
-            InBody H30
-          </button>
-          <button
-            type="button"
-            onClick={() => void fetchReading('WITHINGS')}
+            onClick={() => void fetchReading()}
             disabled={loading}
             className={`px-3 py-2 rounded-xl text-xs font-extrabold border ${
               source === 'WITHINGS'

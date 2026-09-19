@@ -14,6 +14,7 @@ type Patient struct {
 	Email                 *string   `json:"email,omitempty"`
 	Phone                 *string   `json:"phone,omitempty"`
 	BirthDate             *string   `json:"birth_date,omitempty"` // YYYY-MM-DD
+	HeightCm              *float64  `json:"height_cm,omitempty" db:"height_cm"`
 	Gender                *string   `json:"gender,omitempty"`
 	BloodType             *string   `json:"blood_type,omitempty"`
 	MedicalConditions     *string   `json:"medical_conditions,omitempty"`

@@ -15,6 +15,7 @@ import {
   Scale,
   Download,
 } from 'lucide-react';
+import { api } from '../../services/apiClient';
 
 interface BodyCompositionModuleProps {
   patient: Patient;
@@ -47,7 +48,7 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
       id: `bia-${patient.id}`,
       patientId: patient.id,
       date: new Date().toISOString().slice(0, 10),
-      deviceModel: 'InBody H30',
+      deviceModel: 'Withings Body Scan',
       sourceMode: 'manual_entry',
       lastSyncTimestamp: '',
       pesoKg: emptyRange('kg', 45, 100),
@@ -104,12 +105,17 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
       ? Number((composition.pesoKg.value / (heightM * heightM)).toFixed(1))
       : 0;
 
-  // Hardware sync simulator (InBody H30 / Withings Body Scan API)
-  const handleHardwareSync = () => {
+  const handleHardwareSync = async () => {
     setIsSyncing(true);
-    setSyncFeedback('Conectando con báscula InBody H30 / Withings por Bluetooth/Cloud API...');
+    setSyncFeedback('Conectando con Withings Body Scan...');
 
-    setTimeout(() => {
+    try {
+      const response = await api.hardware.syncWithings(patient.id);
+      if (response.error || !response.data) {
+        throw new Error(response.error || 'No se recibieron datos de Withings Body Scan.');
+      }
+
+      const reading = response.data;
       const now = new Date();
       const timeStr = `${String(now.getDate()).padStart(2, '0')}-${String(
         now.getMonth() + 1
@@ -118,19 +124,35 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
         '0'
       )}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-      // Realistic slight variation to show live sensor reading
       const updated: BodyCompositionBIA = {
         ...composition,
+        deviceModel: 'Withings Body Scan',
         sourceMode: 'hardware_auto',
         lastSyncTimestamp: timeStr,
+        pesoKg: { ...composition.pesoKg, value: reading.weight_kg ?? composition.pesoKg.value },
+        porcentajeGrasaCorporal: {
+          ...composition.porcentajeGrasaCorporal,
+          value: reading.body_fat_pct ?? composition.porcentajeGrasaCorporal.value,
+        },
+        otherIndicators: {
+          ...composition.otherIndicators,
+          grasaVisceralNivel: {
+            ...composition.otherIndicators.grasaVisceralNivel,
+            value: reading.visceral_fat_index ?? composition.otherIndicators.grasaVisceralNivel.value,
+          },
+        },
       };
 
       setComposition(updated);
       onSave(updated);
-      setIsSyncing(false);
-      setSyncFeedback('✓ Datos sincronizados exitosamente desde InBody H30');
+      setSyncFeedback('✓ Datos sincronizados exitosamente desde Withings Body Scan');
       setTimeout(() => setSyncFeedback(null), 4000);
-    }, 1200);
+    } catch (error) {
+      console.error('Error sincronizando Withings Body Scan:', error);
+      setSyncFeedback('No fue posible sincronizar Withings Body Scan.');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handlePrintReport = () => {
@@ -268,7 +290,7 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
               </span>
             </div>
             <h1 className="text-xl font-black text-slate-900 mt-1">
-              Informe de composición corporal InBody H30 / Withings Body Scan
+              Informe de composición corporal Withings Body Scan
             </h1>
             <p className="text-xs text-slate-500">
               Análisis biomédico mediante bioimpedancia eléctrica multifrecuencia (BIA)
@@ -339,7 +361,7 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
 
           <div className="text-right">
             <span className="text-xs font-black text-slate-900 block">
-              Informe de composición corporal InBody H30 / Withings Body Scan
+              Informe de composición corporal Withings Body Scan
             </span>
             <span className="text-2xs text-slate-500 font-medium">
               Análisis mediante bioimpedancia eléctrica (BIA) • Fecha: {composition.date}

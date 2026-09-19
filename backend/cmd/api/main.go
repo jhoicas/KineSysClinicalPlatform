@@ -59,6 +59,11 @@ func main() {
 	anthropometryHandler := handlers.NewAnthropometryHandler(anthropometrySvc)
 	nutritionHandler := handlers.NewNutritionHandler(nutritionSvc)
 	exerciseHandler := handlers.NewExerciseHandler(exerciseSvc)
+	withingsHandler := handlers.NewWithingsHardwareHandler(
+		cfg.WithingsAccessToken,
+		cfg.WithingsUserID,
+		cfg.WithingsAPIBaseURL,
+	)
 
 	// Initialize Router
 	r := chi.NewRouter()
@@ -105,6 +110,7 @@ func main() {
 		// Anthropometry
 		r.Get("/api/v1/patients/{patientId}/anthropometry", anthropometryHandler.ListByPatient)
 		r.Post("/api/v1/anthropometry", anthropometryHandler.Create)
+		r.Get("/api/v1/patients/{patientId}/hardware/withings/sync", withingsHandler.Sync)
 
 		// Nutrition
 		r.Get("/api/v1/patients/{patientId}/nutrition", nutritionHandler.ListByPatient)

@@ -49,6 +49,7 @@ export interface User {
   specialty?: string;
   license_number?: string;
   birth_date?: string;
+  height_cm?: number;
   gender?: string;
   medical_conditions?: string[];
   allergies?: string[];
@@ -242,6 +243,7 @@ export interface PacienteClinico {
   telecom_phone: string;
   telecom_email: string;
   address_line?: string;
+  height_cm?: number;
   blood_type?: 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-';
   known_allergies: string[];
   chronic_conditions: string[];

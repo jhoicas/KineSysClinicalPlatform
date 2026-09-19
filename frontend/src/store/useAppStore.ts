@@ -30,7 +30,7 @@ export interface NutritionSessionDraft {
   heightCm?: number;
   isakMeasures?: Record<string, number>;
   equation?: string;
-  biaSource?: 'WITHINGS' | 'INBODY';
+  biaSource?: 'WITHINGS';
   biaSnapshot?: Record<string, unknown> | null;
   dietCaloricTarget?: number;
   updatedAt?: string;

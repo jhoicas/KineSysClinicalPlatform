@@ -1,0 +1,50 @@
+{
+  "planHash": "ab00d3b247cf165691372cef7acbc448ba082b0d8d2e017a9e0f4ef8e4b8e334",
+  "phase": "baseline",
+  "recordedAtUtc": "2026-09-11T16:54:43.4005575Z",
+  "retryCount": 0,
+  "resetBaseline": false,
+  "result": {
+    "setupSucceeded": true,
+    "setupDurationMs": 3072,
+    "setupFailureOutput": null,
+    "assertions": [
+      {
+        "name": "tsc-no-emit",
+        "kind": "process",
+        "verificationMethod": "exit-code",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "\r\n\u003E kinesys-frontend@0.0.0 lint\r\n\u003E tsc --noEmit\r\n\r\n",
+        "durationMs": 7880
+      },
+      {
+        "name": "production-build",
+        "kind": "process",
+        "verificationMethod": "exit-code",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "\r\n\u003E kinesys-frontend@0.0.0 build\r\n\u003E vite build\r\n\r\n\u001B[36mvite v6.4.3 \u001B[32mbuilding for production...\u001B[36m\u001B[39m\r\ntransforming...\r\n\u001B[32m\u2713\u001B[39m 2153 modules transformed.\r\nrendering chunks...\r\ncomputing gzip size...\r\n\u001B[2mdist/\u001B[22m\u001B[32mindex.html                    \u001B[39m\u001B[1m\u001B[2m    1.24 kB\u001B[22m\u001B[1m\u001B[22m\u001B[2m \u2502 gzip:   0.67 kB\u001B[22m\r\n\u001B[2mdist/\u001B[22m\u001B[35massets/index-DcFB5svj.css     \u001B[39m\u001B[1m\u001B[2m  152.32 kB\u001B[22m\u001B[1m\u001B[22m\u001B[2m \u2502 gzip:  21.57 kB\u001B[22m\r\n\u001B[2mdist/\u001B[22m\u001B[36massets/purify.es-CYR4BTuT.js  \u001B[39m\u001B[1m\u001B[2m   28.93 kB\u001B[22m\u001B[1m\u001B[22m\u001B[2m \u2502 gzip:  11.14 kB\u001B[22m\r\n\u001B[2mdist/\u001B[22m\u001B[36massets/index.es-NBkZEmX1.js   \u001B[39m\u001B[1m\u001B[2m  159.72 kB\u001B[22m\u001B[1m\u001B[22m\u001B[2m \u2502 gzip:  53.54 kB\u001B[22m\r\n\u001B[2mdist/\u001B[22m\u001B[36massets/index-it1vGJzU.js      \u001B[39m\u001B[1m\u001B[33m2,261.90 kB\u001B[39m\u001B[22m\u001B[2m \u2502 gzip: 598.96 kB\u001B[22m\r\n\u001B[33m\r\n(!) Some chunks are larger than 500 kB after minification. Consider:\r\n- Using dynamic import() to code-split the application\r\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\r\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\u001B[39m\r\n\u001B[32m\u2713 built in 11.66s\u001B[39m\r\n",
+        "durationMs": 14170
+      },
+      {
+        "name": "dev-server-serves-home",
+        "kind": "http-probe",
+        "verificationMethod": "http-status",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": null,
+        "outputSample": "HTTP 200\n\u003C!doctype html\u003E\r\n\u003Chtml lang=\u0022es\u0022\u003E\r\n  \u003Chead\u003E\n    \u003Cscript type=\u0022module\u0022\u003Eimport { injectIntoGlobalHook } from \u0022/@react-refresh\u0022;\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () =\u003E {};\nwindow.$RefreshSig$ = () =\u003E (type) =\u003E type;\u003C/script\u003E\n\n    \u003Cscript type=\u0022module\u0022 src=\u0022/@vite/client\u0022\u003E\u003C/script\u003E\n\r\n    \u003Cmeta charset=\u0022UTF-8\u0022 /\u003E\r\n    \u003Cmeta name=\u0022viewport\u0022 content=\u0022width=device-width, initial-scale=1.0\u0022 /\u003E\r\n    \u003Ctitle\u003EKineSys Clinical Platform\u003C/title\u003E\r\n    \u003Cmeta name=\u0022description\u0022 content=\u0022Plataforma de gesti\u00F3n cl\u00EDnica y mapa interactivo de dolor para fisioterapeutas y profesionales de la salud.\u0022 /\u003E\r\n    \u003C!-- Google Fonts: Manrope (Headlines) \u0026 Inter (UI/Body) \u0026 Material Symbols --\u003E\r\n    \u003Clink rel=\u0022preconnect\u0022 href=\u0022https://fonts.googleapis.com\u0022\u003E\r\n    \u003Clink rel=\u0022preconnect\u0022 href=\u0022https://fonts.gstatic.com\u0022 crossorigin\u003E\r\n    \u003Clink href=\u0022https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900\u0026family=Manrope:wght@500;600;700;800\u0026display=swap\u0022 rel=\u0022stylesheet\u0022\u003E\r\n    \u003Clink rel=\u0022stylesheet\u0022 href=\u0022https://fonts.googleapis.com/css2?family=Material\u002BSymbols\u002BOutlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200\u0022 /\u003E\r\n  \u003C/head\u003E\r\n  \u003Cbody class=\u0022bg-background text-on-background font-sans antialiased selection:bg-primary selection:text-white\u0022\u003E\r\n    \u003Cdiv id=\u0022root\u0022\u003E\u003C/div\u003E\r\n    \u003Cscript type=\u0022module\u0022 src=\u0022/src/main.tsx?t=1789103320245\u0022\u003E\u003C/script\u003E\r\n  \u003C/body\u003E\r\n\u003C/html\u003E\r\n\r\n\n--- server output ---\n\r\n\u003E kinesys-frontend@0.0.0 dev\r\n\u003E vite --port=3000 --host=0.0.0.0\r\n\r\nPort 3000 is in use, trying another one...\r\nPort 3001 is in use, trying another one...\r\n\r\n  \u001B[32m\u001B[1mVITE\u001B[22m v6.4.3\u001B[39m  \u001B[2mready in \u001B[0m\u001B[1m802\u001B[22m\u001B[2m\u001B[0m ms\u001B[22m\r\n\r\n  \u001B[32m\u279C\u001B[39m  \u001B[1mLocal\u001B[22m:   \u001B[36mhttp://localhost:\u001B[1m3002\u001B[22m/\u001B[39m\r\n  \u001B[32m\u279C\u001B[39m  \u001B[1mNetwork\u001B[22m: \u001B[36mhttp://192.168.110.72:\u001B[1m3002\u001B[22m/\u001B[39m\r\n",
+        "durationMs": 2100
+      }
+    ]
+  }
+}

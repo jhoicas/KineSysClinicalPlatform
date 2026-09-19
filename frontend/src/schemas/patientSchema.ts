@@ -37,6 +37,14 @@ export const patientRegistrationSchema = z.object({
       const now = new Date();
       return !isNaN(date.getTime()) && date <= now;
     }, 'La fecha de nacimiento no puede ser futura.'),
+  height_cm: z.preprocess(
+    (value) => (value === '' || (typeof value === 'number' && Number.isNaN(value)) ? undefined : value),
+    z.coerce
+      .number({ message: 'Ingrese una estatura válida.' })
+      .positive('La estatura debe ser mayor que cero.')
+      .max(300, 'La estatura no puede superar 300 cm.')
+      .optional(),
+  ),
   address_line: z
     .string()
     .trim()
@@ -72,6 +80,7 @@ export const emptyPatientFormValues: PatientRegistrationFormData = {
   rut_or_dni: '',
   gender: 'male',
   birth_date: '',
+  height_cm: undefined,
   address_line: '',
   medical_conditions: '',
   allergies: '',

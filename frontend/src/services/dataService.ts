@@ -79,7 +79,7 @@ export const PRICING_PLANS: PricingPlanConfig[] = [
     features: [
       'Hasta 5 Profesionales (Fisio, Nutri, Médicos)',
       'Control de Acceso Basado en Roles (RBAC)',
-      'Módulo Nutricional (Composición e InBody)',
+      'Módulo Nutricional (Composición y Withings)',
       'Módulo Médico General (Recetas y Laboratorio)',
       'Invitaciones de equipo con un clic',
       'Métricas de facturación y pagos Wompi (COP)',

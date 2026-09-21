@@ -123,10 +123,10 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
   })();
 
   // 2. Perimeters Derived Indices:
-  const whr = Number((perimeters.cintura / perimeters.cadera).toFixed(2));
-  const heightCm = patient.heightCm || (patient.gender === 'F' ? 158.1 : 175);
-  const whtr = Number((perimeters.cintura / heightCm).toFixed(2));
-  const armRatio = Number((perimeters.brazoContraido / perimeters.brazoRelajado).toFixed(2));
+  const whr = perimeters.cadera > 0 ? Number((perimeters.cintura / perimeters.cadera).toFixed(2)) : 0;
+  const heightCm = patient.heightCm || 0;
+  const whtr = heightCm > 0 ? Number((perimeters.cintura / heightCm).toFixed(2)) : 0;
+  const armRatio = perimeters.brazoRelajado > 0 ? Number((perimeters.brazoContraido / perimeters.brazoRelajado).toFixed(2)) : 0;
 
   // Handlers for updates
   const handleUpdateSkinfold = (key: keyof SkinfoldMeasurements, val: number) => {
@@ -252,7 +252,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Estatura / Peso</span>
             <span className="font-bold text-slate-800">
-              {heightCm} cm • {patient.weightKg || 53.5} kg
+              {heightCm > 0 ? heightCm : '—'} cm • {patient.weightKg || '—'} kg
             </span>
           </div>
           <div>

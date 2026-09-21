@@ -186,3 +186,10 @@ Este archivo documenta todas las intervenciones, decisiones arquitect√≥nicas y r
 - **Feedback al Usuario:** Se renderiza una respuesta HTML amigable confirmando la vinculaci√≥n exitosa.
 - **Autorefresco Transparente:** Se actualiz√≥ el m√©todo de sincronizaci√≥n (`Sync`). Si la petici√≥n de datos devuelve HTTP 401 y existe un `refresh_token`, el backend invoca autom√°ticamente `refreshAccessToken` para revalidar la sesi√≥n de forma invisible al usuario, evitando ca√≠das del servicio por caducidad de token.
 - **Soporte Avanzado Withings Body Scan:** Se ampliÛ la integraciÛn para decodificar todas las mÈtricas de bioimpedancia, incluyendo Masa Grasa (kg), Masa Muscular (kg), Grasa Visceral y BMR. Se inyectaron `PatientService` y `AnthropometryService` en el handler para calcular autom·ticamente el BMR (Mifflin-St Jeor) y las masas corporales como fallback seguro en caso de que la b·scula omita estos valores, asegurando que el planificador nutricional siempre tenga datos completos.
+
+## [2026-09-21] Fix Anthropometry and BIA Modules Hardcoded Data
+- Removed hardcoded values (158.1 cm, 53.5 kg) from AnthropometryModule.tsx.
+- Hydrated heightCm in 	oCoreBodyPatient (in coreBodyAdapters.ts) to use p.height_cm from the clinical patient data.
+- Updated AnthropometryEvaluationModule.tsx to initialize states using the real patient properties (patient.height_cm).
+- Ensured BIA/Withings view in BodyCompositionModule.tsx correctly consumes the hydrated heightCm for the physical report.
+

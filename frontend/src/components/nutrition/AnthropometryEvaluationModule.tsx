@@ -74,7 +74,7 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
     (draftForPatient?.equation as IsaKEquationId) || 'faulkner',
   );
   const [weightKg, setWeightKg] = useState(draftForPatient?.weightKg ?? 0);
-  const [heightCm, setHeightCm] = useState(draftForPatient?.heightCm ?? 0);
+  const [heightCm, setHeightCm] = useState(draftForPatient?.heightCm ?? patient.height_cm ?? 0);
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
 

@@ -29,18 +29,4 @@ func (s *anthropometryService) CreateEvaluation(ctx context.Context, eval *domai
 	return s.repo.Create(ctx, eval)
 }
 
-// CalculateBMR calculates Basal Metabolic Rate using Mifflin-St Jeor equation
-func (s *anthropometryService) CalculateBMR(weight, height float64, age int, gender string) float64 {
-	// Men: (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) + 5
-	// Women: (10 × weight in kg) + (6.25 × height in cm) - (5 × age in years) - 161
-	base := (10 * weight) + (6.25 * height) - float64(5*age)
-	if gender == "male" {
-		return base + 5
-	}
-	return base - 161
-}
 
-// CalculateTDEE calculates Total Daily Energy Expenditure
-func (s *anthropometryService) CalculateTDEE(bmr float64, activityFactor float64) float64 {
-	return bmr * activityFactor
-}

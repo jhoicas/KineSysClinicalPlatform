@@ -156,3 +156,115 @@ export const dietPlanFormSchema = z.object({
 });
 
 export type DietPlanFormData = z.infer<typeof dietPlanFormSchema>;
+
+/**
+ * Esquemas para los endpoints de Antropometría (Backend Go)
+ */
+export const somatotypeRequestSchema = z.object({
+  triceps_mm: z.number().min(0),
+  subscapular_mm: z.number().min(0),
+  suprailiac_mm: z.number().min(0),
+  calf_mm: z.number().min(0),
+  height_cm: z.number().min(0),
+  humerus_cm: z.number().min(0),
+  femur_cm: z.number().min(0),
+  arm_cm: z.number().min(0),
+});
+export type SomatotypeRequest = z.infer<typeof somatotypeRequestSchema>;
+
+export const somatotypeResultSchema = z.object({
+  endomorphy: z.number(),
+  mesomorphy: z.number(),
+  ectomorphy: z.number(),
+  x_axis: z.number(),
+  y_axis: z.number(),
+  category: z.string(),
+});
+export type SomatotypeResultDTO = z.infer<typeof somatotypeResultSchema>;
+
+export const bmrRequestSchema = z.object({
+  weight_kg: z.number().min(0),
+  height_cm: z.number().min(0),
+  age_years: z.number().min(0),
+  gender: z.enum(['male', 'female', 'other']),
+  equation: z.string().optional(),
+});
+export type BmrRequest = z.infer<typeof bmrRequestSchema>;
+
+export const bmrResultSchema = z.object({
+  bmr_kcal: z.number(),
+  equation_used: z.string(),
+});
+export type BmrResultDTO = z.infer<typeof bmrResultSchema>;
+
+export const compositionRequestSchema = z.object({
+  gender: z.enum(['male', 'female', 'other']),
+  age_years: z.number().min(0),
+  weight_kg: z.number().min(0),
+  triceps_mm: z.number().min(0),
+  subscapular_mm: z.number().min(0),
+  suprailiac_mm: z.number().min(0),
+  abdominal_mm: z.number().min(0),
+});
+export type CompositionRequest = z.infer<typeof compositionRequestSchema>;
+
+export const bodyCompositionResultSchema = z.object({
+  body_density: z.number(),
+  fat_percentage: z.number(),
+  fat_mass_kg: z.number(),
+  fat_free_mass_kg: z.number(),
+});
+export type BodyCompositionResultDTO = z.infer<typeof bodyCompositionResultSchema>;
+
+/**
+ * Esquemas para los endpoints de Nutrición (Backend Go)
+ */
+export const calculateDietPlanRequestSchema = z.object({
+  caloric_target_kcal: z.number().min(800).max(6000),
+  protein_pct: z.number().min(0).max(100),
+  carbs_pct: z.number().min(0).max(100),
+  fats_pct: z.number().min(0).max(100),
+});
+export type CalculateDietPlanRequest = z.infer<typeof calculateDietPlanRequestSchema>;
+
+export const dietPlanTotalsSchema = z.object({
+  protein_grams: z.number(),
+  carbs_grams: z.number(),
+  fats_grams: z.number(),
+  fiber_grams_estimated: z.number(),
+  sodium_mg_estimated: z.number(),
+  caloric_total: z.number(),
+});
+export type DietPlanTotalsDTO = z.infer<typeof dietPlanTotalsSchema>;
+
+export const groceryPlanItemSchema = z.object({
+  category: z.string(),
+  name: z.string(),
+  daily_portion_g: z.number(),
+  purchase_unit: z.string(),
+  price_per_unit_cop: z.number(),
+});
+export type GroceryPlanItemDTO = z.infer<typeof groceryPlanItemSchema>;
+
+export const generateGroceryListRequestSchema = z.object({
+  plan_items: z.array(groceryPlanItemSchema),
+  days: z.number().min(1),
+});
+export type GenerateGroceryListRequest = z.infer<typeof generateGroceryListRequestSchema>;
+
+export const groceryListLineSchema = z.object({
+  category: z.string(),
+  name: z.string(),
+  total_grams_needed: z.number(),
+  purchase_unit: z.string(),
+  units_to_buy: z.number(),
+  estimated_cost_cop: z.number(),
+});
+export type GroceryListLineDTO = z.infer<typeof groceryListLineSchema>;
+
+export const smartGroceryListSchema = z.object({
+  items: z.array(groceryListLineSchema),
+  total_estimated_cost_cop: z.number(),
+  days: z.number(),
+});
+export type SmartGroceryListDTO = z.infer<typeof smartGroceryListSchema>;

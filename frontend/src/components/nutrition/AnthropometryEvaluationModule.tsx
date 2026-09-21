@@ -5,10 +5,9 @@ import {
   calculateArmRatio,
   calculateWHtR,
   EQUATION_OPTIONS,
-  estimateBodyFat,
-  heathCarterSomatotype,
   type IsaKEquationId,
 } from '../../utils/isakCalculations';
+import { useAnthropometryCalculations } from '../../hooks/useAnthropometryCalculations';
 import { useAppStore } from '../../store/useAppStore';
 import { IsakPatientHeader } from './IsakPatientHeader';
 import {
@@ -96,26 +95,47 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
 
   const patientHistory = historyEvaluations.filter((e) => e.patient_id === patient.id);
 
-  const bodyFat = useMemo(
-    () =>
-      estimateBodyFat(
-        equation,
-        gender,
-        age,
-        {
-          triceps: measures.triceps || 0,
-          subscapular: measures.subscapular || 0,
-          biceps: measures.biceps,
-          iliac_crest: measures.iliac_crest,
-          suprailiac: measures.suprailiac || 0,
-          abdominal: measures.abdominal || 0,
-          thigh: measures.thigh_sf,
-          calf: measures.calf_sf,
-        },
-        weightKg,
-      ),
-    [equation, gender, age, measures, weightKg],
-  );
+  const { somatotype, composition, bmr, isLoading, error } = useAnthropometryCalculations({
+    gender,
+    age_years: age,
+    weight_kg: weightKg,
+    height_cm: heightCm,
+    measures,
+    equation,
+  });
+
+  const getFatClassification = (fatPct: number, isFemale: boolean) => {
+    if (fatPct === 0) return { label: 'Sin datos' };
+    if (isFemale) {
+      if (fatPct < 14) return { label: 'Bajo' };
+      if (fatPct <= 28) return { label: 'Rango Saludable' };
+      if (fatPct <= 35) return { label: 'Sobrepeso' };
+      return { label: 'Elevado' };
+    }
+    if (fatPct < 6) return { label: 'Bajo' };
+    if (fatPct <= 20) return { label: 'Rango Saludable' };
+    if (fatPct <= 25) return { label: 'Sobrepeso' };
+    return { label: 'Elevado' };
+  };
+
+  const bodyFat = {
+    bodyFatPct: composition?.fat_percentage || 0,
+    fatMassKg: composition?.fat_mass_kg || 0,
+    leanMassKg: composition?.fat_free_mass_kg || 0,
+    classification: getFatClassification(composition?.fat_percentage || 0, gender === 'female'),
+  };
+
+  const mappedSomatotype = {
+    endomorphy: somatotype?.endomorphy || 0,
+    mesomorphy: somatotype?.mesomorphy || 0,
+    ectomorphy: somatotype?.ectomorphy || 0,
+    dominant: somatotype?.category || 'Sin datos',
+    description: somatotype?.category === 'Mesomorfo' 
+      ? 'Predominio musculoesquelético.' 
+      : somatotype?.category === 'Ectomorfo' 
+        ? 'Linealidad dominante.' 
+        : 'Predominio de adiposidad.',
+  };
 
   const whr = useMemo(
     () => calculateWaistHipRatio(measures.waist || 0, measures.hip || 1, gender),
@@ -128,23 +148,6 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
   const armRatio = useMemo(
     () => calculateArmRatio(measures.arm_flexed, measures.arm_relaxed),
     [measures.arm_flexed, measures.arm_relaxed],
-  );
-
-  const somatotype = useMemo(
-    () =>
-      heathCarterSomatotype({
-        tricepsMm: measures.triceps || 0,
-        subscapularMm: measures.subscapular || 0,
-        suprailiacMm: measures.suprailiac || 0,
-        medialCalfMm: measures.calf_sf || 0,
-        humerusCm: measures.humerus || 6,
-        femurCm: measures.femur || 9,
-        flexedArmCm: measures.arm_flexed || 30,
-        calfCm: measures.calf_cir || 35,
-        heightCm,
-        weightKg,
-      }),
-    [measures, heightCm, weightKg],
   );
 
   const handleSelect = (node: IsakNodeDef) => {
@@ -211,7 +214,7 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
       fat_mass_kg: bodyFat.fatMassKg,
       fat_free_mass_kg: bodyFat.leanMassKg,
       cardiovascular_risk_level: whr.risk_level,
-      clinical_notes: `ISAK · ${bodyFat.formula} · Somatotipo ${somatotype.dominant} (E${somatotype.endomorphy}/M${somatotype.mesomorphy}/Ec${somatotype.ectomorphy}) · Biacromial ${measures.biacromial || '—'} cm · Húmero ${measures.humerus || '—'} · Fémur ${measures.femur || '—'}`,
+      clinical_notes: `ISAK · Ecuación ${equation} · Somatotipo ${mappedSomatotype.dominant} (E${mappedSomatotype.endomorphy}/M${mappedSomatotype.mesomorphy}/Ec${mappedSomatotype.ectomorphy}) · Biacromial ${measures.biacromial || '—'} cm · Húmero ${measures.humerus || '—'} · Fémur ${measures.femur || '—'}`,
       created_at: new Date().toISOString(),
     };
   };
@@ -391,8 +394,7 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
 
                   <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
                     <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Fórmula</p>
-                    <p className="text-xs font-mono text-slate-700 mt-1">{bodyFat.formulaLatex}</p>
-                    <p className="text-[11px] text-slate-500 mt-1">{bodyFat.formula}</p>
+                    <p className="text-[11px] text-slate-500 mt-1">{equation}</p>
                   </div>
 
                   <div className="rounded-2xl bg-gradient-to-br from-[#0a192f] to-[#0284c7] p-4 text-white">
@@ -512,9 +514,9 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
                       </text>
                       {/* Posición relativa normalizada 0–7 → triángulo */}
                       {(() => {
-                        const e = Math.min(7, somatotype.endomorphy) / 7;
-                        const m = Math.min(7, somatotype.mesomorphy) / 7;
-                        const c = Math.min(7, somatotype.ectomorphy) / 7;
+                        const e = Math.min(7, mappedSomatotype.endomorphy) / 7;
+                        const m = Math.min(7, mappedSomatotype.mesomorphy) / 7;
+                        const c = Math.min(7, mappedSomatotype.ectomorphy) / 7;
                         const sum = e + m + c || 1;
                         const x = 110 + ((c - e) / sum) * 88;
                         const y = 160 - (m / sum) * 130;
@@ -531,12 +533,12 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
                   <div className="grid grid-cols-3 gap-2">
                     {(
                       [
-                        { key: 'Ectomorfo', v: somatotype.ectomorphy, path: 'M50 10 L62 90 L38 90 Z' },
-                        { key: 'Mesomorfo', v: somatotype.mesomorphy, path: 'M40 12 L60 12 L68 90 L32 90 Z' },
-                        { key: 'Endomorfo', v: somatotype.endomorphy, path: 'M42 14 L58 14 L72 88 L28 88 Z' },
+                        { key: 'Ectomorfo', v: mappedSomatotype.ectomorphy, path: 'M50 10 L62 90 L38 90 Z' },
+                        { key: 'Mesomorfo', v: mappedSomatotype.mesomorphy, path: 'M40 12 L60 12 L68 90 L32 90 Z' },
+                        { key: 'Endomorfo', v: mappedSomatotype.endomorphy, path: 'M42 14 L58 14 L72 88 L28 88 Z' },
                       ] as const
                     ).map((s) => {
-                      const active = somatotype.dominant === s.key;
+                      const active = mappedSomatotype.dominant === s.key;
                       return (
                         <div
                           key={s.key}
@@ -563,12 +565,12 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
 
                   <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3">
                     <span className="inline-flex px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-[#f97316] text-white">
-                      {somatotype.dominant}
+                      {mappedSomatotype.dominant}
                     </span>
-                    <p className="text-xs text-slate-700 mt-2 leading-relaxed">{somatotype.description}</p>
+                    <p className="text-xs text-slate-700 mt-2 leading-relaxed">{mappedSomatotype.description}</p>
                     <p className="text-[10px] text-slate-500 mt-2 font-mono">
-                      Endo {somatotype.endomorphy} · Meso {somatotype.mesomorphy} · Ecto{' '}
-                      {somatotype.ectomorphy}
+                      Endo {mappedSomatotype.endomorphy} · Meso {mappedSomatotype.mesomorphy} · Ecto{' '}
+                      {mappedSomatotype.ectomorphy}
                     </p>
                   </div>
                 </div>

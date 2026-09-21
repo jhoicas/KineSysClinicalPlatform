@@ -9,6 +9,7 @@ import {
   BoneDiameterMeasurements,
   SomatotypeCategory,
 } from '../../types/coreBodyNutrition';
+import { useAnthropometryCalculations } from '../../hooks/useAnthropometryCalculations';
 import { AnatomyAnthropometryModel } from './AnatomyAnthropometryModel';
 import {
   Ruler,
@@ -84,44 +85,31 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     assessment?.generalObservations || ''
   );
 
-  // Dynamic calculations
-  // 1. Fat estimation equations:
-  const sum4Faulkner =
-    skinfolds.triceps + skinfolds.subescapular + skinfolds.supraespinal + skinfolds.crestaIliaca;
-  const faulknerFat = Number((0.153 * sum4Faulkner + 5.783).toFixed(1));
+  const { somatotype, composition, isLoading, error } = useAnthropometryCalculations({
+    gender: patient.gender === 'F' ? 'female' : 'male',
+    age_years: patient.age || 30,
+    weight_kg: patient.weightKg || 60,
+    height_cm: patient.heightCm || 160,
+    measures: {
+      triceps: skinfolds.triceps,
+      subscapular: skinfolds.subescapular,
+      biceps: skinfolds.biceps,
+      iliac_crest: skinfolds.crestaIliaca,
+      suprailiac: skinfolds.supraespinal,
+      abdominal: skinfolds.abdominal,
+      thigh_sf: skinfolds.muslo,
+      calf_sf: skinfolds.pierna,
+      humerus: diameters.humero,
+      femur: diameters.femur,
+      arm_flexed: perimeters.brazoContraido,
+      calf_cir: perimeters.pierna,
+    },
+    equation,
+  });
 
-  const sum3JP =
-    patient.gender === 'F'
-      ? skinfolds.triceps + skinfolds.supraespinal + skinfolds.muslo
-      : skinfolds.pecho ? 0 : skinfolds.abdominal + skinfolds.muslo + skinfolds.triceps; // fallback
-  const jpFat = Number((0.18 * sum3JP + 6.2).toFixed(1));
+  const calculatedFatPct = composition?.fat_percentage || 0;
 
-  const sum7JP =
-    skinfolds.triceps +
-    skinfolds.subescapular +
-    skinfolds.biceps +
-    skinfolds.crestaIliaca +
-    skinfolds.supraespinal +
-    skinfolds.abdominal +
-    skinfolds.muslo;
-  const jp7Fat = Number((0.12 * sum7JP + 7.1).toFixed(1));
-
-  const hasSkinfoldData =
-    skinfolds.triceps > 0 ||
-    skinfolds.subescapular > 0 ||
-    skinfolds.supraespinal > 0 ||
-    skinfolds.crestaIliaca > 0;
-
-  const calculatedFatPct = !hasSkinfoldData
-    ? 0
-    : equation === 'faulkner_4'
-      ? faulknerFat
-      : equation === 'jackson_pollock_3'
-      ? jpFat
-      : jp7Fat;
-
-  const fatStatus: 'Bajo' | 'Rango saludable' | 'Sobrepeso' | 'Elevado' = (() => {
-    // ACSM aproximado: ♀ saludable ~18–28 % · ♂ saludable ~10–20 %
+  const fatStatus = (() => {
     if (patient.gender === 'F') {
       if (calculatedFatPct < 14) return 'Bajo';
       if (calculatedFatPct <= 28) return 'Rango saludable';
@@ -181,14 +169,14 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
         'Los perímetros se encuentran en rangos esperados para la edad, sexo y nivel de actividad física.',
       diameters,
       somatotype: {
-        category: selectedSomatotype,
-        endomorfia: 3.2,
-        mesomorfia: 4.8,
-        ectomorfia: 2.5,
+        category: somatotype?.category as SomatotypeCategory || selectedSomatotype,
+        endomorfia: somatotype?.endomorphy || 3.2,
+        mesomorfia: somatotype?.mesomorphy || 4.8,
+        ectomorfia: somatotype?.ectomorphy || 2.5,
         interpretation:
-          selectedSomatotype === 'Mesomorfo'
+          (somatotype?.category || selectedSomatotype) === 'Mesomorfo'
             ? 'Predominio de desarrollo musculoesquelético, con adecuado balance entre linealidad y robustez ósea.'
-            : selectedSomatotype === 'Ectomorfo'
+            : (somatotype?.category || selectedSomatotype) === 'Ectomorfo'
             ? 'Linealidad relativa dominante y bajo componente de adiposidad subcutánea.'
             : 'Predominio de adiposidad relativa y formas redondeadas.',
       },

@@ -285,9 +285,15 @@ export const api = {
       ),
     create: (data: Partial<EvaluacionAntropometrica>) =>
       request<EvaluacionAntropometrica>('POST', '/api/v1/anthropometry', data),
+    calculateSomatotype: (data: import('../schemas/nutritionSchemas').SomatotypeRequest) =>
+      request<import('../schemas/nutritionSchemas').SomatotypeResultDTO>('POST', '/api/v1/anthropometry/calculate/somatotype', data),
+    calculateBmr: (data: import('../schemas/nutritionSchemas').BmrRequest) =>
+      request<import('../schemas/nutritionSchemas').BmrResultDTO>('POST', '/api/v1/anthropometry/calculate/bmr', data),
+    calculateComposition: (data: import('../schemas/nutritionSchemas').CompositionRequest) =>
+      request<import('../schemas/nutritionSchemas').BodyCompositionResultDTO>('POST', '/api/v1/anthropometry/calculate/composition', data),
   },
 
-  // ──── Nutrition Plans ────
+  // ──── Nutrition Plans & Tools ────
   nutritionPlans: {
     list: (params?: { tenant_id?: string; patient_id?: string; status?: string }) =>
       request<PlanNutricional[]>('GET', '/api/v1/nutrition-plans', undefined, params),
@@ -295,6 +301,10 @@ export const api = {
       request<PlanNutricional>('POST', '/api/v1/nutrition-plans', data),
     update: (id: string, data: Partial<PlanNutricional>) =>
       request<PlanNutricional>('PUT', `/api/v1/nutrition-plans/${id}`, data),
+    calculateDietPlanTotals: (data: import('../schemas/nutritionSchemas').CalculateDietPlanRequest) =>
+      request<import('../schemas/nutritionSchemas').DietPlanTotalsDTO>('POST', '/api/v1/nutrition/diet-plan/generate', data),
+    generateGroceryList: (data: import('../schemas/nutritionSchemas').GenerateGroceryListRequest) =>
+      request<import('../schemas/nutritionSchemas').SmartGroceryListDTO>('POST', '/api/v1/nutrition/grocery-list/generate', data),
   },
 
   // ──── FHIR Nutrition Orders ────

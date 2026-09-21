@@ -168,13 +168,13 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
       const filename = `${docTypeName.replace(/\s+/g, '_')}_${lastName}_${dateStr}.pdf`;
 
       if (documentType === 'plan_nutricional' && plan) {
-        pdfBase64 = getNutritionPlanPdfBase64({
+        pdfBase64 = await getNutritionPlanPdfBase64({
           ...getPdfOptions(),
           plan,
           evaluation,
         });
       } else if (documentType === 'antropometria' && evaluation) {
-        pdfBase64 = getAnthropometryPdfBase64({
+        pdfBase64 = await getAnthropometryPdfBase64({
           ...getPdfOptions(),
           evaluation,
           historyEvaluations,

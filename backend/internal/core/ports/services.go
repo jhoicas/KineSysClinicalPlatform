@@ -22,13 +22,30 @@ type EncounterService interface {
 type AnthropometryService interface {
 	ListEvaluations(ctx context.Context, patientID, tenantID uuid.UUID) ([]domain.AnthropometricEvaluation, error)
 	CreateEvaluation(ctx context.Context, eval *domain.AnthropometricEvaluation) error
-	CalculateBMR(weight, height float64, age int, gender string) float64
-	CalculateTDEE(bmr float64, activityFactor float64) float64
+	CalculateJacksonPollock7(sex domain.BiologicalSex, age int, folds domain.JacksonPollock7Skinfolds, weightKg *float64) (domain.BodyCompositionResult, error)
+	CalculateJacksonPollock3Male(age int, folds domain.JacksonPollock3SkinfoldsMale, weightKg *float64) (domain.BodyCompositionResult, error)
+	CalculateJacksonPollock3Female(age int, folds domain.JacksonPollock3SkinfoldsFemale, weightKg *float64) (domain.BodyCompositionResult, error)
+	CalculateFaulkner4(folds domain.Faulkner4Skinfolds, weightKg *float64) (domain.BodyCompositionResult, error)
+	CalculateHeathCarterSomatotype(inputs domain.HeathCarterInputs) (domain.SomatotypeResult, error)
+	CalculateMifflinStJeor(inputs domain.BmrInputs) (domain.BmrResult, error)
+	CalculateHarrisBenedict(inputs domain.BmrInputs) (domain.BmrResult, error)
+	CalculateTDEE(bmr float64, activityFactor float64) (float64, error)
 }
 
 type NutritionService interface {
 	ListPlans(ctx context.Context, patientID, tenantID uuid.UUID) ([]domain.NutritionPlan, error)
 	CreatePlan(ctx context.Context, plan *domain.NutritionPlan) error
+}
+
+type DietPlannerService interface {
+	ScaleNutrientPer100g(portionG float64, nutrientPer100g *float64) float64
+	EstimateItemCost(portionG float64, food domain.FoodCatalogNutrients) *float64
+	CalculateDietPlanTotals(items []domain.DietItemWithFood) (domain.DietPlanTotals, error)
+}
+
+type GroceryListService interface {
+	ParsePurchaseUnitGrams(raw *string) *float64
+	GenerateSmartGroceryList(planItems []domain.GroceryPlanItem, days int) (domain.SmartGroceryList, error)
 }
 
 type ExerciseService interface {

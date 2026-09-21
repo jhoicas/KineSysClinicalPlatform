@@ -11,6 +11,7 @@ import {
   FoodItem,
 } from '../../types';
 import { convertMacroPctToGrams, scaleNutrientPer100g, roundNutrient, sumMealMacros } from '../../utils/nutritionCalculations';
+import { useDietPlannerCalculations } from '../../hooks/useDietPlannerCalculations';
 import { EcoExportActions } from '../common/EcoExportActions';
 import { dietPlanFormSchema, DietPlanFormData } from '../../schemas/nutritionSchemas';
 import { FoodSearchCombobox } from './FoodSearchCombobox';
@@ -263,8 +264,21 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
   const [selectedMealId, setSelectedMealId] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Recalculate target macro grams
-  const macroGrams = convertMacroPctToGrams(caloricTarget, proteinPct, carbsPct, fatsPct);
+  // Hook for backend-calculated macro grams
+  const { totals: macroGramsObj, isLoading: isCalculatingTotals } = useDietPlannerCalculations({
+    caloric_target_kcal: caloricTarget,
+    protein_pct: proteinPct,
+    carbs_pct: carbsPct,
+    fats_pct: fatsPct,
+  });
+
+  const macroGrams = {
+    protein_grams: macroGramsObj?.protein_grams || 0,
+    carbs_grams: macroGramsObj?.carbs_grams || 0,
+    fats_grams: macroGramsObj?.fats_grams || 0,
+    carbs_kcal: Math.round((macroGramsObj?.carbs_grams || 0) * 4),
+    fats_kcal: Math.round((macroGramsObj?.fats_grams || 0) * 9),
+  };
 
   // Calculate actual plan totals
   const totalPlannedCalories = meals.reduce((sum, m) => sum + m.total_calories, 0);
@@ -467,6 +481,7 @@ export const DietPlannerModule: React.FC<DietPlannerModuleProps> = ({
             <h3 className="text-xs font-black text-on-surface uppercase tracking-wider flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-base">tune</span>
               <span>Calibración de Objetivos Calóricos & Macronutrientes</span>
+              {isCalculatingTotals && <span className="text-[10px] text-primary animate-pulse ml-2">(Calculando...)</span>}
             </h3>
             <p className="text-xs text-on-surface-variant mt-0.5">
               Gasto TDEE referencial de la evaluación: <strong>{baseTdee} kcal</strong>

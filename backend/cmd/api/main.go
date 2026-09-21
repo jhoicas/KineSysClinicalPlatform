@@ -52,6 +52,8 @@ func main() {
 	anthropometrySvc := services.NewAnthropometryService(anthropometryRepo)
 	nutritionSvc := services.NewNutritionService(nutritionRepo)
 	exerciseSvc := services.NewExerciseService(exerciseRepo)
+	dietPlannerSvc := services.NewDietPlannerService()
+	groceryListSvc := services.NewGroceryListService()
 
 	// Initialize Handlers
 	patientHandler := handlers.NewPatientHandler(patientSvc)
@@ -59,6 +61,8 @@ func main() {
 	anthropometryHandler := handlers.NewAnthropometryHandler(anthropometrySvc)
 	nutritionHandler := handlers.NewNutritionHandler(nutritionSvc)
 	exerciseHandler := handlers.NewExerciseHandler(exerciseSvc)
+	dietPlannerHandler := handlers.NewDietPlannerHandler(dietPlannerSvc)
+	groceryListHandler := handlers.NewGroceryListHandler(groceryListSvc)
 	withingsHandler := handlers.NewWithingsHardwareHandler(
 		cfg.WithingsAccessToken,
 		cfg.WithingsUserID,
@@ -110,11 +114,16 @@ func main() {
 		// Anthropometry
 		r.Get("/api/v1/patients/{patientId}/anthropometry", anthropometryHandler.ListByPatient)
 		r.Post("/api/v1/anthropometry", anthropometryHandler.Create)
+		r.Post("/api/v1/anthropometry/calculate/somatotype", anthropometryHandler.CalculateSomatotype)
+		r.Post("/api/v1/anthropometry/calculate/bmr", anthropometryHandler.CalculateBMR)
+		r.Post("/api/v1/anthropometry/calculate/composition", anthropometryHandler.CalculateComposition)
 		r.Get("/api/v1/patients/{patientId}/hardware/withings/sync", withingsHandler.Sync)
 
 		// Nutrition
 		r.Get("/api/v1/patients/{patientId}/nutrition", nutritionHandler.ListByPatient)
 		r.Post("/api/v1/nutrition", nutritionHandler.Create)
+		r.Post("/api/v1/nutrition/diet-plan/generate", dietPlannerHandler.CalculateDietPlan)
+		r.Post("/api/v1/nutrition/grocery-list/generate", groceryListHandler.GenerateGroceryList)
 
 		// System exercise catalog
 		r.Get("/api/v1/exercises", exerciseHandler.List)

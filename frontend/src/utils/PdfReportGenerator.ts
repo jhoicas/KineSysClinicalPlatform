@@ -13,6 +13,8 @@ import {
   GroceryPlanItem,
   SmartGroceryList,
 } from '../services/nutrition/GroceryListService';
+import api from '../services/apiClient';
+import { GenerateGroceryListRequest } from '../schemas/nutritionSchemas';
 
 export type ReportSource = 'MANUAL_ISAK' | 'WITHINGS' | string;
 
@@ -149,7 +151,7 @@ function sectionTitle(doc: jsPDF, title: string, y: number, margin: number, prim
  * Genera el PDF unificado de nutrición clínica.
  * Retorna la instancia jsPDF (caller puede `.save()` o `.output('blob')`).
  */
-export function generateUnifiedNutritionReportPdf(input: UnifiedNutritionReportInput): jsPDF {
+export async function generateUnifiedNutritionReportPdf(input: UnifiedNutritionReportInput): Promise<jsPDF> {
   const {
     patient,
     clinic = {},
@@ -160,9 +162,46 @@ export function generateUnifiedNutritionReportPdf(input: UnifiedNutritionReportI
     folio,
   } = input;
 
-  const grocery =
-    input.groceryList ??
-    generateSmartGroceryList(dailyGroceryItems, groceryDays);
+  let grocery = input.groceryList;
+  if (!grocery) {
+    const requestData: GenerateGroceryListRequest = {
+      plan_items: dailyGroceryItems.map(item => ({
+        category: item.category || 'Otros',
+        name: item.name || 'Sin nombre',
+        daily_portion_g: item.portion_g,
+        purchase_unit: String(item.purchase_unit || 'unidades'),
+        price_per_unit_cop: item.purchase_price ?? 0,
+      })),
+      days: groceryDays,
+    };
+    try {
+      const res = await api.nutritionPlans.generateGroceryList(requestData);
+      if (res.data) {
+        grocery = {
+          lines: res.data.items.map(item => ({
+            category: item.category as any,
+            name: item.name,
+            total_grams_needed: item.total_grams_needed,
+            purchase_unit: item.purchase_unit,
+            units_to_buy: item.units_to_buy,
+            estimated_cost_cop: item.estimated_cost_cop,
+          })),
+          grand_total: res.data.total_estimated_cost_cop,
+          item_count: res.data.items.length,
+          lines_with_price: res.data.items.filter(i => i.estimated_cost_cop > 0).length,
+          lines_missing_price: res.data.items.filter(i => i.estimated_cost_cop === 0).length,
+          days: res.data.days,
+        } as any;
+      }
+    } catch (err) {
+      console.error('Error generating grocery list via backend:', err);
+      grocery = generateSmartGroceryList(dailyGroceryItems, groceryDays);
+    }
+  }
+
+  if (!grocery) {
+    throw new Error('Could not generate grocery list');
+  }
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = 210;
@@ -496,11 +535,11 @@ export function generateUnifiedNutritionReportPdf(input: UnifiedNutritionReportI
 }
 
 /** Descarga el PDF en el navegador. */
-export function downloadUnifiedNutritionReport(
+export async function downloadUnifiedNutritionReport(
   input: UnifiedNutritionReportInput,
   filename?: string
-): void {
-  const doc = generateUnifiedNutritionReportPdf(input);
+): Promise<void> {
+  const doc = await generateUnifiedNutritionReportPdf(input);
   const safeName = (input.patient.full_name || 'paciente').replace(/[^\w\-]+/g, '_');
   doc.save(filename || `KineSys_Nutricion_${safeName}.pdf`);
 }

@@ -51,7 +51,7 @@ function drawBrandedClinicLogo(
  * Genera un documento PDF de alta fidelidad estética para el Plan Nutricional,
  * inyectando dinámicamente el color primario, logotipo y datos clínicos del tenant.
  */
-export function generateNutritionPlanPdf(options: GenerateNutritionPlanPdfOptions): jsPDF {
+export async function generateNutritionPlanPdf(options: GenerateNutritionPlanPdfOptions): Promise<jsPDF> {
   const {
     patient,
     plan,
@@ -435,8 +435,8 @@ export function generateNutritionPlanPdf(options: GenerateNutritionPlanPdfOption
 /**
  * Descarga el PDF localmente en el navegador
  */
-export function downloadNutritionPlanPdf(options: GenerateNutritionPlanPdfOptions): void {
-  const doc = generateNutritionPlanPdf(options);
+export async function downloadNutritionPlanPdf(options: GenerateNutritionPlanPdfOptions): Promise<void> {
+  const doc = await generateNutritionPlanPdf(options);
   const patientLastName = options.patient.last_name?.replace(/\s+/g, '_') || 'Paciente';
   const dateStr = new Date().toISOString().split('T')[0];
   const filename = `Plan_Nutricional_${patientLastName}_${dateStr}.pdf`;
@@ -446,16 +446,16 @@ export function downloadNutritionPlanPdf(options: GenerateNutritionPlanPdfOption
 /**
  * Genera y retorna el Blob binario del PDF (application/pdf)
  */
-export function getNutritionPlanPdfBlob(options: GenerateNutritionPlanPdfOptions): Blob {
-  const doc = generateNutritionPlanPdf(options);
+export async function getNutritionPlanPdfBlob(options: GenerateNutritionPlanPdfOptions): Promise<Blob> {
+  const doc = await generateNutritionPlanPdf(options);
   return doc.output('blob');
 }
 
 /**
  * Genera el string Base64 del archivo PDF (para adjuntar en la Edge Function)
  */
-export function getNutritionPlanPdfBase64(options: GenerateNutritionPlanPdfOptions): string {
-  const doc = generateNutritionPlanPdf(options);
+export async function getNutritionPlanPdfBase64(options: GenerateNutritionPlanPdfOptions): Promise<string> {
+  const doc = await generateNutritionPlanPdf(options);
   const output = doc.output('datauristring');
   // Strip the "data:application/pdf;filename=generated.pdf;base64," prefix
   const parts = output.split(',');
@@ -465,7 +465,7 @@ export function getNutritionPlanPdfBase64(options: GenerateNutritionPlanPdfOptio
 /**
  * Obtiene el Data URL para previsualización interactiva
  */
-export function getNutritionPlanPdfDataUrl(options: GenerateNutritionPlanPdfOptions): string {
-  const doc = generateNutritionPlanPdf(options);
+export async function getNutritionPlanPdfDataUrl(options: GenerateNutritionPlanPdfOptions): Promise<string> {
+  const doc = await generateNutritionPlanPdf(options);
   return doc.output('datauristring');
 }

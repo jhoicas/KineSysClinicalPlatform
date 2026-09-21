@@ -65,8 +65,11 @@ func main() {
 	groceryListHandler := handlers.NewGroceryListHandler(groceryListSvc)
 	withingsHandler := handlers.NewWithingsHardwareHandler(
 		cfg.WithingsAccessToken,
+		cfg.WithingsRefreshToken,
 		cfg.WithingsUserID,
 		cfg.WithingsAPIBaseURL,
+		cfg.WithingsClientID,
+		cfg.WithingsClientSecret,
 	)
 
 	// Initialize Router
@@ -97,6 +100,9 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
+	
+	// Withings OAuth Callback (No JWT required, redirected from Withings)
+	r.Get("/api/v1/withings/callback", withingsHandler.HandleCallback)
 
 	// Protected Routes (Require Supabase JWT)
 	r.Group(func(r chi.Router) {

@@ -176,3 +176,12 @@ Este archivo documenta todas las intervenciones, decisiones arquitectónicas y r
 ### Decisiones Tomadas:
 - **Aislamiento JWT Nativo:** Se optó por usar `(auth.jwt()->>'tenant_id')::uuid` en el `USING` y `WITH CHECK` para acoplarse directamente a la estrategia de claims de Supabase.
 - **Cero Riesgo de Datos:** La migración no contiene ningún comando `DROP`, `DELETE` o `ALTER COLUMN`, cumpliendo la regla de oro para la base de datos de producción. El script está pendiente de aprobación manual.
+
+## [2026-09-20] - Implementación de OAuth para Withings
+**Autor:** Antigravity (Arquitecto de Software Principal)
+
+### Acciones Realizadas:
+- **Registro de Callback:** Se agregó la ruta pública `GET /api/v1/withings/callback` en `cmd/api/main.go` para recibir el código de autorización redireccionado por los servidores de Withings.
+- **Lógica de Autenticación (`withings_handler.go`):** Se implementó `HandleCallback` para intercambiar el `code` por un `access_token` y `refresh_token` a través de una petición POST servidor-a-servidor a `https://wbsapi.withings.net/v2/oauth2`.
+- **Feedback al Usuario:** Se renderiza una respuesta HTML amigable confirmando la vinculación exitosa.
+- **Autorefresco Transparente:** Se actualizó el método de sincronización (`Sync`). Si la petición de datos devuelve HTTP 401 y existe un `refresh_token`, el backend invoca automáticamente `refreshAccessToken` para revalidar la sesión de forma invisible al usuario, evitando caídas del servicio por caducidad de token.

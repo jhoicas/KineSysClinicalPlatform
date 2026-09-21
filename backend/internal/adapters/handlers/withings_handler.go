@@ -11,10 +11,13 @@ import (
 )
 
 type WithingsHardwareHandler struct {
-	accessToken string
-	userID      string
-	apiBaseURL  string
-	client      *http.Client
+	accessToken  string
+	refreshToken string
+	userID       string
+	apiBaseURL   string
+	clientID     string
+	clientSecret string
+	client       *http.Client
 }
 
 type withingsMeasure struct {
@@ -48,12 +51,15 @@ type WithingsHardwareReading struct {
 	ProviderMeta     map[string]string `json:"provider_meta,omitempty"`
 }
 
-func NewWithingsHardwareHandler(accessToken, userID, apiBaseURL string) *WithingsHardwareHandler {
+func NewWithingsHardwareHandler(accessToken, refreshToken, userID, apiBaseURL, clientID, clientSecret string) *WithingsHardwareHandler {
 	return &WithingsHardwareHandler{
-		accessToken: accessToken,
-		userID:      userID,
-		apiBaseURL:  strings.TrimRight(apiBaseURL, "/"),
-		client:      &http.Client{Timeout: 20 * time.Second},
+		accessToken:  accessToken,
+		refreshToken: refreshToken,
+		userID:       userID,
+		apiBaseURL:   strings.TrimRight(apiBaseURL, "/"),
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		client:       &http.Client{Timeout: 20 * time.Second},
 	}
 }
 
@@ -63,19 +69,161 @@ func (h *WithingsHardwareHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid patient ID", http.StatusBadRequest)
 		return
 	}
-	if h.accessToken == "" || h.userID == "" {
-		http.Error(w, "Withings hardware is not configured", http.StatusServiceUnavailable)
+	if h.accessToken == "" && h.refreshToken == "" {
+		http.Error(w, `{"error": "Báscula no vinculada"}`, http.StatusUnauthorized)
 		return
 	}
 
 	reading, err := h.fetchEvaluation(r.Context(), patientID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
+		// If unauthorized, try to refresh
+		if strings.Contains(err.Error(), "HTTP 401") && h.refreshToken != "" {
+			if refreshErr := h.refreshAccessToken(r.Context()); refreshErr == nil {
+				// Retry fetch after successful refresh
+				reading, err = h.fetchEvaluation(r.Context(), patientID)
+			}
+		}
+
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(reading)
+}
+
+func (h *WithingsHardwareHandler) refreshAccessToken(ctx context.Context) error {
+	form := url.Values{
+		"action":        {"requesttoken"},
+		"grant_type":    {"refresh_token"},
+		"client_id":     {h.clientID},
+		"client_secret": {h.clientSecret},
+		"refresh_token": {h.refreshToken},
+	}
+	
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://wbsapi.withings.net/v2/oauth2", strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	res, err := h.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("refresh failed with status %d", res.StatusCode)
+	}
+
+	var payload struct {
+		Status int `json:"status"`
+		Body   struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+			UserID       string `json:"userid"`
+		} `json:"body"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		return err
+	}
+	if payload.Status != 0 {
+		return fmt.Errorf("Withings API status=%d", payload.Status)
+	}
+
+	// Update local state (in a real app, save to DB/config)
+	h.accessToken = payload.Body.AccessToken
+	h.refreshToken = payload.Body.RefreshToken
+	h.userID = payload.Body.UserID
+
+	fmt.Printf("[Withings Refresh] Refreshed tokens for UserID=%s\n", h.userID)
+	return nil
+}
+
+func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "Missing code parameter", http.StatusBadRequest)
+		return
+	}
+
+	form := url.Values{
+		"action":        {"requesttoken"},
+		"grant_type":    {"authorization_code"},
+		"client_id":     {h.clientID},
+		"client_secret": {h.clientSecret},
+		"code":          {code},
+		"redirect_uri":  {"https://clinicalplatform.ludoia.com/api/v1/withings/callback"},
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://wbsapi.withings.net/v2/oauth2", strings.NewReader(form.Encode()))
+	if err != nil {
+		http.Error(w, "Error creating request", http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	res, err := h.client.Do(req)
+	if err != nil {
+		http.Error(w, "Error communicating with Withings", http.StatusBadGateway)
+		return
+	}
+	defer res.Body.Close()
+
+	var payload struct {
+		Status int `json:"status"`
+		Body   struct {
+			UserID       string `json:"userid"`
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+		} `json:"body"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid response from Withings", http.StatusBadGateway)
+		return
+	}
+
+	if payload.Status != 0 {
+		http.Error(w, fmt.Sprintf("Withings API returned status %d", payload.Status), http.StatusBadGateway)
+		return
+	}
+
+	// Store tokens in memory (in production, these should be persisted to DB)
+	h.userID = payload.Body.UserID
+	h.accessToken = payload.Body.AccessToken
+	h.refreshToken = payload.Body.RefreshToken
+
+	// Log tokens for verification
+	fmt.Printf("[Withings OAuth] Linked Successfully! UserID: %s, AccessToken: %s, RefreshToken: %s\n", h.userID, h.accessToken, h.refreshToken)
+
+	// HTML Response
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<title>Vinculación Exitosa</title>
+			<style>
+				body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f4f7f6; margin: 0; }
+				.card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; }
+				h2 { color: #2ecc71; }
+				p { color: #555; }
+			</style>
+		</head>
+		<body>
+			<div class="card">
+				<h2>✅ Báscula Withings vinculada con éxito.</h2>
+				<p>Ya puedes cerrar esta ventana y volver a la plataforma.</p>
+			</div>
+		</body>
+		</html>
+	`))
 }
 
 func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patientID string) (*WithingsHardwareReading, error) {

@@ -30,6 +30,10 @@ type AnthropometryService interface {
 	CalculateMifflinStJeor(inputs domain.BmrInputs) (domain.BmrResult, error)
 	CalculateHarrisBenedict(inputs domain.BmrInputs) (domain.BmrResult, error)
 	CalculateTDEE(bmr float64, activityFactor float64) (float64, error)
+	CreateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error
+	GetPendingWeighInSession(ctx context.Context, patientID, tenantID uuid.UUID) (*domain.ActiveWeighInSession, error)
+	GetLatestPendingWeighInSession(ctx context.Context) (*domain.ActiveWeighInSession, error)
+	UpdateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error
 }
 
 type NutritionService interface {

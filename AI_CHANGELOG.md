@@ -193,3 +193,15 @@ Este archivo documenta todas las intervenciones, decisiones arquitectÃ³nicas y r
 - Updated AnthropometryEvaluationModule.tsx to initialize states using the real patient properties (patient.height_cm).
 - Ensured BIA/Withings view in BodyCompositionModule.tsx correctly consumes the hydrated heightCm for the physical report.
 
+
+## [2026-09-21] Implementación de Sesión de Pesaje Activa vía Webhook para Withings
+**Autor:** Antigravity
+
+### Acciones Realizadas:
+- **Modelo de Dominio y Base de Datos:** Creada migración  16_active_weigh_in_sessions.sql e implementado el modelo ActiveWeighInSession para registrar sesiones temporales (2 mins) de pesaje por paciente.
+- **Lógica de Repositorio:** Añadidos métodos CreateWeighInSession, GetPendingWeighInSession, GetLatestPendingWeighInSession y UpdateWeighInSession en PostgreSQL y en las interfaces ports.AnthropometryRepository.
+- **Endpoints:** 
+  - POST /api/v1/patients/{patientId}/hardware/withings/start: Inicia la sesión.
+  - GET /api/v1/patients/{patientId}/hardware/withings/status: Consulta el estado de la sesión y retorna la data si se completó.
+  - POST /api/v1/withings/webhook (Pública): Endpoint de webhook (Webhook Notification API de Withings) que intercepta la alerta de pesaje, enlaza con la sesión pendiente, extrae los datos de Withings, y marca la sesión como "completed".
+- **Frontend (React):** BodyCompositionModule.tsx refactorizado para usar polling asíncrono (cada 3s) a checkWithingsSession tras llamar a startWithingsSession en el botón "Iniciar Pesaje".

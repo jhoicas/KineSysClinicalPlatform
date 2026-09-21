@@ -53,3 +53,57 @@ func (r *anthropometryRepository) Create(ctx context.Context, ev *domain.Anthrop
 		ev.Skinfolds, ev.Circumferences,
 	).Scan(&ev.ID, &ev.EvaluationDate, &ev.CreatedAt, &ev.UpdatedAt)
 }
+
+func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error {
+	query := `INSERT INTO active_weigh_in_sessions (tenant_id, patient_id, status, expires_at)
+	          VALUES ($1, $2, $3, $4) RETURNING id, created_at, updated_at`
+	
+	return r.db.QueryRow(ctx, query,
+		session.TenantID, session.PatientID, session.Status, session.ExpiresAt,
+	).Scan(&session.ID, &session.CreatedAt, &session.UpdatedAt)
+}
+
+func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, patientID, tenantID uuid.UUID) (*domain.ActiveWeighInSession, error) {
+	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
+	          FROM active_weigh_in_sessions 
+			  WHERE patient_id = $1 AND tenant_id = $2 AND status = 'pending' AND expires_at > NOW()
+			  ORDER BY created_at DESC LIMIT 1`
+	
+	var session domain.ActiveWeighInSession
+	err := r.db.QueryRow(ctx, query, patientID, tenantID).Scan(
+		&session.ID, &session.TenantID, &session.PatientID, &session.Status,
+		&session.MetricsPayload, &session.CreatedAt, &session.ExpiresAt, &session.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+func (r *anthropometryRepository) GetLatestPendingWeighInSession(ctx context.Context) (*domain.ActiveWeighInSession, error) {
+	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
+	          FROM active_weigh_in_sessions 
+			  WHERE status = 'pending' AND expires_at > NOW()
+			  ORDER BY created_at DESC LIMIT 1`
+	
+	var session domain.ActiveWeighInSession
+	err := r.db.QueryRow(ctx, query).Scan(
+		&session.ID, &session.TenantID, &session.PatientID, &session.Status,
+		&session.MetricsPayload, &session.CreatedAt, &session.ExpiresAt, &session.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+func (r *anthropometryRepository) UpdateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error {
+	query := `UPDATE active_weigh_in_sessions 
+	          SET status = $1, metrics_payload = $2, updated_at = NOW() 
+			  WHERE id = $3 RETURNING updated_at`
+	
+	return r.db.QueryRow(ctx, query,
+		session.Status, session.MetricsPayload, session.ID,
+	).Scan(&session.UpdatedAt)
+}
+

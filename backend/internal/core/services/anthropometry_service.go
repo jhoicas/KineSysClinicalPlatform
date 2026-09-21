@@ -29,4 +29,18 @@ func (s *anthropometryService) CreateEvaluation(ctx context.Context, eval *domai
 	return s.repo.Create(ctx, eval)
 }
 
+func (s *anthropometryService) CreateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error {
+	return s.repo.CreateWeighInSession(ctx, session)
+}
 
+func (s *anthropometryService) GetPendingWeighInSession(ctx context.Context, patientID, tenantID uuid.UUID) (*domain.ActiveWeighInSession, error) {
+	return s.repo.GetPendingWeighInSession(ctx, patientID, tenantID)
+}
+
+func (s *anthropometryService) GetLatestPendingWeighInSession(ctx context.Context) (*domain.ActiveWeighInSession, error) {
+	return s.repo.GetLatestPendingWeighInSession(ctx)
+}
+
+func (s *anthropometryService) UpdateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error {
+	return s.repo.UpdateWeighInSession(ctx, session)
+}

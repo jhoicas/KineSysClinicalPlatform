@@ -72,7 +72,7 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
     }
   );
 
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const [manualMode, setManualMode] = useState<boolean>(composition.sourceMode === 'manual_entry');
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -98,6 +98,60 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
     });
   }, [isFemale]);
 
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (isListening) {
+      interval = setInterval(async () => {
+        try {
+          const response = await api.hardware.checkWithingsSession(patient.id);
+          if (response.data?.status === 'completed' && response.data.metrics_payload) {
+            const reading = JSON.parse(response.data.metrics_payload);
+            const now = new Date();
+            const timeStr = `${String(now.getDate()).padStart(2, '0')}-${String(
+              now.getMonth() + 1
+            ).padStart(2, '0')}-${now.getFullYear()} | ${String(now.getHours()).padStart(
+              2,
+              '0'
+            )}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+            const updated: BodyCompositionBIA = {
+              ...composition,
+              deviceModel: 'Withings Body Scan',
+              sourceMode: 'hardware_auto',
+              lastSyncTimestamp: timeStr,
+              pesoKg: { ...composition.pesoKg, value: reading.weight_kg ?? composition.pesoKg.value },
+              porcentajeGrasaCorporal: {
+                ...composition.porcentajeGrasaCorporal,
+                value: reading.body_fat_pct ?? composition.porcentajeGrasaCorporal.value,
+              },
+              otherIndicators: {
+                ...composition.otherIndicators,
+                grasaVisceralNivel: {
+                  ...composition.otherIndicators.grasaVisceralNivel,
+                  value: reading.visceral_fat_index ?? composition.otherIndicators.grasaVisceralNivel.value,
+                },
+              },
+            };
+
+            setComposition(updated);
+            onSave(updated);
+            setSyncFeedback('✓ Datos sincronizados exitosamente desde Withings Body Scan');
+            setTimeout(() => setSyncFeedback(null), 4000);
+            setIsListening(false);
+          } else if (response.data?.status === 'expired') {
+            setSyncFeedback('El tiempo de espera para el pesaje ha expirado.');
+            setIsListening(false);
+          }
+        } catch (error) {
+          console.error('Error al revisar el estado del pesaje:', error);
+        }
+      }, 3000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isListening, patient.id, composition, onSave]);
+
   // Calculate BMI
   const heightM = (patient.heightCm || 0) / 100;
   const bmi =
@@ -106,52 +160,18 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
       : 0;
 
   const handleHardwareSync = async () => {
-    setIsSyncing(true);
-    setSyncFeedback('Conectando con Withings Body Scan...');
+    setIsListening(true);
+    setSyncFeedback('Esperando medición en Withings Body Scan... (2 mins max)');
 
     try {
-      const response = await api.hardware.syncWithings(patient.id);
+      const response = await api.hardware.startWithingsSession(patient.id);
       if (response.error || !response.data) {
-        throw new Error(response.error || 'No se recibieron datos de Withings Body Scan.');
+        throw new Error(response.error || 'No se pudo iniciar la sesión.');
       }
-
-      const reading = response.data;
-      const now = new Date();
-      const timeStr = `${String(now.getDate()).padStart(2, '0')}-${String(
-        now.getMonth() + 1
-      ).padStart(2, '0')}-${now.getFullYear()} | ${String(now.getHours()).padStart(
-        2,
-        '0'
-      )}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-      const updated: BodyCompositionBIA = {
-        ...composition,
-        deviceModel: 'Withings Body Scan',
-        sourceMode: 'hardware_auto',
-        lastSyncTimestamp: timeStr,
-        pesoKg: { ...composition.pesoKg, value: reading.weight_kg ?? composition.pesoKg.value },
-        porcentajeGrasaCorporal: {
-          ...composition.porcentajeGrasaCorporal,
-          value: reading.body_fat_pct ?? composition.porcentajeGrasaCorporal.value,
-        },
-        otherIndicators: {
-          ...composition.otherIndicators,
-          grasaVisceralNivel: {
-            ...composition.otherIndicators.grasaVisceralNivel,
-            value: reading.visceral_fat_index ?? composition.otherIndicators.grasaVisceralNivel.value,
-          },
-        },
-      };
-
-      setComposition(updated);
-      onSave(updated);
-      setSyncFeedback('✓ Datos sincronizados exitosamente desde Withings Body Scan');
-      setTimeout(() => setSyncFeedback(null), 4000);
     } catch (error) {
-      console.error('Error sincronizando Withings Body Scan:', error);
-      setSyncFeedback('No fue posible sincronizar Withings Body Scan.');
-    } finally {
-      setIsSyncing(false);
+      console.error('Error iniciando sesión Withings:', error);
+      setSyncFeedback('No fue posible iniciar la sesión.');
+      setIsListening(false);
     }
   };
 
@@ -302,11 +322,11 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
             <button
               id="btn-sync-hardware"
               onClick={handleHardwareSync}
-              disabled={isSyncing}
+              disabled={isListening}
               className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all disabled:opacity-50"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Sincronizando...' : 'Sincronizar Báscula'}
+              <RefreshCw className={`w-3.5 h-3.5 ${isListening ? 'animate-spin' : ''}`} />
+              {isListening ? 'Esperando Medición...' : 'Iniciar Pesaje'}
             </button>
 
             <button

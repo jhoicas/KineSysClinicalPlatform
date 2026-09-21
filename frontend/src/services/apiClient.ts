@@ -181,6 +181,16 @@ export const api = {
         'GET',
         `/api/v1/patients/${patientId}/hardware/withings/sync`,
       ),
+    startWithingsSession: (patientId: string) =>
+      request<{ id: string; status: string; expires_at: string }>(
+        'POST',
+        `/api/v1/patients/${patientId}/hardware/withings/start`,
+      ),
+    checkWithingsSession: (patientId: string) =>
+      request<{ status: string; metrics_payload?: string }>(
+        'GET',
+        `/api/v1/patients/${patientId}/hardware/withings/status`,
+      ),
   },
 
   exercises: {

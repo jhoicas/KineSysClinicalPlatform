@@ -105,6 +105,7 @@ func main() {
 	
 	// Withings OAuth Callback (No JWT required, redirected from Withings)
 	r.Get("/api/v1/withings/callback", withingsHandler.HandleCallback)
+	r.Post("/api/v1/withings/webhook", withingsHandler.Webhook)
 
 	// Protected Routes (Require Supabase JWT)
 	r.Group(func(r chi.Router) {
@@ -126,6 +127,9 @@ func main() {
 		r.Post("/api/v1/anthropometry/calculate/bmr", anthropometryHandler.CalculateBMR)
 		r.Post("/api/v1/anthropometry/calculate/composition", anthropometryHandler.CalculateComposition)
 		r.Get("/api/v1/patients/{patientId}/hardware/withings/sync", withingsHandler.Sync)
+		r.Post("/api/v1/patients/{patientId}/hardware/withings/start", withingsHandler.StartSession)
+		r.Get("/api/v1/patients/{patientId}/hardware/withings/status", withingsHandler.CheckSessionStatus)
+		r.Post("/api/v1/withings/subscribe", withingsHandler.SubscribeWebhook)
 
 		// Nutrition
 		r.Get("/api/v1/patients/{patientId}/nutrition", nutritionHandler.ListByPatient)

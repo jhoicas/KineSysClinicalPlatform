@@ -428,3 +428,194 @@ func pow10(exponent int) float64 {
 	}
 	return value
 }
+
+func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Request) {
+	patientID := strings.TrimSpace(r.PathValue("patientId"))
+	if patientID == "" {
+		http.Error(w, "Invalid patient ID", http.StatusBadRequest)
+		return
+	}
+
+	tenantIDStr, _ := r.Context().Value(middleware.TenantIDKey).(string)
+	tenantID, _ := uuid.Parse(tenantIDStr)
+	patientUUID, err := uuid.Parse(patientID)
+	if err != nil {
+		http.Error(w, "Invalid patient UUID", http.StatusBadRequest)
+		return
+	}
+
+	// Create a new session
+	session := &domain.ActiveWeighInSession{
+		TenantID:  tenantID,
+		PatientID: patientUUID,
+		Status:    "pending",
+		ExpiresAt: time.Now().Add(2 * time.Minute),
+	}
+
+	if err := h.anthropometrySvc.CreateWeighInSession(r.Context(), session); err != nil {
+		http.Error(w, "Failed to start session", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(session)
+}
+
+func (h *WithingsHardwareHandler) CheckSessionStatus(w http.ResponseWriter, r *http.Request) {
+	patientID := strings.TrimSpace(r.PathValue("patientId"))
+	if patientID == "" {
+		http.Error(w, "Invalid patient ID", http.StatusBadRequest)
+		return
+	}
+
+	tenantIDStr, _ := r.Context().Value(middleware.TenantIDKey).(string)
+	tenantID, _ := uuid.Parse(tenantIDStr)
+	patientUUID, err := uuid.Parse(patientID)
+	if err != nil {
+		http.Error(w, "Invalid patient UUID", http.StatusBadRequest)
+		return
+	}
+
+	session, err := h.anthropometrySvc.GetPendingWeighInSession(r.Context(), patientUUID, tenantID)
+	if err != nil {
+		// No pending session found
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"status":"not_found"}`))
+		return
+	}
+
+	// If it's expired, update it
+	if time.Now().After(session.ExpiresAt) && session.Status == "pending" {
+		session.Status = "expired"
+		_ = h.anthropometrySvc.UpdateWeighInSession(r.Context(), session)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(session)
+}
+
+func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request) {
+	// Withings sends a POST with application/x-www-form-urlencoded
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	// Log webhook
+	fmt.Printf("[Withings Webhook] Received notification: %v\n", r.Form)
+
+	// Fetch the latest pending session globally
+	session, err := h.anthropometrySvc.GetLatestPendingWeighInSession(context.Background())
+	if err != nil || session == nil {
+		fmt.Println("[Withings Webhook] No active pending session found. Ignoring.")
+		w.WriteHeader(http.StatusOK) // Return 200 so Withings knows we received it
+		return
+	}
+
+	// Double check expiration just in case
+	if time.Now().After(session.ExpiresAt) {
+		session.Status = "expired"
+		_ = h.anthropometrySvc.UpdateWeighInSession(context.Background(), session)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Get patient to calculate BMR and formatting
+	patient, err := h.patientService.GetPatient(context.Background(), session.PatientID, session.TenantID)
+	if err != nil {
+		fmt.Println("[Withings Webhook] Patient not found for session.")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Fetch actual reading from Withings
+	reading, err := h.fetchEvaluation(context.Background(), patient)
+	if err != nil {
+		// Try refreshing if 401
+		if strings.Contains(err.Error(), "HTTP 401") && h.refreshToken != "" {
+			if refreshErr := h.refreshAccessToken(context.Background()); refreshErr == nil {
+				reading, err = h.fetchEvaluation(context.Background(), patient)
+			}
+		}
+		if err != nil {
+			fmt.Printf("[Withings Webhook] Error fetching evaluation: %v\n", err)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+	}
+
+	// Update session
+	payload, _ := json.Marshal(reading)
+	session.Status = "completed"
+	session.MetricsPayload = payload
+
+	if err := h.anthropometrySvc.UpdateWeighInSession(context.Background(), session); err != nil {
+		fmt.Printf("[Withings Webhook] Failed to update session: %v\n", err)
+	} else {
+		fmt.Printf("[Withings Webhook] Session %s marked as completed!\n", session.ID)
+	}
+
+	// Always return 200 OK to Withings to acknowledge receipt
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *WithingsHardwareHandler) SubscribeWebhook(w http.ResponseWriter, r *http.Request) {
+	if h.accessToken == "" && h.refreshToken == "" {
+		http.Error(w, `{"error": "Báscula no vinculada"}`, http.StatusUnauthorized)
+		return
+	}
+
+	form := url.Values{
+		"action":      {"subscribe"},
+		"appli":       {"1"},
+		"callbackurl": {"https://clinicalplatform.ludoia.com/api/v1/withings/webhook"},
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://wbsapi.withings.net/notify", strings.NewReader(form.Encode()))
+	if err != nil {
+		http.Error(w, "Failed to create request", http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+h.accessToken)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	res, err := h.client.Do(req)
+	if err != nil {
+		http.Error(w, "Error calling Withings", http.StatusBadGateway)
+		return
+	}
+	defer res.Body.Close()
+
+	var payload struct {
+		Status int `json:"status"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid Withings response", http.StatusBadGateway)
+		return
+	}
+
+	// Handle token expiry
+	if payload.Status == 401 && h.refreshToken != "" {
+		if refreshErr := h.refreshAccessToken(r.Context()); refreshErr == nil {
+			req, _ = http.NewRequestWithContext(r.Context(), http.MethodPost, "https://wbsapi.withings.net/notify", strings.NewReader(form.Encode()))
+			req.Header.Set("Authorization", "Bearer "+h.accessToken)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			res, err = h.client.Do(req)
+			if err == nil {
+				defer res.Body.Close()
+				json.NewDecoder(res.Body).Decode(&payload)
+			}
+		}
+	}
+
+	if payload.Status != 0 {
+		http.Error(w, fmt.Sprintf(`{"error": "Withings returned status %d"}`, payload.Status), http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "success", "message": "Webhook subscribed"}`))
+}
+

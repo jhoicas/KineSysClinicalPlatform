@@ -22,6 +22,10 @@ type EncounterRepository interface {
 type AnthropometryRepository interface {
 	FindAllByPatient(ctx context.Context, patientID, tenantID uuid.UUID) ([]domain.AnthropometricEvaluation, error)
 	Create(ctx context.Context, eval *domain.AnthropometricEvaluation) error
+	CreateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error
+	GetPendingWeighInSession(ctx context.Context, patientID, tenantID uuid.UUID) (*domain.ActiveWeighInSession, error)
+	GetLatestPendingWeighInSession(ctx context.Context) (*domain.ActiveWeighInSession, error)
+	UpdateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error
 }
 
 type NutritionRepository interface {

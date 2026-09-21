@@ -8,6 +8,11 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/kinesys/clinical-platform-backend/internal/core/domain"
+	"github.com/kinesys/clinical-platform-backend/internal/core/ports"
+	"github.com/kinesys/clinical-platform-backend/internal/middleware"
 )
 
 type WithingsHardwareHandler struct {
@@ -15,9 +20,11 @@ type WithingsHardwareHandler struct {
 	refreshToken string
 	userID       string
 	apiBaseURL   string
-	clientID     string
-	clientSecret string
-	client       *http.Client
+	clientID         string
+	clientSecret     string
+	client           *http.Client
+	patientService   ports.PatientService
+	anthropometrySvc ports.AnthropometryService
 }
 
 type withingsMeasure struct {
@@ -46,20 +53,28 @@ type WithingsHardwareReading struct {
 	WeightKg         *float64          `json:"weight_kg"`
 	HeightCm         *float64          `json:"height_cm"`
 	BodyFatPct       *float64          `json:"body_fat_pct"`
+	FatMassKg        *float64          `json:"fat_mass_kg,omitempty"`
+	MuscleMassKg     *float64          `json:"muscle_mass_kg,omitempty"`
 	VisceralFatIndex *float64          `json:"visceral_fat_index"`
 	BMR              *float64          `json:"bmr"`
 	ProviderMeta     map[string]string `json:"provider_meta,omitempty"`
 }
 
-func NewWithingsHardwareHandler(accessToken, refreshToken, userID, apiBaseURL, clientID, clientSecret string) *WithingsHardwareHandler {
+func NewWithingsHardwareHandler(
+	accessToken, refreshToken, userID, apiBaseURL, clientID, clientSecret string,
+	patientService ports.PatientService,
+	anthropometrySvc ports.AnthropometryService,
+) *WithingsHardwareHandler {
 	return &WithingsHardwareHandler{
-		accessToken:  accessToken,
-		refreshToken: refreshToken,
-		userID:       userID,
-		apiBaseURL:   strings.TrimRight(apiBaseURL, "/"),
-		clientID:     clientID,
-		clientSecret: clientSecret,
-		client:       &http.Client{Timeout: 20 * time.Second},
+		accessToken:      accessToken,
+		refreshToken:     refreshToken,
+		userID:           userID,
+		apiBaseURL:       strings.TrimRight(apiBaseURL, "/"),
+		clientID:         clientID,
+		clientSecret:     clientSecret,
+		client:           &http.Client{Timeout: 20 * time.Second},
+		patientService:   patientService,
+		anthropometrySvc: anthropometrySvc,
 	}
 }
 
@@ -74,13 +89,28 @@ func (h *WithingsHardwareHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reading, err := h.fetchEvaluation(r.Context(), patientID)
+	tenantIDStr, _ := r.Context().Value(middleware.TenantIDKey).(string)
+	tenantID, _ := uuid.Parse(tenantIDStr)
+	
+	patientUUID, err := uuid.Parse(patientID)
+	if err != nil {
+		http.Error(w, "Invalid patient UUID", http.StatusBadRequest)
+		return
+	}
+
+	patient, err := h.patientService.GetPatient(r.Context(), patientUUID, tenantID)
+	if err != nil {
+		http.Error(w, "Patient not found", http.StatusNotFound)
+		return
+	}
+
+	reading, err := h.fetchEvaluation(r.Context(), patient)
 	if err != nil {
 		// If unauthorized, try to refresh
 		if strings.Contains(err.Error(), "HTTP 401") && h.refreshToken != "" {
 			if refreshErr := h.refreshAccessToken(r.Context()); refreshErr == nil {
 				// Retry fetch after successful refresh
-				reading, err = h.fetchEvaluation(r.Context(), patientID)
+				reading, err = h.fetchEvaluation(r.Context(), patient)
 			}
 		}
 
@@ -226,10 +256,10 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 	`))
 }
 
-func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patientID string) (*WithingsHardwareReading, error) {
+func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *domain.Patient) (*WithingsHardwareReading, error) {
 	form := url.Values{
 		"action":    {"getmeas"},
-		"meastypes": {"1,4,6,170,226"},
+		"meastypes": {"1,4,6,76,88,123,126,127,135,170,226"},
 		"category":  {"1"},
 		"userid":    {h.userID},
 	}
@@ -262,9 +292,19 @@ func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patientID
 
 	weight, weightAt := latestMeasure(payload.Body.MeasureGroups, 1)
 	height, _ := latestMeasure(payload.Body.MeasureGroups, 4)
-	fat, fatAt := latestMeasure(payload.Body.MeasureGroups, 6)
-	visceral, _ := latestMeasure(payload.Body.MeasureGroups, 170)
-	bmr, _ := latestMeasure(payload.Body.MeasureGroups, 226)
+	fatPct, fatAt := latestMeasure(payload.Body.MeasureGroups, 6)
+	
+	visceral126, _ := latestMeasure(payload.Body.MeasureGroups, 126)
+	visceral127, _ := latestMeasure(payload.Body.MeasureGroups, 127)
+	visceral170, _ := latestMeasure(payload.Body.MeasureGroups, 170)
+	
+	bmr123, _ := latestMeasure(payload.Body.MeasureGroups, 123)
+	bmr135, _ := latestMeasure(payload.Body.MeasureGroups, 135)
+	bmr226, _ := latestMeasure(payload.Body.MeasureGroups, 226)
+
+	fatMass, _ := latestMeasure(payload.Body.MeasureGroups, 88)
+	muscleMass, _ := latestMeasure(payload.Body.MeasureGroups, 76)
+
 	measuredAt := weightAt
 	if measuredAt == 0 {
 		measuredAt = fatAt
@@ -273,17 +313,80 @@ func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patientID
 		measuredAt = payload.Body.MeasureGroups[0].Date
 	}
 
-	return &WithingsHardwareReading{
-		PatientID:        patientID,
+	reading := &WithingsHardwareReading{
+		PatientID:        patient.ID.String(),
 		Source:           "WITHINGS",
 		EvaluationDate:   time.Unix(measuredAt, 0).UTC().Format("2006-01-02"),
 		WeightKg:         scaledValue(weight, 1, 3),
 		HeightCm:         scaledValue(height, 100, 2),
-		BodyFatPct:       scaledValue(fat, 1, 2),
-		VisceralFatIndex: scaledValue(visceral, 1, 2),
-		BMR:              scaledValue(bmr, 1, 2),
+		BodyFatPct:       scaledValue(fatPct, 1, 2),
+		FatMassKg:        scaledValue(fatMass, 1, 3),
+		MuscleMassKg:     scaledValue(muscleMass, 1, 3),
+		VisceralFatIndex: scaledValue(visceral170, 1, 2),
+		BMR:              scaledValue(bmr226, 1, 2),
 		ProviderMeta:     map[string]string{"device_model": "Withings Body Scan"},
-	}, nil
+	}
+
+	if reading.VisceralFatIndex == nil {
+		reading.VisceralFatIndex = scaledValue(visceral126, 1, 2)
+	}
+	if reading.VisceralFatIndex == nil {
+		reading.VisceralFatIndex = scaledValue(visceral127, 1, 2)
+	}
+
+	if reading.BMR == nil {
+		reading.BMR = scaledValue(bmr123, 1, 2)
+	}
+	if reading.BMR == nil {
+		reading.BMR = scaledValue(bmr135, 1, 2)
+	}
+
+	if reading.FatMassKg == nil && reading.WeightKg != nil && reading.BodyFatPct != nil {
+		fm := *reading.WeightKg * (*reading.BodyFatPct / 100.0)
+		reading.FatMassKg = &fm
+	}
+	if reading.MuscleMassKg == nil && reading.WeightKg != nil && reading.FatMassKg != nil {
+		mm := *reading.WeightKg - *reading.FatMassKg
+		reading.MuscleMassKg = &mm
+	}
+
+	if reading.BMR == nil && reading.WeightKg != nil {
+		pHeight := 0.0
+		if reading.HeightCm != nil {
+			pHeight = *reading.HeightCm
+		} else if patient.HeightCm != nil {
+			pHeight = *patient.HeightCm
+		}
+
+		age := 0
+		if patient.BirthDate != nil {
+			pt, _ := time.Parse("2006-01-02", *patient.BirthDate)
+			if !pt.IsZero() {
+				age = int(time.Since(pt).Hours() / 24 / 365)
+			}
+		}
+		
+		sex := domain.SexMale
+		if patient.Gender != nil && *patient.Gender == "female" {
+			sex = domain.SexFemale
+		}
+
+		if pHeight > 0 && age > 0 {
+			bmrRes, err := h.anthropometrySvc.CalculateMifflinStJeor(domain.BmrInputs{
+				WeightKg: *reading.WeightKg,
+				HeightCm: pHeight,
+				AgeYears: age,
+				Sex:      sex,
+			})
+			if err == nil {
+				bmrVal := bmrRes.BmrKcal
+				reading.BMR = &bmrVal
+				reading.ProviderMeta["bmr_source"] = "Calculated (Mifflin-St Jeor)"
+			}
+		}
+	}
+
+	return reading, nil
 }
 
 func latestMeasure(groups []withingsMeasureGroup, measureType int) (withingsMeasure, int64) {

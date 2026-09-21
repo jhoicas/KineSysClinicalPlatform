@@ -70,6 +70,8 @@ func main() {
 		cfg.WithingsAPIBaseURL,
 		cfg.WithingsClientID,
 		cfg.WithingsClientSecret,
+		patientSvc,
+		anthropometrySvc,
 	)
 
 	// Initialize Router

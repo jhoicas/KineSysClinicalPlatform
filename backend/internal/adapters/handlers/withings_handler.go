@@ -481,7 +481,7 @@ func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Re
 		TenantID:  tenantID,
 		PatientID: patientUUID,
 		Status:    "pending",
-		ExpiresAt: time.Now().Add(10 * time.Minute),
+		ExpiresAt: time.Now().Add(3 * time.Minute),
 	}
 
 	log.Printf("Iniciando sesión para paciente: %s", patientUUID)
@@ -544,7 +544,7 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 	}
 
 	// Log webhook
-	fmt.Printf("[Withings Webhook] Received notification: %v\n", r.Form)
+	log.Printf("[WITHINGS WEBHOOK] Payload recibido: %v", r.Form)
 
 	// Fetch the latest pending session globally
 	session, err := h.anthropometrySvc.GetLatestPendingWeighInSession(context.Background())

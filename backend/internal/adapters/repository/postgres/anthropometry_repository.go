@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -133,7 +134,7 @@ func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, 
 
 	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
 	          FROM kinesys.active_weigh_in_sessions 
-			  WHERE patient_id = $1 AND tenant_id = $2 AND status = 'pending' AND expires_at > NOW()
+			  WHERE patient_id = $1 AND tenant_id = $2 AND LOWER(status) = 'pending'
 			  ORDER BY created_at DESC LIMIT 1`
 	
 	var session domain.ActiveWeighInSession
@@ -142,6 +143,7 @@ func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, 
 		&session.MetricsPayload, &session.CreatedAt, &session.ExpiresAt, &session.UpdatedAt,
 	)
 	if err != nil {
+		log.Printf("[WITHINGS] No se encontró sesión PENDING para patient_id=%s tenant_id=%s", patientID, tenantID)
 		return nil, err
 	}
 	return &session, nil

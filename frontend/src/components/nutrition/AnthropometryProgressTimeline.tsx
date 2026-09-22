@@ -368,6 +368,13 @@ export const AnthropometryProgressTimeline: React.FC<AnthropometryProgressTimeli
                         </span>
                       )}
 
+                      {((ev as any).source === 'withings_scale' || String((ev as any).device_model || '').includes('Withings')) && (
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-extrabold uppercase rounded-lg inline-flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">scale</span>
+                          Sincronizado desde Báscula Withings
+                        </span>
+                      )}
+
                       {/* Delta vs Previous Badge */}
                       {deltaPrev && (
                         <span
@@ -441,14 +448,14 @@ export const AnthropometryProgressTimeline: React.FC<AnthropometryProgressTimeli
                     <div className="bg-surface-container-low p-2.5 rounded-xl border border-outline-variant/20">
                       <span className="text-[10px] text-on-surface-variant uppercase font-bold block">% Grasa</span>
                       <span className="text-sm font-black text-on-surface">
-                        {ev.body_fat_percentage ? `${ev.body_fat_percentage}%` : '-'}
+                        {ev.body_fat_percentage || (ev as any).fat_ratio_percent ? `${ev.body_fat_percentage || (ev as any).fat_ratio_percent}%` : '-'}
                       </span>
                     </div>
 
                     <div className="bg-surface-container-low p-2.5 rounded-xl border border-outline-variant/20">
-                      <span className="text-[10px] text-on-surface-variant uppercase font-bold block">Masa Magra</span>
+                      <span className="text-[10px] text-on-surface-variant uppercase font-bold block">Masa Magra / Musc.</span>
                       <span className="text-sm font-black text-on-surface">
-                        {ev.fat_free_mass_kg ? `${ev.fat_free_mass_kg} kg` : '-'}
+                        {ev.fat_free_mass_kg || (ev as any).muscle_mass_kg ? `${ev.fat_free_mass_kg || (ev as any).muscle_mass_kg} kg` : '-'}
                       </span>
                     </div>
 
@@ -552,6 +559,12 @@ export const AnthropometryProgressTimeline: React.FC<AnthropometryProgressTimeli
                           <span>{ev.evaluation_date}</span>
                           {i === 0 && (
                             <span className="w-2 h-2 rounded-full bg-primary" title="Último control" />
+                          )}
+                          {((ev as any).source === 'withings_scale' || String((ev as any).device_model || '').includes('Withings')) && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300" title="Sincronizado desde Báscula Withings">
+                              <span className="material-symbols-outlined text-[10px]">scale</span>
+                              Withings
+                            </span>
                           )}
                         </div>
                       </td>

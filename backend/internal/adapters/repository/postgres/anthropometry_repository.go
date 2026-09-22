@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 
 	"github.com/google/uuid"
@@ -30,7 +31,7 @@ func (r *anthropometryRepository) FindAllByPatient(ctx context.Context, patientI
 		return nil, err
 	}
 
-	query := `SELECT id, tenant_id, patient_id, professional_id, evaluation_date, weight_kg, height_cm, bmi, body_fat_percentage, muscle_mass_kg, skinfolds, circumferences, created_at, updated_at
+	query := `SELECT id, tenant_id, patient_id, nutritionist_id, evaluation_date, data, created_at
 	          FROM kinesys.evaluaciones_antropometricas WHERE patient_id = $1 AND tenant_id = $2 ORDER BY evaluation_date DESC`
 	
 	rows, err := tx.Query(ctx, query, patientID, tenantID)
@@ -42,14 +43,44 @@ func (r *anthropometryRepository) FindAllByPatient(ctx context.Context, patientI
 	var evals []domain.AnthropometricEvaluation
 	for rows.Next() {
 		var ev domain.AnthropometricEvaluation
+		var dataRaw []byte
 		err := rows.Scan(
 			&ev.ID, &ev.TenantID, &ev.PatientID, &ev.ProfessionalID, &ev.EvaluationDate,
-			&ev.WeightKg, &ev.HeightCm, &ev.BMI, &ev.BodyFatPercentage, &ev.MuscleMassKg,
-			&ev.Skinfolds, &ev.Circumferences, &ev.CreatedAt, &ev.UpdatedAt,
+			&dataRaw, &ev.CreatedAt,
 		)
 		if err != nil {
 			return nil, err
 		}
+
+		if len(dataRaw) > 0 {
+			var dataMap map[string]interface{}
+			if err := json.Unmarshal(dataRaw, &dataMap); err == nil {
+				if v, ok := dataMap["weight_kg"].(float64); ok {
+					ev.WeightKg = &v
+				}
+				if v, ok := dataMap["height_cm"].(float64); ok {
+					ev.HeightCm = &v
+				}
+				if v, ok := dataMap["bmi"].(float64); ok {
+					ev.BMI = &v
+				}
+				if v, ok := dataMap["body_fat_percentage"].(float64); ok {
+					ev.BodyFatPercentage = &v
+				} else if v, ok := dataMap["fat_ratio_percent"].(float64); ok {
+					ev.BodyFatPercentage = &v
+				}
+				if v, ok := dataMap["muscle_mass_kg"].(float64); ok {
+					ev.MuscleMassKg = &v
+				}
+				if v, ok := dataMap["skinfolds"].(map[string]interface{}); ok {
+					ev.Skinfolds = v
+				}
+				if v, ok := dataMap["circumferences"].(map[string]interface{}); ok {
+					ev.Circumferences = v
+				}
+			}
+		}
+		ev.UpdatedAt = ev.CreatedAt
 		evals = append(evals, ev)
 	}
 
@@ -72,18 +103,42 @@ func (r *anthropometryRepository) Create(ctx context.Context, ev *domain.Anthrop
 		return err
 	}
 
-	query := `INSERT INTO kinesys.evaluaciones_antropometricas (tenant_id, patient_id, professional_id, evaluation_date, weight_kg, height_cm, bmi, body_fat_percentage, muscle_mass_kg, skinfolds, circumferences)
-	          VALUES ($1, $2, $3, COALESCE($4, NOW()), $5, $6, $7, $8, $9, $10, $11) RETURNING id, evaluation_date, created_at, updated_at`
+	dataMap := map[string]interface{}{}
+	if ev.WeightKg != nil {
+		dataMap["weight_kg"] = *ev.WeightKg
+	}
+	if ev.HeightCm != nil {
+		dataMap["height_cm"] = *ev.HeightCm
+	}
+	if ev.BMI != nil {
+		dataMap["bmi"] = *ev.BMI
+	}
+	if ev.BodyFatPercentage != nil {
+		dataMap["body_fat_percentage"] = *ev.BodyFatPercentage
+		dataMap["fat_ratio_percent"] = *ev.BodyFatPercentage
+	}
+	if ev.MuscleMassKg != nil {
+		dataMap["muscle_mass_kg"] = *ev.MuscleMassKg
+	}
+	if ev.Skinfolds != nil {
+		dataMap["skinfolds"] = ev.Skinfolds
+	}
+	if ev.Circumferences != nil {
+		dataMap["circumferences"] = ev.Circumferences
+	}
+	dataJSON, _ := json.Marshal(dataMap)
+
+	query := `INSERT INTO kinesys.evaluaciones_antropometricas (tenant_id, patient_id, nutritionist_id, evaluation_date, data)
+	          VALUES ($1, $2, $3, COALESCE($4, NOW()), $5) RETURNING id, evaluation_date, created_at`
 	
 	err = tx.QueryRow(ctx, query, 
-		ev.TenantID, ev.PatientID, ev.ProfessionalID, ev.EvaluationDate,
-		ev.WeightKg, ev.HeightCm, ev.BMI, ev.BodyFatPercentage, ev.MuscleMassKg,
-		ev.Skinfolds, ev.Circumferences,
-	).Scan(&ev.ID, &ev.EvaluationDate, &ev.CreatedAt, &ev.UpdatedAt)
+		ev.TenantID, ev.PatientID, ev.ProfessionalID, ev.EvaluationDate, dataJSON,
+	).Scan(&ev.ID, &ev.EvaluationDate, &ev.CreatedAt)
 
 	if err != nil {
 		return err
 	}
+	ev.UpdatedAt = ev.CreatedAt
 	return tx.Commit(ctx)
 }
 

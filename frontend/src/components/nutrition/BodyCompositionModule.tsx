@@ -99,6 +99,15 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
   }, [isFemale]);
 
   useEffect(() => {
+    if (data) {
+      setComposition(data);
+      if (data.sourceMode === 'hardware_auto') {
+        setManualMode(false);
+      }
+    }
+  }, [data]);
+
+  useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (isListening) {
       interval = setInterval(async () => {
@@ -300,14 +309,22 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
       <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs print:hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-1.5">
                 <Zap className="w-3 h-3 text-blue-600" />
                 {composition.deviceModel}
               </span>
-              <span className="text-xs text-slate-500 font-medium">
-                Última sincronización: <strong className="text-slate-700">{composition.lastSyncTimestamp}</strong>
-              </span>
+              {(composition.sourceMode === 'hardware_auto' || data?.sourceMode === 'hardware_auto') && (
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1.5 shadow-xs">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  Sincronizado desde Báscula Withings
+                </span>
+              )}
+              {composition.lastSyncTimestamp && (
+                <span className="text-xs text-slate-500 font-medium">
+                  Última sincronización: <strong className="text-slate-700">{composition.lastSyncTimestamp}</strong>
+                </span>
+              )}
             </div>
             <h1 className="text-xl font-black text-slate-900 mt-1">
               Informe de composición corporal Withings Body Scan
@@ -379,10 +396,18 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
             </div>
           </div>
 
-          <div className="text-right">
-            <span className="text-xs font-black text-slate-900 block">
-              Informe de composición corporal Withings Body Scan
-            </span>
+          <div className="text-right flex flex-col items-end">
+            <div className="flex items-center gap-1.5 justify-end">
+              <span className="text-xs font-black text-slate-900 block">
+                Informe de composición corporal Withings Body Scan
+              </span>
+              {(composition.sourceMode === 'hardware_auto' || data?.sourceMode === 'hardware_auto') && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                  Sincronizado desde Báscula Withings
+                </span>
+              )}
+            </div>
             <span className="text-2xs text-slate-500 font-medium">
               Análisis mediante bioimpedancia eléctrica (BIA) • Fecha: {composition.date}
             </span>

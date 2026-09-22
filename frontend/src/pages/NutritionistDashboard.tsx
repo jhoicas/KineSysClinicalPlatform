@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { AnthropometryModule } from '../components/nutrition/AnthropometryModule';
 import { BodyCompositionModule } from '../components/nutrition/BodyCompositionModule';
+import type { BodyCompositionBIA } from '../types/coreBodyNutrition';
 import { NutritionPlanningModule } from '../components/nutrition/NutritionPlanningModule';
 import { FhirNutritionOrderModule } from '../components/nutrition/FhirNutritionOrderModule';
 import { AnthropometryPdfModal } from '../components/nutrition/AnthropometryPdfModal';
@@ -290,6 +291,59 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
 
   // Find latest evaluation for the active patient
   const latestEvaluation = evaluations.length > 0 ? evaluations[0] : null;
+
+  // Derive BIA snapshot for BodyCompositionModule from latest evaluation (Withings or manual)
+  const latestBiaData = useMemo<BodyCompositionBIA | undefined>(() => {
+    if (!latestEvaluation || !currentClinico) return undefined;
+    const evAny = latestEvaluation as any;
+    const isWithings = evAny.source === 'withings_scale' || (evAny.device_model && String(evAny.device_model).includes('Withings'));
+    const isFemale = currentClinico.gender === 'female';
+    const fatMin = isFemale ? 18 : 10;
+    const fatMax = isFemale ? 28 : 20;
+
+    const weight = Number(latestEvaluation.weight_kg) || Number(evAny.weight_kg) || 0;
+    const fatPct = Number(latestEvaluation.body_fat_percentage) || Number(evAny.fat_ratio_percent) || 0;
+    const muscle = Number(latestEvaluation.muscle_mass_kg) || Number(evAny.muscle_mass_kg) || 0;
+    const fatMass = Number(evAny.fat_mass_kg) || (weight > 0 && fatPct > 0 ? Number(((weight * fatPct) / 100).toFixed(1)) : 0);
+    const hydration = Number(evAny.hydration_kg) || 0;
+    const bone = Number(evAny.bone_mass_kg) || 0;
+    const visceral = Number(evAny.visceral_fat_index) || 0;
+
+    if (weight === 0 && fatPct === 0) return undefined;
+
+    return {
+      id: `bia-${latestEvaluation.id || currentClinico.id}`,
+      patientId: currentClinico.id,
+      date: latestEvaluation.evaluation_date ? String(latestEvaluation.evaluation_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      deviceModel: 'Withings Body Scan',
+      sourceMode: isWithings ? 'hardware_auto' : 'manual_entry',
+      lastSyncTimestamp: String(latestEvaluation.evaluation_date || ''),
+      pesoKg: { value: weight, minNormal: 45, maxNormal: 100, unit: 'kg', status: 'Normal' },
+      masaMuscularEsqueleticaKg: { value: muscle, minNormal: 18, maxNormal: 40, unit: 'kg', status: 'Normal' },
+      masaGrasaKg: { value: fatMass, minNormal: 8, maxNormal: 35, unit: 'kg', status: 'Normal' },
+      porcentajeGrasaCorporal: {
+        value: fatPct,
+        minNormal: fatMin,
+        maxNormal: fatMax,
+        unit: '%',
+        status: fatPct < fatMin ? 'Bajo' : fatPct <= fatMax ? 'Adecuada' : 'Elevado',
+      },
+      segmental: {
+        brazoIzq: { muscleKg: 0, fatKg: 0 },
+        brazoDer: { muscleKg: 0, fatKg: 0 },
+        tronco: { muscleKg: 0, fatKg: 0 },
+        piernaIzq: { muscleKg: 0, fatKg: 0 },
+        piernaDer: { muscleKg: 0, fatKg: 0 },
+      },
+      otherIndicators: {
+        aguaCorporalTotalL: { value: hydration, minNormal: 25, maxNormal: 45, unit: 'L', status: 'Normal' },
+        proteinaKg: { value: 0, minNormal: 6, maxNormal: 14, unit: 'kg', status: 'Normal' },
+        mineralesKg: { value: bone, minNormal: 2.2, maxNormal: 4.5, unit: 'kg', status: 'Normal' },
+        grasaVisceralNivel: { value: visceral, minNormal: 1, maxNormal: 9, unit: 'nivel', status: 'Normal' },
+      },
+      evaluatorNotes: isWithings ? 'Medición sincronizada automáticamente desde Báscula Withings' : '',
+    };
+  }, [latestEvaluation, currentClinico]);
 
   return (
     <div className="min-h-screen flex bg-background font-sans text-on-background overflow-hidden">
@@ -620,6 +674,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                   weightKg: latestEvaluation?.weight_kg,
                   heightCm: latestEvaluation?.height_cm,
                 })}
+                data={latestBiaData}
                 onSave={async (bia) => {
                   useAppStore.getState().patchNutritionDraft({
                     patientId: currentClinico.id,
@@ -701,16 +756,23 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                             className="p-4 bg-surface-container-low rounded-2xl border border-outline-variant/30 flex items-center justify-between gap-3 text-xs"
                           >
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <span className="font-extrabold text-on-surface">
                                   {currentClinico.first_name} {currentClinico.last_name}
                                 </span>
                                 <span className="text-[10px] font-mono text-on-surface-variant font-bold">
                                   {ev.evaluation_date}
                                 </span>
+                                {((ev as any).source === 'withings_scale' || String((ev as any).device_model || '').includes('Withings')) && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                    <span className="material-symbols-outlined text-xs">scale</span>
+                                    Sincronizado desde Báscula Withings
+                                  </span>
+                                )}
                               </div>
                               <p className="text-[11px] text-on-surface-variant font-mono mt-0.5">
-                                BMR: <strong>{ev.bmr_kcal} kcal</strong> • TDEE: <strong>{ev.tdee_kcal} kcal</strong> • Grasa: <strong>{ev.body_fat_percentage}%</strong>
+                                Peso: <strong>{ev.weight_kg || (ev as any).weight_kg || 0} kg</strong> • Grasa: <strong>{ev.body_fat_percentage || (ev as any).fat_ratio_percent || 0}%</strong> • M. Muscular: <strong>{ev.muscle_mass_kg || (ev as any).muscle_mass_kg || 0} kg</strong>
+                                {ev.bmr_kcal ? ` • BMR: ${ev.bmr_kcal} kcal` : ''}
                               </p>
                             </div>
 

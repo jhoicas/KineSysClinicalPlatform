@@ -164,11 +164,13 @@ export const somatotypeRequestSchema = z.object({
   triceps_mm: z.number().min(0),
   subscapular_mm: z.number().min(0),
   suprailiac_mm: z.number().min(0),
-  calf_mm: z.number().min(0),
+  medial_calf_mm: z.number().min(0).optional(),
+  calf_cm: z.number().min(0).optional(),
+  humerus_breadth_cm: z.number().min(0),
+  femur_breadth_cm: z.number().min(0),
+  flexed_arm_cm: z.number().min(0),
   height_cm: z.number().min(0),
-  humerus_cm: z.number().min(0),
-  femur_cm: z.number().min(0),
-  arm_cm: z.number().min(0),
+  weight_kg: z.number().min(0),
 });
 export type SomatotypeRequest = z.infer<typeof somatotypeRequestSchema>;
 
@@ -198,13 +200,19 @@ export const bmrResultSchema = z.object({
 export type BmrResultDTO = z.infer<typeof bmrResultSchema>;
 
 export const compositionRequestSchema = z.object({
-  gender: z.enum(['male', 'female', 'other']),
+  method: z.string(),
+  sex: z.enum(['male', 'female', 'other']),
   age_years: z.number().min(0),
-  weight_kg: z.number().min(0),
-  triceps_mm: z.number().min(0),
-  subscapular_mm: z.number().min(0),
-  suprailiac_mm: z.number().min(0),
-  abdominal_mm: z.number().min(0),
+  weight_kg: z.number().min(0).optional(),
+  folds: z.object({
+    chest: z.number().min(0).optional(),
+    midaxillary: z.number().min(0).optional(),
+    triceps: z.number().min(0),
+    subscapular: z.number().min(0),
+    abdomen: z.number().min(0),
+    suprailiac: z.number().min(0),
+    thigh: z.number().min(0).optional(),
+  }),
 });
 export type CompositionRequest = z.infer<typeof compositionRequestSchema>;
 

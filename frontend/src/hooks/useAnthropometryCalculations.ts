@@ -54,24 +54,32 @@ export function useAnthropometryCalculations({
           triceps_mm: measures.triceps || 0,
           subscapular_mm: measures.subscapular || 0,
           suprailiac_mm: measures.suprailiac || 0,
-          calf_mm: measures.calf_sf || 0,
+          medial_calf_mm: measures.calf_sf || 0,
+          calf_cm: measures.calf_cir || 0,
           height_cm: height_cm || 0,
-          humerus_cm: measures.humerus || 0,
-          femur_cm: measures.femur || 0,
-          arm_cm: measures.arm_flexed || 0,
+          humerus_breadth_cm: measures.humerus || 0,
+          femur_breadth_cm: measures.femur || 0,
+          flexed_arm_cm: measures.arm_flexed || 0,
+          weight_kg: weight_kg || 0,
         });
 
         if (somaRes.data) setSomatotype(somaRes.data);
 
         // Calculate Composition
         const compRes = await api.anthropometry.calculateComposition({
-          gender,
+          method: equation || 'faulkner',
+          sex: gender === 'other' ? 'male' : gender,
           age_years,
-          weight_kg,
-          triceps_mm: measures.triceps || 0,
-          subscapular_mm: measures.subscapular || 0,
-          suprailiac_mm: measures.suprailiac || 0,
-          abdominal_mm: measures.abdominal || 0,
+          weight_kg: weight_kg || undefined,
+          folds: {
+            chest: 0,
+            midaxillary: 0,
+            triceps: measures.triceps || 0,
+            subscapular: measures.subscapular || 0,
+            abdomen: measures.abdominal || 0,
+            suprailiac: measures.suprailiac || 0,
+            thigh: measures.thigh_sf || 0,
+          },
         });
 
         if (compRes.data) setComposition(compRes.data);

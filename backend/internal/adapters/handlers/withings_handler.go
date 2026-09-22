@@ -92,7 +92,11 @@ func (h *WithingsHardwareHandler) Sync(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tenantIDStr, _ := r.Context().Value(middleware.TenantIDKey).(string)
-	tenantID, _ := uuid.Parse(tenantIDStr)
+	tenantID, err := uuid.Parse(tenantIDStr)
+	if err != nil {
+		http.Error(w, "Missing or invalid tenant ID", http.StatusUnauthorized)
+		return
+	}
 	
 	patientUUID, err := uuid.Parse(patientID)
 	if err != nil {
@@ -439,7 +443,11 @@ func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Re
 	}
 
 	tenantIDStr, _ := r.Context().Value(middleware.TenantIDKey).(string)
-	tenantID, _ := uuid.Parse(tenantIDStr)
+	tenantID, err := uuid.Parse(tenantIDStr)
+	if err != nil {
+		http.Error(w, "Missing or invalid tenant ID", http.StatusUnauthorized)
+		return
+	}
 	patientUUID, err := uuid.Parse(patientID)
 	if err != nil {
 		http.Error(w, "Invalid patient UUID", http.StatusBadRequest)
@@ -474,7 +482,11 @@ func (h *WithingsHardwareHandler) CheckSessionStatus(w http.ResponseWriter, r *h
 	}
 
 	tenantIDStr, _ := r.Context().Value(middleware.TenantIDKey).(string)
-	tenantID, _ := uuid.Parse(tenantIDStr)
+	tenantID, err := uuid.Parse(tenantIDStr)
+	if err != nil {
+		http.Error(w, "Missing or invalid tenant ID", http.StatusUnauthorized)
+		return
+	}
 	patientUUID, err := uuid.Parse(patientID)
 	if err != nil {
 		http.Error(w, "Invalid patient UUID", http.StatusBadRequest)

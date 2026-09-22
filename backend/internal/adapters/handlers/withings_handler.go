@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/kinesys/clinical-platform-backend/internal/core/domain"
 	"github.com/kinesys/clinical-platform-backend/internal/core/ports"
@@ -430,7 +432,7 @@ func pow10(exponent int) float64 {
 }
 
 func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Request) {
-	patientID := strings.TrimSpace(r.PathValue("patientId"))
+	patientID := strings.TrimSpace(chi.URLParam(r, "patientId"))
 	if patientID == "" {
 		http.Error(w, "Invalid patient ID", http.StatusBadRequest)
 		return
@@ -451,6 +453,8 @@ func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Re
 		Status:    "pending",
 		ExpiresAt: time.Now().Add(2 * time.Minute),
 	}
+
+	log.Printf("Iniciando sesión para paciente: %s", patientUUID)
 
 	if err := h.anthropometrySvc.CreateWeighInSession(r.Context(), session); err != nil {
 		fmt.Printf("Error detallado al crear sesión: %v\n", err)

@@ -147,20 +147,20 @@ export const SideNavBar: React.FC<SideNavBarProps> = ({ currentPath = '/calendar
 
         {/* POC Manual Link */}
         <button
-          onClick={() => handleNavClick('/test-withings')}
+          onClick={() => handleNavClick('/withings-poc')}
           className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all duration-200 cursor-pointer text-left ${
-            currentPath === '/test-withings'
+            currentPath === '/withings-poc'
               ? 'bg-primary text-white shadow-sm shadow-primary/30'
               : 'text-on-surface-variant hover:bg-surface-container-low hover:text-primary'
           }`}
         >
           <div className="flex items-center gap-3">
-            <span className={`material-symbols-outlined text-lg ${currentPath === '/test-withings' ? 'text-white' : 'text-on-surface-variant'}`}>
+            <span className={`material-symbols-outlined text-lg ${currentPath === '/withings-poc' ? 'text-white' : 'text-on-surface-variant'}`}>
               monitor_weight
             </span>
             <span>Prueba Báscula (POC)</span>
           </div>
-          <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${currentPath === '/test-withings' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'}`}>
+          <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full ${currentPath === '/withings-poc' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'}`}>
             POC
           </span>
         </button>

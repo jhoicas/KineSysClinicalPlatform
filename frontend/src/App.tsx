@@ -50,7 +50,7 @@ function AppRouter() {
   useEffect(() => {
     if (loading || !user || isOAuthFragment(currentPath)) return;
 
-    const publicPaths = ['/login', '/landing', '/', ''];
+    const publicPaths = ['/login', '/landing', '/', '', '/withings-poc'];
     if (!publicPaths.includes(currentPath)) return;
 
     if (needsOnboarding) {
@@ -148,7 +148,7 @@ function AppRouter() {
             <SettingsPage onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
-      case '/test-withings':
+      case '/withings-poc':
         return <WithingsPocModule />;
       default:
         return (

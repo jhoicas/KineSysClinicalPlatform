@@ -66,9 +66,9 @@ func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, sess
 		return err
 	}
 
-	query := `INSERT INTO active_weigh_in_sessions (tenant_id, patient_id, status, expires_at)
+	query := `INSERT INTO kinesys.active_weigh_in_sessions (tenant_id, patient_id, status, expires_at)
 	          VALUES ($1, $2, $3, $4) RETURNING id, created_at, updated_at`
-	
+
 	// FIX: ensure we use tx.QueryRow and maintain strict $1=tenant, $2=patient order
 	err = tx.QueryRow(ctx, query,
 		session.TenantID, session.PatientID, session.Status, session.ExpiresAt,
@@ -82,7 +82,7 @@ func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, sess
 
 func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, patientID, tenantID uuid.UUID) (*domain.ActiveWeighInSession, error) {
 	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
-	          FROM active_weigh_in_sessions 
+	          FROM kinesys.active_weigh_in_sessions 
 			  WHERE patient_id = $1 AND tenant_id = $2 AND status = 'pending' AND expires_at > NOW()
 			  ORDER BY created_at DESC LIMIT 1`
 	
@@ -99,7 +99,7 @@ func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, 
 
 func (r *anthropometryRepository) GetLatestPendingWeighInSession(ctx context.Context) (*domain.ActiveWeighInSession, error) {
 	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
-	          FROM active_weigh_in_sessions 
+	          FROM kinesys.active_weigh_in_sessions 
 			  WHERE status = 'pending' AND expires_at > NOW()
 			  ORDER BY created_at DESC LIMIT 1`
 	
@@ -126,7 +126,7 @@ func (r *anthropometryRepository) UpdateWeighInSession(ctx context.Context, sess
 		return err
 	}
 
-	query := `UPDATE active_weigh_in_sessions 
+	query := `UPDATE kinesys.active_weigh_in_sessions 
 			  SET status = $1, metrics_payload = $2, updated_at = NOW() 
 			  WHERE id = $3 RETURNING updated_at`
 	

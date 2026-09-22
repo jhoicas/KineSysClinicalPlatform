@@ -144,6 +144,21 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
             const fatMax = patient.gender === 'F' ? 28 : 20;
             const fatStatus: RangeIndicator['status'] = fatPct < fatMin ? 'Bajo' : fatPct <= fatMax ? 'Adecuada' : 'Elevado';
 
+            const weightVal = Number(reading.weight_kg) || composition.pesoKg.value;
+            const fatMassVal = Number(reading.fat_mass_kg) || composition.masaGrasaKg.value;
+            const hydrationVal = Number(reading.hydration_kg) || composition.otherIndicators.aguaCorporalTotalL.value;
+            const boneVal = Number(reading.bone_mass_kg) || composition.otherIndicators.mineralesKg.value;
+
+            let proteinVal = Number(reading.protein_kg) || composition.otherIndicators.proteinaKg.value;
+            if (!proteinVal || proteinVal === 0) {
+              if (weightVal > 0 && fatMassVal > 0 && hydrationVal > 0 && boneVal > 0) {
+                proteinVal = Math.round((weightVal - fatMassVal - hydrationVal - boneVal) * 10) / 10;
+              } else if (Number(reading.fat_free_mass_kg) > 0 && hydrationVal > 0 && boneVal > 0) {
+                proteinVal = Math.round((Number(reading.fat_free_mass_kg) - hydrationVal - boneVal) * 10) / 10;
+              }
+            }
+            if (proteinVal < 0) proteinVal = 0;
+
             const updated: BodyCompositionBIA = {
               ...composition,
               deviceModel: 'Withings Body Scan',
@@ -151,7 +166,7 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
               lastSyncTimestamp: timeStr,
               pesoKg: {
                 ...composition.pesoKg,
-                value: Number(reading.weight_kg) || composition.pesoKg.value,
+                value: weightVal,
               },
               porcentajeGrasaCorporal: {
                 ...composition.porcentajeGrasaCorporal,
@@ -164,17 +179,21 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
               },
               masaGrasaKg: {
                 ...composition.masaGrasaKg,
-                value: Number(reading.fat_mass_kg) || composition.masaGrasaKg.value,
+                value: fatMassVal,
               },
               otherIndicators: {
                 ...composition.otherIndicators,
                 aguaCorporalTotalL: {
                   ...composition.otherIndicators.aguaCorporalTotalL,
-                  value: Number(reading.hydration_kg) || composition.otherIndicators.aguaCorporalTotalL.value,
+                  value: hydrationVal,
+                },
+                proteinaKg: {
+                  ...composition.otherIndicators.proteinaKg,
+                  value: proteinVal,
                 },
                 mineralesKg: {
                   ...composition.otherIndicators.mineralesKg,
-                  value: Number(reading.bone_mass_kg) || composition.otherIndicators.mineralesKg.value,
+                  value: boneVal,
                 },
                 grasaVisceralNivel: {
                   ...composition.otherIndicators.grasaVisceralNivel,

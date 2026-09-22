@@ -540,6 +540,15 @@ export interface EvaluacionAntropometrica {
   fat_free_mass_kg: number;
   cardiovascular_risk_level: 'bajo' | 'moderado' | 'alto' | 'muy_alto';
 
+  // Campos de bioimpedancia / hardware (Withings / InBody)
+  source?: string;
+  device_model?: string;
+  protein_kg?: number;
+  hydration_kg?: number;
+  bone_mass_kg?: number;
+  muscle_mass_kg?: number;
+  visceral_fat_index?: number;
+
   clinical_notes?: string;
   created_at: string;
 }

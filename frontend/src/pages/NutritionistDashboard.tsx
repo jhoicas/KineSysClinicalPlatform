@@ -273,6 +273,17 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               const hydration = Number(reading.hydration_kg) || 0;
               const bone = Number(reading.bone_mass_kg) || 0;
               const visceral = Number(reading.visceral_fat_index) || 0;
+
+              let protein = Number(reading.protein_kg) || 0;
+              if (protein === 0) {
+                if (weight > 0 && fatMass > 0 && hydration > 0 && bone > 0) {
+                  protein = Math.round((weight - fatMass - hydration - bone) * 10) / 10;
+                } else if (Number(reading.fat_free_mass_kg) > 0 && hydration > 0 && bone > 0) {
+                  protein = Math.round((Number(reading.fat_free_mass_kg) - hydration - bone) * 10) / 10;
+                }
+              }
+              if (protein < 0) protein = 0;
+
               const isFemale = currentClinico?.gender === 'female';
               const fatMin = isFemale ? 18 : 10;
               const fatMax = isFemale ? 28 : 20;
@@ -303,7 +314,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 },
                 otherIndicators: {
                   aguaCorporalTotalL: { value: hydration, minNormal: 25, maxNormal: 45, unit: 'L', status: 'Normal' },
-                  proteinaKg: { value: 0, minNormal: 6, maxNormal: 14, unit: 'kg', status: 'Normal' },
+                  proteinaKg: { value: protein, minNormal: 6, maxNormal: 14, unit: 'kg', status: 'Normal' },
                   mineralesKg: { value: bone, minNormal: 2.2, maxNormal: 4.5, unit: 'kg', status: 'Normal' },
                   grasaVisceralNivel: { value: visceral, minNormal: 1, maxNormal: 9, unit: 'nivel', status: 'Normal' },
                 },
@@ -443,6 +454,16 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
     const bone = Number(evAny.bone_mass_kg) || 0;
     const visceral = Number(evAny.visceral_fat_index) || 0;
 
+    let protein = Number(evAny.protein_kg) || 0;
+    if (protein === 0 && (isWithings || evAny.source === 'withings_scale' || evAny.source === 'WITHINGS')) {
+      if (weight > 0 && fatMass > 0 && hydration > 0 && bone > 0) {
+        protein = Math.round((weight - fatMass - hydration - bone) * 10) / 10;
+      } else if (Number(evAny.fat_free_mass_kg) > 0 && hydration > 0 && bone > 0) {
+        protein = Math.round((Number(evAny.fat_free_mass_kg) - hydration - bone) * 10) / 10;
+      }
+    }
+    if (protein < 0) protein = 0;
+
     if (weight === 0 && fatPct === 0) return undefined;
 
     return {
@@ -471,7 +492,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       },
       otherIndicators: {
         aguaCorporalTotalL: { value: hydration, minNormal: 25, maxNormal: 45, unit: 'L', status: 'Normal' },
-        proteinaKg: { value: 0, minNormal: 6, maxNormal: 14, unit: 'kg', status: 'Normal' },
+        proteinaKg: { value: protein, minNormal: 6, maxNormal: 14, unit: 'kg', status: 'Normal' },
         mineralesKg: { value: bone, minNormal: 2.2, maxNormal: 4.5, unit: 'kg', status: 'Normal' },
         grasaVisceralNivel: { value: visceral, minNormal: 1, maxNormal: 9, unit: 'nivel', status: 'Normal' },
       },

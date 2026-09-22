@@ -75,6 +75,9 @@ type WithingsHardwareReading struct {
 	BodyFatPct       *float64          `json:"body_fat_pct"`
 	FatMassKg        *float64          `json:"fat_mass_kg,omitempty"`
 	MuscleMassKg     *float64          `json:"muscle_mass_kg,omitempty"`
+	HydrationKg      *float64          `json:"hydration_kg,omitempty"`
+	BoneMassKg       *float64          `json:"bone_mass_kg,omitempty"`
+	ProteinKg        *float64          `json:"protein_kg,omitempty"`
 	VisceralFatIndex *float64          `json:"visceral_fat_index"`
 	BMR              *float64          `json:"bmr"`
 	ProviderMeta     map[string]string `json:"provider_meta,omitempty"`
@@ -509,12 +512,27 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 	hydrationKg := metrics["hydration_kg"]
 	boneMassKg := metrics["bone_mass_kg"]
 	visceralFat := metrics["visceral_fat_index"]
+	proteinKg := metrics["protein_kg"]
 
 	if fatMassKg == 0 && weightKg > 0 && fatRatio > 0 {
 		fatMassKg = (weightKg * fatRatio) / 100.0
 	}
 	if muscleMassKg == 0 && weightKg > 0 && fatMassKg > 0 {
 		muscleMassKg = weightKg - fatMassKg
+	}
+
+	// Cálculo clínico derivado de proteína (Withings no la envía nativamente)
+	if proteinKg == 0 {
+		if weightKg > 0 && fatMassKg > 0 && hydrationKg > 0 && boneMassKg > 0 {
+			proteinKg = weightKg - fatMassKg - hydrationKg - boneMassKg
+		} else if metrics["fat_free_mass_kg"] > 0 && hydrationKg > 0 && boneMassKg > 0 {
+			proteinKg = metrics["fat_free_mass_kg"] - hydrationKg - boneMassKg
+		}
+		if proteinKg > 0 {
+			proteinKg = math.Round(proteinKg*10) / 10
+		} else {
+			proteinKg = 0
+		}
 	}
 
 	var bmi float64
@@ -550,6 +568,7 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 		"muscle_mass_kg":      math.Round(muscleMassKg*10) / 10,
 		"hydration_kg":        math.Round(hydrationKg*10) / 10,
 		"bone_mass_kg":        math.Round(boneMassKg*10) / 10,
+		"protein_kg":          math.Round(proteinKg*10) / 10,
 		"visceral_fat_index":  math.Round(visceralFat*10) / 10,
 		"clinical_notes":      "Medición sincronizada automáticamente desde Báscula Withings",
 	}
@@ -565,7 +584,7 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 		if err != nil {
 			log.Printf("[WITHINGS DB ERROR] Falló guardar en evaluaciones_antropometricas: %v", err)
 		} else {
-			log.Printf("[WITHINGS EVALUATION SAVED] Medición guardada en kinesys.evaluaciones_antropometricas para patient_id=%s (peso=%.2f kg, grasa=%.1f%%)", patientUUID, weightKg, fatRatio)
+			log.Printf("[WITHINGS EVALUATION SAVED] Medición guardada en kinesys.evaluaciones_antropometricas para patient_id=%s (peso=%.2f kg, grasa=%.1f%%, proteina=%.1f kg)", patientUUID, weightKg, fatRatio, proteinKg)
 		}
 
 		// Insertar en kinesys.nutrition_evaluations
@@ -574,6 +593,7 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 			"muscle_mass_kg":    math.Round(muscleMassKg*10) / 10,
 			"hydration_kg":      math.Round(hydrationKg*10) / 10,
 			"bone_mass_kg":      math.Round(boneMassKg*10) / 10,
+			"protein_kg":        math.Round(proteinKg*10) / 10,
 			"fat_ratio_percent": math.Round(fatRatio*10) / 10,
 		})
 		_, _ = h.db.Exec(ctx, `
@@ -789,8 +809,10 @@ func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *
 	bmr135, _ := latestMeasure(payload.Body.MeasureGroups, 135)
 	bmr226, _ := latestMeasure(payload.Body.MeasureGroups, 226)
 
-	fatMass, _ := latestMeasure(payload.Body.MeasureGroups, 88)
+	fatMass, _ := latestMeasure(payload.Body.MeasureGroups, 8)
 	muscleMass, _ := latestMeasure(payload.Body.MeasureGroups, 76)
+	hydrationMass, _ := latestMeasure(payload.Body.MeasureGroups, 77)
+	boneMass, _ := latestMeasure(payload.Body.MeasureGroups, 88)
 
 	measuredAt := weightAt
 	if measuredAt == 0 {
@@ -809,6 +831,8 @@ func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *
 		BodyFatPct:       scaledValue(fatPct, 1, 2),
 		FatMassKg:        scaledValue(fatMass, 1, 3),
 		MuscleMassKg:     scaledValue(muscleMass, 1, 3),
+		HydrationKg:      scaledValue(hydrationMass, 1, 3),
+		BoneMassKg:       scaledValue(boneMass, 1, 3),
 		VisceralFatIndex: scaledValue(visceral170, 1, 2),
 		BMR:              scaledValue(bmr226, 1, 2),
 		ProviderMeta:     map[string]string{"device_model": "Withings Body Scan"},
@@ -831,6 +855,23 @@ func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *
 	if reading.FatMassKg == nil && reading.WeightKg != nil && reading.BodyFatPct != nil {
 		fm := *reading.WeightKg * (*reading.BodyFatPct / 100.0)
 		reading.FatMassKg = &fm
+	}
+	if reading.MuscleMassKg == nil && reading.WeightKg != nil && reading.FatMassKg != nil {
+		mm := *reading.WeightKg - *reading.FatMassKg
+		reading.MuscleMassKg = &mm
+	}
+
+	// Derivar cálculo de proteína para Withings si no está presente
+	if reading.ProteinKg == nil {
+		if prot, ok := parsedMetrics["protein_kg"]; ok && prot > 0 {
+			reading.ProteinKg = &prot
+		} else if reading.WeightKg != nil && reading.FatMassKg != nil && reading.HydrationKg != nil && reading.BoneMassKg != nil {
+			protVal := *reading.WeightKg - *reading.FatMassKg - *reading.HydrationKg - *reading.BoneMassKg
+			if protVal > 0 {
+				protVal = math.Round(protVal*10) / 10
+				reading.ProteinKg = &protVal
+			}
+		}
 	}
 	if reading.MuscleMassKg == nil && reading.WeightKg != nil && reading.FatMassKg != nil {
 		mm := *reading.WeightKg - *reading.FatMassKg
@@ -903,6 +944,27 @@ func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
 			}
 		}
 	}
+
+	// Cálculo clínico derivado de proteína (Withings no la envía nativamente en su API)
+	if parsed["protein_kg"] == 0 {
+		weightKg := parsed["weight_kg"]
+		fatMassKg := parsed["fat_mass_kg"]
+		fatFreeMassKg := parsed["fat_free_mass_kg"]
+		hydrationKg := parsed["hydration_kg"]
+		boneMassKg := parsed["bone_mass_kg"]
+
+		var proteinKg float64
+		if weightKg > 0 && fatMassKg > 0 && hydrationKg > 0 && boneMassKg > 0 {
+			proteinKg = weightKg - fatMassKg - hydrationKg - boneMassKg
+		} else if fatFreeMassKg > 0 && hydrationKg > 0 && boneMassKg > 0 {
+			proteinKg = fatFreeMassKg - hydrationKg - boneMassKg
+		}
+
+		if proteinKg > 0 {
+			parsed["protein_kg"] = math.Round(proteinKg*10) / 10
+		}
+	}
+
 	return parsed
 }
 

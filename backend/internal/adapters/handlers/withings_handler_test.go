@@ -52,4 +52,30 @@ func TestParseWithingsMeasures(t *testing.T) {
 	if got, want := parsed["visceral_fat_index"], 9.0; math.Abs(got-want) > 0.0001 {
 		t.Fatalf("visceral_fat_index mismatch: got %v want %v", got, want)
 	}
+	// 82.5 - 18.5 - 52.4 - 2.8 = 8.8 kg
+	if got, want := parsed["protein_kg"], 8.8; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("protein_kg mismatch: got %v want %v", got, want)
+	}
 }
+
+func TestParseWithingsMeasures_ProteinFallback(t *testing.T) {
+	// Fallback using fat_free_mass_kg when fat_mass_kg is not available
+	groups := []withingsMeasureGroup{
+		{
+			Date: 1700000000,
+			Measures: []withingsMeasure{
+				{Type: 1, Value: 75.0, Unit: 0},
+				{Type: 5, Value: 61.2, Unit: 0}, // fat_free_mass_kg
+				{Type: 77, Value: 50.0, Unit: 0}, // hydration_kg
+				{Type: 88, Value: 2.5, Unit: 0},  // bone_mass_kg
+			},
+		},
+	}
+
+	parsed := parseWithingsMeasures(groups)
+	// 61.2 - 50.0 - 2.5 = 8.7 kg
+	if got, want := parsed["protein_kg"], 8.7; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("protein_kg fallback mismatch: got %v want %v", got, want)
+	}
+}
+

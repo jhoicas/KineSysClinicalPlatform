@@ -46,8 +46,38 @@ export function toAnthropometryInsert(record: EvaluacionAntropometrica): Record<
 
 export function mapAnthropometryFromDb(row: Record<string, unknown>): EvaluacionAntropometrica {
   const data = asObject(row.data);
+
+  // Derivación clínica de proteína si la fuente es Withings y no se incluye nativamente
+  const source = String(data.source ?? row.source ?? '');
+  const isWithings =
+    source === 'withings_scale' ||
+    source === 'WITHINGS' ||
+    String(data.device_model ?? '').includes('Withings');
+
+  let proteinKg = Number(data.protein_kg ?? row.protein_kg) || 0;
+  if (isWithings && proteinKg === 0) {
+    const weightKg = Number(data.weight_kg ?? row.weight_kg) || 0;
+    const fatMassKg = Number(data.fat_mass_kg ?? row.fat_mass_kg) || 0;
+    const fatFreeMassKg = Number(data.fat_free_mass_kg ?? row.fat_free_mass_kg) || 0;
+    const hydrationKg = Number(data.hydration_kg ?? row.hydration_kg) || 0;
+    const boneMassKg = Number(data.bone_mass_kg ?? row.bone_mass_kg) || 0;
+
+    let derivedProtein = 0;
+    if (weightKg > 0 && fatMassKg > 0 && hydrationKg > 0 && boneMassKg > 0) {
+      derivedProtein = weightKg - fatMassKg - hydrationKg - boneMassKg;
+    } else if (fatFreeMassKg > 0 && hydrationKg > 0 && boneMassKg > 0) {
+      derivedProtein = fatFreeMassKg - hydrationKg - boneMassKg;
+    }
+
+    if (derivedProtein > 0) {
+      proteinKg = Math.round(derivedProtein * 10) / 10;
+      data.protein_kg = proteinKg;
+    }
+  }
+
   return {
     ...data,
+    ...(proteinKg > 0 ? { protein_kg: proteinKg } : {}),
     id: String(row.id ?? ''),
     tenant_id: String(row.tenant_id ?? ''),
     patient_id: String(row.patient_id ?? ''),

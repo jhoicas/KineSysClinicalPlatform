@@ -99,6 +99,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   // Withings Scale Live Weigh-in State
   const [isWeighInActive, setIsWeighInActive] = useState(false);
   const [withingsStatusMessage, setWithingsStatusMessage] = useState<string | null>(null);
+  const [liveWithingsBia, setLiveWithingsBia] = useState<BodyCompositionBIA | null>(null);
 
   const tenantId = tenant?.id || user?.tenant_id || 'tenant_kine_001';
   const nutritionistId = user?.id || 'prof_nutri_01';
@@ -222,6 +223,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       setEvaluations([]);
       setPlans([]);
       setFhirOrders([]);
+      setLiveWithingsBia(null);
     }
   }, [activePatient?.id, tenantId]);
 
@@ -263,6 +265,61 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               }
             }
 
+            if (reading) {
+              const weight = Number(reading.weight_kg) || 0;
+              const fatPct = Number(reading.fat_ratio_percent ?? reading.body_fat_percentage ?? reading.body_fat_pct) || 0;
+              const muscle = Number(reading.muscle_mass_kg) || 0;
+              const fatMass = Number(reading.fat_mass_kg) || (weight > 0 && fatPct > 0 ? Number(((weight * fatPct) / 100).toFixed(1)) : 0);
+              const hydration = Number(reading.hydration_kg) || 0;
+              const bone = Number(reading.bone_mass_kg) || 0;
+              const visceral = Number(reading.visceral_fat_index) || 0;
+              const isFemale = currentClinico?.gender === 'female';
+              const fatMin = isFemale ? 18 : 10;
+              const fatMax = isFemale ? 28 : 20;
+
+              const newBia: BodyCompositionBIA = {
+                id: `bia-withings-${Date.now()}`,
+                patientId: activePatient.id,
+                date: new Date().toISOString().slice(0, 10),
+                deviceModel: 'Withings Body Scan',
+                sourceMode: 'hardware_auto',
+                lastSyncTimestamp: new Date().toLocaleTimeString(),
+                pesoKg: { value: weight, minNormal: 45, maxNormal: 100, unit: 'kg', status: 'Normal' },
+                masaMuscularEsqueleticaKg: { value: muscle, minNormal: 18, maxNormal: 40, unit: 'kg', status: 'Normal' },
+                masaGrasaKg: { value: fatMass, minNormal: 8, maxNormal: 35, unit: 'kg', status: 'Normal' },
+                porcentajeGrasaCorporal: {
+                  value: fatPct,
+                  minNormal: fatMin,
+                  maxNormal: fatMax,
+                  unit: '%',
+                  status: fatPct < fatMin ? 'Bajo' : fatPct <= fatMax ? 'Adecuada' : 'Elevado',
+                },
+                segmental: {
+                  brazoIzq: { muscleKg: 0, fatKg: 0 },
+                  brazoDer: { muscleKg: 0, fatKg: 0 },
+                  tronco: { muscleKg: 0, fatKg: 0 },
+                  piernaIzq: { muscleKg: 0, fatKg: 0 },
+                  piernaDer: { muscleKg: 0, fatKg: 0 },
+                },
+                otherIndicators: {
+                  aguaCorporalTotalL: { value: hydration, minNormal: 25, maxNormal: 45, unit: 'L', status: 'Normal' },
+                  proteinaKg: { value: 0, minNormal: 6, maxNormal: 14, unit: 'kg', status: 'Normal' },
+                  mineralesKg: { value: bone, minNormal: 2.2, maxNormal: 4.5, unit: 'kg', status: 'Normal' },
+                  grasaVisceralNivel: { value: visceral, minNormal: 1, maxNormal: 9, unit: 'nivel', status: 'Normal' },
+                },
+                evaluatorNotes: 'Medición sincronizada automáticamente desde Báscula Withings',
+              };
+
+              setLiveWithingsBia(newBia);
+
+              useAppStore.getState().patchNutritionDraft({
+                patientId: activePatient.id,
+                biaSource: 'WITHINGS',
+                biaSnapshot: newBia as unknown as Record<string, unknown>,
+                weightKg: newBia.pesoKg.value || undefined,
+              });
+            }
+
             // Recargar datos clínicos del paciente desde Supabase / Backend
             await loadPatientNutritionData(activePatient.id);
 
@@ -286,7 +343,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isWeighInActive, activePatient?.id]);
+  }, [isWeighInActive, activePatient?.id, currentClinico]);
 
   const handleStartWithingsWeighIn = async () => {
     if (!activePatient?.id) return;
@@ -799,7 +856,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                   weightKg: latestEvaluation?.weight_kg,
                   heightCm: latestEvaluation?.height_cm,
                 })}
-                data={latestBiaData}
+                data={liveWithingsBia || latestBiaData}
                 onSave={async (bia) => {
                   useAppStore.getState().patchNutritionDraft({
                     patientId: currentClinico.id,

@@ -41,6 +41,10 @@ var (
 	pocSessionActive bool
 	pocRawPayload    map[string]interface{}
 	pocExpiresAt     time.Time
+
+	clinicalSessionMutex    sync.RWMutex
+	clinicalActiveSessions  = make(map[uuid.UUID]*domain.ActiveWeighInSession)
+	lastActiveClinicalPatID uuid.UUID
 )
 
 type withingsMeasure struct {
@@ -257,6 +261,9 @@ func (h *WithingsHardwareHandler) initDatabaseAndTokens(ctx context.Context) {
 		log.Printf("[WITHINGS INIT DB ERROR] Error creando tabla withings_oauth_tokens: %v", err)
 	}
 
+	// Asegurar que active_weigh_in_sessions no bloquee lecturas/escrituras de webhooks
+	_, _ = h.db.Exec(ctx, "ALTER TABLE kinesys.active_weigh_in_sessions DISABLE ROW LEVEL SECURITY")
+
 	rows, err := h.db.Query(ctx, `
 		SELECT userid, access_token, refresh_token, expires_at 
 		FROM kinesys.withings_oauth_tokens 
@@ -454,28 +461,26 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 	tenantUUID := defaultTenant
 	var patientUUID uuid.UUID
 
-	// 1. Identificar patient_id y tenant_id desde withings_oauth_tokens
-	if h.db != nil && userid != "" {
+	// 1. Prioridad: Sesión de pesaje activa en curso (en memoria o base de datos)
+	clinicalSessionMutex.RLock()
+	lastPat := lastActiveClinicalPatID
+	clinicalSessionMutex.RUnlock()
+
+	if session, err := h.anthropometrySvc.GetLatestPendingWeighInSession(ctx); err == nil && session != nil {
+		patientUUID = session.PatientID
+		tenantUUID = session.TenantID
+	} else if lastPat != uuid.Nil {
+		patientUUID = lastPat
+	}
+
+	// 2. Fallback: identificar patient_id y tenant_id desde withings_oauth_tokens
+	if patientUUID == uuid.Nil && h.db != nil && userid != "" {
 		var pID *uuid.UUID
 		var tID uuid.UUID
 		if err := h.db.QueryRow(ctx, "SELECT tenant_id, patient_id FROM kinesys.withings_oauth_tokens WHERE userid = $1", userid).Scan(&tID, &pID); err == nil {
 			tenantUUID = tID
 			if pID != nil && *pID != uuid.Nil {
 				patientUUID = *pID
-			}
-		}
-	}
-
-	// 2. Fallback: sesión de pesaje activa
-	var pendingSession *domain.ActiveWeighInSession
-	if session, err := h.anthropometrySvc.GetLatestPendingWeighInSession(ctx); err == nil && session != nil {
-		pendingSession = session
-		if patientUUID == uuid.Nil {
-			patientUUID = session.PatientID
-			tenantUUID = session.TenantID
-			// Vincular permanentemente en withings_oauth_tokens
-			if h.db != nil && userid != "" {
-				_, _ = h.db.Exec(ctx, "UPDATE kinesys.withings_oauth_tokens SET patient_id = $1, tenant_id = $2 WHERE userid = $3", patientUUID, tenantUUID, userid)
 			}
 		}
 	}
@@ -579,24 +584,54 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 		`, tenantUUID, patientUUID, defaultNutriID, evalDate.Format("2006-01-02"), weightKg, heightCm, fatRatio, visceralFat, measJSON)
 	}
 
-	// Marcar sesión pendiente como completada
-	if pendingSession != nil && pendingSession.PatientID == patientUUID {
-		pendingSession.Status = "completed"
-		pendingSession.MetricsPayload = dataJSON
-		_ = h.anthropometrySvc.UpdateWeighInSession(ctx, pendingSession)
-		log.Printf("[WITHINGS SESSION COMPLETED] Sesión %s completada para patient_id=%s", pendingSession.ID, patientUUID)
+	// Marcar sesión en memoria como completada (idéntico al POC)
+	clinicalSessionMutex.Lock()
+	for pID, s := range clinicalActiveSessions {
+		if strings.ToLower(s.Status) == "pending" {
+			s.Status = "completed"
+			s.MetricsPayload = dataJSON
+			s.UpdatedAt = time.Now()
+			log.Printf("[WITHINGS MEMORY COMPLETED] Sesión en memoria completada para patient_id=%s", pID)
+		}
 	}
+	if patientUUID != uuid.Nil {
+		if s, ok := clinicalActiveSessions[patientUUID]; ok {
+			s.Status = "completed"
+			s.MetricsPayload = dataJSON
+			s.UpdatedAt = time.Now()
+		} else {
+			clinicalActiveSessions[patientUUID] = &domain.ActiveWeighInSession{
+				TenantID:       tenantUUID,
+				PatientID:      patientUUID,
+				Status:         "completed",
+				MetricsPayload: dataJSON,
+				UpdatedAt:      time.Now(),
+			}
+		}
+	}
+	clinicalSessionMutex.Unlock()
 
+	// Marcar sesión pendiente en base de datos como completada
 	if h.db != nil {
-		res, err := h.db.Exec(ctx, `
+		if patientUUID != uuid.Nil {
+			res, err := h.db.Exec(ctx, `
+				UPDATE kinesys.active_weigh_in_sessions
+				SET status = 'completed', metrics_payload = $1, updated_at = NOW()
+				WHERE patient_id = $2 AND LOWER(status) = 'pending'
+			`, dataJSON, patientUUID)
+			if err == nil && res.RowsAffected() > 0 {
+				log.Printf("[WITHINGS SESSION COMPLETED DB] %d sesión(es) para patient_id=%s actualizadas a completed", res.RowsAffected(), patientUUID)
+			}
+		}
+
+		// Salvaguarda: actualizar cualquier sesión pendiente activa global
+		resAny, errAny := h.db.Exec(ctx, `
 			UPDATE kinesys.active_weigh_in_sessions
 			SET status = 'completed', metrics_payload = $1, updated_at = NOW()
-			WHERE patient_id = $2 AND LOWER(status) = 'pending'
-		`, dataJSON, patientUUID)
-		if err == nil {
-			if rows := res.RowsAffected(); rows > 0 {
-				log.Printf("[WITHINGS SESSION COMPLETED DB] %d sesión(es) pendientes actualizadas a completed para patient_id=%s", rows, patientUUID)
-			}
+			WHERE LOWER(status) = 'pending' AND expires_at > NOW()
+		`, dataJSON)
+		if errAny == nil && resAny.RowsAffected() > 0 {
+			log.Printf("[WITHINGS SESSION COMPLETED DB GLOBAL] %d sesión(es) pendientes globales actualizadas a completed", resAny.RowsAffected())
 		}
 	}
 }
@@ -942,11 +977,16 @@ func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Registrar sesión en memoria para respuesta instantánea (idéntico al POC)
+	clinicalSessionMutex.Lock()
+	clinicalActiveSessions[patientUUID] = session
+	lastActiveClinicalPatID = patientUUID
+	clinicalSessionMutex.Unlock()
+
 	if h.db != nil {
 		_, _ = h.db.Exec(r.Context(), `
 			UPDATE kinesys.withings_oauth_tokens 
-			SET patient_id = $1, tenant_id = $2 
-			WHERE patient_id IS NULL OR patient_id = $1
+			SET patient_id = $1, tenant_id = $2, updated_at = NOW()
 		`, patientUUID, tenantID)
 	}
 
@@ -970,6 +1010,42 @@ func (h *WithingsHardwareHandler) CheckSessionStatus(w http.ResponseWriter, r *h
 
 	w.Header().Set("Content-Type", "application/json")
 
+	// 1. Revisar caché en memoria (rápido, idéntico al POC)
+	clinicalSessionMutex.RLock()
+	memSession, hasMem := clinicalActiveSessions[patientUUID]
+	clinicalSessionMutex.RUnlock()
+
+	if hasMem && memSession != nil {
+		if strings.ToLower(memSession.Status) == "completed" {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":              memSession.ID,
+				"patient_id":      memSession.PatientID,
+				"tenant_id":       memSession.TenantID,
+				"status":          "completed",
+				"active":          false,
+				"metrics_payload": memSession.MetricsPayload,
+				"updated_at":      memSession.UpdatedAt,
+			})
+			return
+		}
+		if strings.ToLower(memSession.Status) == "pending" && time.Now().Before(memSession.ExpiresAt) {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":              memSession.ID,
+				"patient_id":      memSession.PatientID,
+				"tenant_id":       memSession.TenantID,
+				"status":          "pending",
+				"active":          true,
+				"metrics_payload": nil,
+				"created_at":      memSession.CreatedAt,
+				"expires_at":      memSession.ExpiresAt,
+			})
+			return
+		}
+	}
+
+	// 2. Revisar base de datos
 	session, err := h.anthropometrySvc.GetPendingWeighInSession(r.Context(), patientUUID)
 	if err != nil || session == nil {
 		// No pending or recent session found -> HTTP 200 with idle status

@@ -178,16 +178,6 @@ func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, sess
 }
 
 func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, patientID uuid.UUID) (*domain.ActiveWeighInSession, error) {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
-
-	// Bypass RLS for checking session status
-	tx.Exec(ctx, "SET LOCAL RESET ALL")
-	tx.Exec(ctx, "SELECT set_config('role', 'postgres', true)")
-
 	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
 	          FROM kinesys.active_weigh_in_sessions 
 			  WHERE patient_id = $1 
@@ -195,35 +185,25 @@ func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, 
 			  ORDER BY updated_at DESC LIMIT 1`
 	
 	var session domain.ActiveWeighInSession
-	err = tx.QueryRow(ctx, query, patientID).Scan(
+	err := r.db.QueryRow(ctx, query, patientID).Scan(
 		&session.ID, &session.TenantID, &session.PatientID, &session.Status,
 		&session.MetricsPayload, &session.CreatedAt, &session.ExpiresAt, &session.UpdatedAt,
 	)
 	if err != nil {
-		log.Printf("[WITHINGS] No se encontró sesión PENDING/COMPLETED para patient_id=%s", patientID)
+		log.Printf("[WITHINGS] No se encontró sesión PENDING/COMPLETED en BD para patient_id=%s: %v", patientID, err)
 		return nil, err
 	}
 	return &session, nil
 }
 
 func (r *anthropometryRepository) GetLatestPendingWeighInSession(ctx context.Context) (*domain.ActiveWeighInSession, error) {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
-
-	// Bypass RLS for anonymous webhook connection
-	tx.Exec(ctx, "SET LOCAL RESET ALL")
-	tx.Exec(ctx, "SELECT set_config('role', 'postgres', true)") // Attempt to use postgres role to bypass RLS
-
 	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
 	          FROM kinesys.active_weigh_in_sessions 
-			  WHERE status = 'pending' AND expires_at > NOW()
+			  WHERE LOWER(status) = 'pending' AND expires_at > NOW()
 			  ORDER BY created_at DESC LIMIT 1`
 	
 	var session domain.ActiveWeighInSession
-	err = tx.QueryRow(ctx, query).Scan(
+	err := r.db.QueryRow(ctx, query).Scan(
 		&session.ID, &session.TenantID, &session.PatientID, &session.Status,
 		&session.MetricsPayload, &session.CreatedAt, &session.ExpiresAt, &session.UpdatedAt,
 	)
@@ -234,27 +214,11 @@ func (r *anthropometryRepository) GetLatestPendingWeighInSession(ctx context.Con
 }
 
 func (r *anthropometryRepository) UpdateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	// Set tenant context for RLS
-	if _, err := tx.Exec(ctx, "SELECT set_config('app.current_tenant_id', $1, true)", session.TenantID.String()); err != nil {
-		return err
-	}
-
 	query := `UPDATE kinesys.active_weigh_in_sessions 
 			  SET status = $1, metrics_payload = $2, updated_at = NOW() 
 			  WHERE id = $3 RETURNING updated_at`
 	
-	err = tx.QueryRow(ctx, query,
+	return r.db.QueryRow(ctx, query,
 		session.Status, session.MetricsPayload, session.ID,
 	).Scan(&session.UpdatedAt)
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
 }

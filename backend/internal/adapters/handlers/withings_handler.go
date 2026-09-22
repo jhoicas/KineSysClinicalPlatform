@@ -81,7 +81,7 @@ func NewWithingsHardwareHandler(
 }
 
 func (h *WithingsHardwareHandler) Sync(w http.ResponseWriter, r *http.Request) {
-	patientID := strings.TrimSpace(r.PathValue("patientId"))
+	patientID := strings.TrimSpace(chi.URLParam(r, "patientId"))
 	if patientID == "" {
 		http.Error(w, "Invalid patient ID", http.StatusBadRequest)
 		return
@@ -467,7 +467,7 @@ func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Re
 }
 
 func (h *WithingsHardwareHandler) CheckSessionStatus(w http.ResponseWriter, r *http.Request) {
-	patientID := strings.TrimSpace(r.PathValue("patientId"))
+	patientID := strings.TrimSpace(chi.URLParam(r, "patientId"))
 	if patientID == "" {
 		http.Error(w, "Invalid patient ID", http.StatusBadRequest)
 		return

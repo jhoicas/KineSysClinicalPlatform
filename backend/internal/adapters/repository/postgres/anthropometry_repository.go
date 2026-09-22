@@ -69,6 +69,7 @@ func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, sess
 	query := `INSERT INTO active_weigh_in_sessions (tenant_id, patient_id, status, expires_at)
 	          VALUES ($1, $2, $3, $4) RETURNING id, created_at, updated_at`
 	
+	// FIX: ensure we use tx.QueryRow and maintain strict $1=tenant, $2=patient order
 	err = tx.QueryRow(ctx, query,
 		session.TenantID, session.PatientID, session.Status, session.ExpiresAt,
 	).Scan(&session.ID, &session.CreatedAt, &session.UpdatedAt)
@@ -114,12 +115,27 @@ func (r *anthropometryRepository) GetLatestPendingWeighInSession(ctx context.Con
 }
 
 func (r *anthropometryRepository) UpdateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Set tenant context for RLS
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.current_tenant_id', $1, true)", session.TenantID.String()); err != nil {
+		return err
+	}
+
 	query := `UPDATE active_weigh_in_sessions 
-	          SET status = $1, metrics_payload = $2, updated_at = NOW() 
+			  SET status = $1, metrics_payload = $2, updated_at = NOW() 
 			  WHERE id = $3 RETURNING updated_at`
 	
-	return r.db.QueryRow(ctx, query,
+	err = tx.QueryRow(ctx, query,
 		session.Status, session.MetricsPayload, session.ID,
 	).Scan(&session.UpdatedAt)
-}
+	if err != nil {
+		return err
+	}
 
+	return tx.Commit(ctx)
+}

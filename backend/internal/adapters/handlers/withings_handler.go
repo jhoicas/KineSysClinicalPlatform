@@ -667,15 +667,57 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 
 	pocMutex.Lock()
 	if pocSessionActive {
-		// Save everything for POC
-		pocRawPayload = make(map[string]interface{})
-		for k, v := range r.Form {
-			if len(v) == 1 {
-				pocRawPayload[k] = v[0]
-			} else {
-				pocRawPayload[k] = v
+		notification := map[string]string{}
+		for _, key := range []string{"userid", "startdate", "enddate"} {
+			if val := r.Form.Get(key); val != "" {
+				notification[key] = val
 			}
 		}
+
+		pocRawPayload = map[string]interface{}{
+			"notification": notification,
+		}
+
+		if h.accessToken != "" {
+			measureForm := url.Values{
+				"action":       {"getmeas"},
+				"access_token": {h.accessToken},
+				"meastypes":    {"1,5,6,8,11,76,77,88,170"},
+			}
+			if startDate := r.Form.Get("startdate"); startDate != "" {
+				measureForm.Set("startdate", startDate)
+			}
+			if endDate := r.Form.Get("enddate"); endDate != "" {
+				measureForm.Set("enddate", endDate)
+			}
+			if userID := r.Form.Get("userid"); userID != "" {
+				measureForm.Set("userid", userID)
+			}
+
+			measureReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://wbsapi.withings.net/measure", strings.NewReader(measureForm.Encode()))
+			if err == nil {
+				measureReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				measureResp, err := h.client.Do(measureReq)
+				if err == nil {
+					defer measureResp.Body.Close()
+					var getmeasResponse map[string]interface{}
+					if decodeErr := json.NewDecoder(measureResp.Body).Decode(&getmeasResponse); decodeErr == nil {
+						pocRawPayload["raw_withings_measurements"] = getmeasResponse
+						if rawBytes, marshalErr := json.Marshal(getmeasResponse); marshalErr == nil {
+							var parsedResponse withingsResponse
+							if unmarshalErr := json.Unmarshal(rawBytes, &parsedResponse); unmarshalErr == nil {
+								pocRawPayload["parsed_metrics"] = parseWithingsMeasures(parsedResponse.Body.MeasureGroups)
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if _, exists := pocRawPayload["parsed_metrics"]; !exists {
+			pocRawPayload["parsed_metrics"] = map[string]float64{}
+		}
+
 		pocSessionActive = false
 		log.Printf("[WITHINGS POC] ¡Payload de prueba capturado con éxito!")
 		pocMutex.Unlock()

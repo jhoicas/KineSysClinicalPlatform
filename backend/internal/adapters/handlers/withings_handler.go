@@ -484,7 +484,7 @@ func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Re
 		ExpiresAt: time.Now().Add(3 * time.Minute),
 	}
 
-	log.Printf("Iniciando sesión para paciente: %s", patientUUID)
+	log.Printf("[WITHINGS] Sesión PENDING creada para paciente %s. Expirará a las %s", session.PatientID, session.ExpiresAt)
 
 	if err := h.anthropometrySvc.CreateWeighInSession(r.Context(), session); err != nil {
 		fmt.Printf("Error detallado al crear sesión: %v\n", err)

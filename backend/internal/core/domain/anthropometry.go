@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -100,13 +101,13 @@ type BmrResult struct {
 }
 
 type ActiveWeighInSession struct {
-	ID             uuid.UUID `json:"id"`
-	TenantID       uuid.UUID `json:"tenant_id"`
-	PatientID      uuid.UUID `json:"patient_id"`
-	Status         string    `json:"status"` // "pending", "completed", "expired"
-	MetricsPayload []byte    `json:"metrics_payload,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	ExpiresAt      time.Time `json:"expires_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	TenantID       uuid.UUID       `json:"tenant_id"`
+	PatientID      uuid.UUID       `json:"patient_id"`
+	Status         string          `json:"status"` // "pending", "completed", "expired"
+	MetricsPayload json.RawMessage `json:"metrics_payload,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+	ExpiresAt      time.Time       `json:"expires_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
 }
 

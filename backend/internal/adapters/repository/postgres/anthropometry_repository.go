@@ -161,6 +161,7 @@ func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, sess
 	)
 	ON CONFLICT (tenant_id, patient_id) DO UPDATE SET
 		status = EXCLUDED.status,
+		metrics_payload = NULL,
 		expires_at = EXCLUDED.expires_at,
 		updated_at = NOW()
 	RETURNING id, created_at, updated_at`
@@ -189,7 +190,8 @@ func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, 
 
 	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
 	          FROM kinesys.active_weigh_in_sessions 
-			  WHERE patient_id = $1 AND LOWER(status) = 'pending'
+			  WHERE patient_id = $1 
+			    AND (LOWER(status) = 'pending' OR (LOWER(status) = 'completed' AND updated_at > NOW() - INTERVAL '10 minutes'))
 			  ORDER BY updated_at DESC LIMIT 1`
 	
 	var session domain.ActiveWeighInSession
@@ -198,7 +200,7 @@ func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, 
 		&session.MetricsPayload, &session.CreatedAt, &session.ExpiresAt, &session.UpdatedAt,
 	)
 	if err != nil {
-		log.Printf("[WITHINGS] No se encontró sesión PENDING para patient_id=%s", patientID)
+		log.Printf("[WITHINGS] No se encontró sesión PENDING/COMPLETED para patient_id=%s", patientID)
 		return nil, err
 	}
 	return &session, nil

@@ -187,7 +187,7 @@ export const api = {
         `/api/v1/patients/${patientId}/hardware/withings/start`,
       ),
     checkWithingsSession: (patientId: string) =>
-      request<{ status: string; metrics_payload?: string }>(
+      request<{ status: string; metrics_payload?: any }>(
         'GET',
         `/api/v1/patients/${patientId}/hardware/withings/status`,
       ),

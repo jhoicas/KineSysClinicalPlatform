@@ -586,6 +586,19 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 		_ = h.anthropometrySvc.UpdateWeighInSession(ctx, pendingSession)
 		log.Printf("[WITHINGS SESSION COMPLETED] Sesión %s completada para patient_id=%s", pendingSession.ID, patientUUID)
 	}
+
+	if h.db != nil {
+		res, err := h.db.Exec(ctx, `
+			UPDATE kinesys.active_weigh_in_sessions
+			SET status = 'completed', metrics_payload = $1, updated_at = NOW()
+			WHERE patient_id = $2 AND LOWER(status) = 'pending'
+		`, dataJSON, patientUUID)
+		if err == nil {
+			if rows := res.RowsAffected(); rows > 0 {
+				log.Printf("[WITHINGS SESSION COMPLETED DB] %d sesión(es) pendientes actualizadas a completed para patient_id=%s", rows, patientUUID)
+			}
+		}
+	}
 }
 
 func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {

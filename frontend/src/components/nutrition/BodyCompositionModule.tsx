@@ -114,7 +114,23 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
         try {
           const response = await api.hardware.checkWithingsSession(patient.id);
           if (response.data?.status === 'completed' && response.data.metrics_payload) {
-            const reading = JSON.parse(response.data.metrics_payload);
+            let reading: any = null;
+            if (typeof response.data.metrics_payload === 'object') {
+              reading = response.data.metrics_payload;
+            } else if (typeof response.data.metrics_payload === 'string') {
+              try {
+                reading = JSON.parse(response.data.metrics_payload);
+              } catch {
+                try {
+                  reading = JSON.parse(atob(response.data.metrics_payload));
+                } catch (e) {
+                  console.error('Error parsing metrics payload:', e);
+                }
+              }
+            }
+
+            if (!reading) return;
+
             const now = new Date();
             const timeStr = `${String(now.getDate()).padStart(2, '0')}-${String(
               now.getMonth() + 1
@@ -123,26 +139,53 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
               '0'
             )}:${String(now.getMinutes()).padStart(2, '0')}`;
 
+            const fatPct = Number(reading.fat_ratio_percent ?? reading.body_fat_percentage ?? reading.body_fat_pct) || composition.porcentajeGrasaCorporal.value;
+            const fatMin = patient.gender === 'F' ? 18 : 10;
+            const fatMax = patient.gender === 'F' ? 28 : 20;
+            const fatStatus: RangeIndicator['status'] = fatPct < fatMin ? 'Bajo' : fatPct <= fatMax ? 'Adecuada' : 'Elevado';
+
             const updated: BodyCompositionBIA = {
               ...composition,
               deviceModel: 'Withings Body Scan',
               sourceMode: 'hardware_auto',
               lastSyncTimestamp: timeStr,
-              pesoKg: { ...composition.pesoKg, value: reading.weight_kg ?? composition.pesoKg.value },
+              pesoKg: {
+                ...composition.pesoKg,
+                value: Number(reading.weight_kg) || composition.pesoKg.value,
+              },
               porcentajeGrasaCorporal: {
                 ...composition.porcentajeGrasaCorporal,
-                value: reading.body_fat_pct ?? composition.porcentajeGrasaCorporal.value,
+                value: fatPct,
+                status: fatStatus,
+              },
+              masaMuscularEsqueleticaKg: {
+                ...composition.masaMuscularEsqueleticaKg,
+                value: Number(reading.muscle_mass_kg) || composition.masaMuscularEsqueleticaKg.value,
+              },
+              masaGrasaKg: {
+                ...composition.masaGrasaKg,
+                value: Number(reading.fat_mass_kg) || composition.masaGrasaKg.value,
               },
               otherIndicators: {
                 ...composition.otherIndicators,
+                aguaCorporalTotalL: {
+                  ...composition.otherIndicators.aguaCorporalTotalL,
+                  value: Number(reading.hydration_kg) || composition.otherIndicators.aguaCorporalTotalL.value,
+                },
+                mineralesKg: {
+                  ...composition.otherIndicators.mineralesKg,
+                  value: Number(reading.bone_mass_kg) || composition.otherIndicators.mineralesKg.value,
+                },
                 grasaVisceralNivel: {
                   ...composition.otherIndicators.grasaVisceralNivel,
-                  value: reading.visceral_fat_index ?? composition.otherIndicators.grasaVisceralNivel.value,
+                  value: Number(reading.visceral_fat_index) || composition.otherIndicators.grasaVisceralNivel.value,
                 },
               },
+              evaluatorNotes: 'Medición sincronizada automáticamente desde Báscula Withings',
             };
 
             setComposition(updated);
+            setManualMode(false);
             onSave(updated);
             setSyncFeedback('✓ Datos sincronizados exitosamente desde Withings Body Scan');
             setTimeout(() => setSyncFeedback(null), 4000);
@@ -340,10 +383,14 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
               id="btn-sync-hardware"
               onClick={handleHardwareSync}
               disabled={isListening}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all disabled:opacity-50"
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold text-white shadow-xs transition-all cursor-pointer ${
+                isListening
+                  ? 'bg-amber-600 hover:bg-amber-700 animate-pulse'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
+              } disabled:opacity-75`}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isListening ? 'animate-spin' : ''}`} />
-              {isListening ? 'Esperando Medición...' : 'Iniciar Pesaje'}
+              {isListening ? 'Esperando Medición (Báscula)...' : 'Capturar con Báscula'}
             </button>
 
             <button

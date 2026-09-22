@@ -35,6 +35,7 @@ import { TopNavBar } from '../components/layout/TopNavBar';
 import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
 import { EcoExportActions } from '../components/common/EcoExportActions';
 import { MedicalHistoryModal } from '../components/patients/MedicalHistoryModal';
+import { api } from '../services/apiClient';
 
 interface NutritionistDashboardProps {
   onNavigate: (path: string) => void;
@@ -94,6 +95,10 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
     patient: PacienteClinico;
     evaluation: EvaluacionAntropometrica;
   } | null>(null);
+
+  // Withings Scale Live Weigh-in State
+  const [isWeighInActive, setIsWeighInActive] = useState(false);
+  const [withingsStatusMessage, setWithingsStatusMessage] = useState<string | null>(null);
 
   const tenantId = tenant?.id || user?.tenant_id || 'tenant_kine_001';
   const nutritionistId = user?.id || 'prof_nutri_01';
@@ -232,6 +237,78 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
     window.addEventListener('kinesys_data_updated', handleDataUpdate);
     return () => window.removeEventListener('kinesys_data_updated', handleDataUpdate);
   }, [activePatient?.id, tenantId]);
+
+  // Polling para sesión de pesaje activa en Báscula Withings
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (isWeighInActive && activePatient?.id) {
+      interval = setInterval(async () => {
+        try {
+          const response = await api.hardware.checkWithingsSession(activePatient.id);
+          if (response.data?.status === 'completed') {
+            let reading: any = null;
+            if (response.data.metrics_payload) {
+              if (typeof response.data.metrics_payload === 'object') {
+                reading = response.data.metrics_payload;
+              } else if (typeof response.data.metrics_payload === 'string') {
+                try {
+                  reading = JSON.parse(response.data.metrics_payload);
+                } catch {
+                  try {
+                    reading = JSON.parse(atob(response.data.metrics_payload));
+                  } catch (e) {
+                    console.error('Error al decodificar payload Withings:', e);
+                  }
+                }
+              }
+            }
+
+            // Recargar datos clínicos del paciente desde Supabase / Backend
+            await loadPatientNutritionData(activePatient.id);
+
+            const weightStr = reading?.weight_kg ? `${reading.weight_kg} kg` : '';
+            const fatStr = (reading?.fat_ratio_percent ?? reading?.body_fat_percentage ?? reading?.body_fat_pct)
+              ? `, ${reading.fat_ratio_percent ?? reading.body_fat_percentage ?? reading.body_fat_pct}% grasa`
+              : '';
+            
+            setWithingsStatusMessage(`⚡ Medición recibida con éxito desde Báscula Withings${weightStr ? ` (${weightStr}${fatStr})` : ''}`);
+            setIsWeighInActive(false);
+            setActiveTab('bia');
+          } else if (response.data?.status === 'expired') {
+            setWithingsStatusMessage('La sesión de pesaje en la báscula Withings ha expirado (3 min).');
+            setIsWeighInActive(false);
+          }
+        } catch (error) {
+          console.error('Error en sondeo de sesión Withings:', error);
+        }
+      }, 3000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isWeighInActive, activePatient?.id]);
+
+  const handleStartWithingsWeighIn = async () => {
+    if (!activePatient?.id) return;
+    setIsWeighInActive(true);
+    setWithingsStatusMessage('Iniciando sesión de pesaje en báscula Withings... (3 minutos máx)');
+    try {
+      const response = await api.hardware.startWithingsSession(activePatient.id);
+      if (response.error || !response.data) {
+        throw new Error(response.error || 'No se pudo iniciar la sesión de pesaje');
+      }
+      setWithingsStatusMessage('Báscula lista. Por favor, sube al paciente a la báscula Withings.');
+    } catch (err: any) {
+      console.error('Error iniciando sesión Withings:', err);
+      setWithingsStatusMessage(`Error: ${err.message || 'No se pudo conectar con la báscula'}`);
+      setIsWeighInActive(false);
+    }
+  };
+
+  const handleCancelWeighIn = () => {
+    setIsWeighInActive(false);
+    setWithingsStatusMessage(null);
+  };
 
   // Handlers: columnas fijas + data JSONB (schema 004). Log detallado si PostgREST rechaza el payload.
   const handleSaveEvaluation = async (record: EvaluacionAntropometrica) => {
@@ -546,6 +623,22 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 )}
                 <button
                   type="button"
+                  onClick={handleStartWithingsWeighIn}
+                  disabled={isWeighInActive}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                    isWeighInActive
+                      ? 'bg-amber-500/10 text-amber-700 border-amber-500/30 ring-2 ring-amber-400/40 animate-pulse'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
+                  }`}
+                  title="Iniciar sesión de pesaje activa en la báscula Withings"
+                >
+                  <span className={`material-symbols-outlined text-sm ${isWeighInActive ? 'animate-spin' : ''}`}>
+                    {isWeighInActive ? 'sync' : 'scale'}
+                  </span>
+                  <span>{isWeighInActive ? 'Báscula en Espera...' : 'Capturar con Báscula'}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setIsMedicalHistoryOpen(true)}
                   className="px-3 py-1.5 bg-transparent hover:bg-primary/10 text-primary rounded-xl text-xs font-bold transition-colors border border-primary/40 flex items-center gap-1.5 cursor-pointer"
                   title="Ver historia clínica del paciente activo"
@@ -564,6 +657,38 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 </button>
               </div>
             </div>
+
+            {/* Notificaciones y estado de pesaje Withings */}
+            {isWeighInActive && (
+              <div className="bg-emerald-50 border border-emerald-300/80 rounded-2xl p-3 px-4 flex items-center justify-between gap-3 text-xs text-emerald-900 shadow-xs animate-pulse">
+                <div className="flex items-center gap-2.5">
+                  <span className="material-symbols-outlined text-emerald-600 animate-spin text-base">sync</span>
+                  <span>
+                    <strong>Sesión de pesaje activa en Báscula Withings.</strong> Pídele al paciente que se suba a la báscula descalzo... (Sondeando cada 3s)
+                  </span>
+                </div>
+                <button
+                  onClick={handleCancelWeighIn}
+                  className="text-2xs font-bold text-emerald-800 hover:text-emerald-950 underline cursor-pointer"
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
+            {withingsStatusMessage && !isWeighInActive && (
+              <div className="bg-emerald-100 border border-emerald-300 rounded-2xl p-3 px-4 flex items-center justify-between gap-3 text-xs text-emerald-900 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-emerald-700 text-base">check_circle</span>
+                  <span>{withingsStatusMessage}</span>
+                </div>
+                <button
+                  onClick={() => setWithingsStatusMessage(null)}
+                  className="text-xs text-emerald-800 hover:text-emerald-950 font-bold cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* Tab Navigation */}
             <div className="flex items-center gap-2 border-b border-outline-variant/30 pb-2 overflow-x-auto">

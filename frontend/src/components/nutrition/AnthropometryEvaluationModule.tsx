@@ -73,8 +73,8 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
   const [equation, setEquation] = useState<IsaKEquationId>(
     (draftForPatient?.equation as IsaKEquationId) || 'faulkner',
   );
-  const [weightKg, setWeightKg] = useState(draftForPatient?.weightKg ?? 0);
-  const [heightCm, setHeightCm] = useState(draftForPatient?.heightCm ?? patient.height_cm ?? 0);
+  const [weightKg, setWeightKg] = useState((draftForPatient?.weightKg && draftForPatient.weightKg > 0) ? draftForPatient.weightKg : (historyEvaluations[0]?.weight_kg ?? 0));
+  const [heightCm, setHeightCm] = useState((draftForPatient?.heightCm && draftForPatient.heightCm > 0) ? draftForPatient.heightCm : (patient.height_cm ?? 0));
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
 
@@ -190,8 +190,8 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
       evaluation_date: new Date().toISOString().slice(0, 10),
       age,
       gender,
-      weight_kg: weightKg,
-      height_cm: heightCm,
+      weight_kg: weightKg > 0 ? weightKg : (historyEvaluations[0]?.weight_kg || 0),
+      height_cm: heightCm > 0 ? heightCm : (patient.height_cm || 0),
       activity_factor: activity,
       skinfold_triceps_mm: measures.triceps || 0,
       skinfold_subscapular_mm: measures.subscapular || 0,

@@ -16,7 +16,7 @@ export interface Patient {
   physiotherapistId: string;
   nutritionist?: string;
   nutritionistId?: string;
-  heightCm?: number;
+  height_cm?: number;
   weightKg?: number;
   evalNumber?: string;
   isakCertification?: string;

@@ -153,7 +153,7 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
   }, [isListening, patient.id, composition, onSave]);
 
   // Calculate BMI
-  const heightM = (patient.heightCm || 0) / 100;
+  const heightM = (patient.height_cm || 0) / 100;
   const bmi =
     heightM > 0 && composition.pesoKg.value > 0
       ? Number((composition.pesoKg.value / (heightM * heightM)).toFixed(1))
@@ -414,8 +414,8 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
             <span className="font-semibold text-slate-700">{patient.sportOrActivity}</span>
           </div>
           <div>
-            <span className="text-2xs text-slate-400 block font-medium">Estatura:</span>
-            <span className="font-bold text-slate-800">{patient.heightCm || '—'} cm</span>
+            <span className="text-2xs text-slate-400 block font-medium">Estatura</span>
+            <span className="font-bold text-slate-800">{patient.height_cm || '—'} cm</span>
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Peso:</span>

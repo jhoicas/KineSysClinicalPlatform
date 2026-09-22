@@ -42,7 +42,7 @@ export function toCoreBodyPatient(
     physiotherapistId: '',
     nutritionist: opts?.nutritionistName,
     nutritionistId: opts?.nutritionistId,
-    heightCm: opts?.heightCm ?? p.height_cm,
+    height_cm: opts?.heightCm ?? p.height_cm,
     weightKg: opts?.weightKg,
     evalNumber: '1/1',
     isakCertification: 'ISAK Nivel 3',

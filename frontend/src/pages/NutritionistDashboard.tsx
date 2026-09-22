@@ -603,7 +603,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                       age: corePatient.age,
                       gender,
                       weightKg: corePatient.weightKg || 0,
-                      heightCm: corePatient.heightCm || 0,
+                      heightCm: corePatient.height_cm || 0,
                     }),
                   );
                   setActiveTab('planificador');

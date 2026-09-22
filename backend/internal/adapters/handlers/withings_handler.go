@@ -21,9 +21,12 @@ import (
 )
 
 type WithingsHardwareHandler struct {
+	mu               sync.RWMutex
 	accessToken      string
 	refreshToken     string
 	userID           string
+	lastAccessToken  string
+	userTokens       map[string]string
 	apiBaseURL       string
 	clientID         string
 	clientSecret     string
@@ -83,6 +86,8 @@ func NewWithingsHardwareHandler(
 		accessToken:      accessToken,
 		refreshToken:     refreshToken,
 		userID:           userID,
+		lastAccessToken:  accessToken,
+		userTokens:       map[string]string{},
 		apiBaseURL:       strings.TrimRight(apiBaseURL, "/"),
 		clientID:         clientID,
 		clientSecret:     clientSecret,
@@ -91,6 +96,21 @@ func NewWithingsHardwareHandler(
 		patientService:   patientService,
 		anthropometrySvc: anthropometrySvc,
 	}
+}
+
+func maskToken(t string) string {
+	if t == "" {
+		return ""
+	}
+	if len(t) <= 8 {
+		return t
+	}
+	prefixLen := 4
+	suffixLen := 4
+	if len(t) <= prefixLen+suffixLen {
+		return t[:prefixLen] + "..." + t[len(t)-suffixLen:]
+	}
+	return t[:prefixLen] + "..." + t[len(t)-suffixLen:]
 }
 
 func (h *WithingsHardwareHandler) resolveTenantID(ctx context.Context, userIDStr string) uuid.UUID {
@@ -269,8 +289,16 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 	h.accessToken = payload.Body.AccessToken
 	h.refreshToken = payload.Body.RefreshToken
 
-	// Log tokens for verification
-	fmt.Printf("[Withings OAuth] Linked Successfully! UserID: %s, AccessToken: %s, RefreshToken: %s\n", h.userID, h.accessToken, h.refreshToken)
+	h.mu.Lock()
+	if h.userTokens == nil {
+		h.userTokens = make(map[string]string)
+	}
+	h.userTokens[payload.Body.UserID] = payload.Body.AccessToken
+	h.lastAccessToken = payload.Body.AccessToken
+	h.mu.Unlock()
+
+	log.Printf("[WITHINGS OAUTH] Token guardado en memoria para userid=%s: %s...", payload.Body.UserID, payload.Body.AccessToken[:min(10, len(payload.Body.AccessToken))])
+	log.Printf("[WITHINGS OAUTH] Link exitoso para userid=%s", payload.Body.UserID)
 
 	// HTML Response
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -678,10 +706,26 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 			"notification": notification,
 		}
 
-		if h.accessToken != "" {
+		userid := r.Form.Get("userid")
+		tokenUsed := ""
+		h.mu.RLock()
+		if userid != "" {
+			if token, ok := h.userTokens[userid]; ok {
+				tokenUsed = token
+			}
+		}
+		if tokenUsed == "" {
+			tokenUsed = h.lastAccessToken
+		}
+		h.mu.RUnlock()
+
+		if tokenUsed == "" {
+			log.Printf("[WITHINGS GETMEAS ERROR] No hay access_token disponible para userid=%s", userid)
+		} else {
+			log.Printf("[WITHINGS GETMEAS] Ejecutando getmeas para userid=%s usando token=%s...", userid, maskToken(tokenUsed))
 			measureForm := url.Values{
 				"action":       {"getmeas"},
-				"access_token": {h.accessToken},
+				"access_token": {tokenUsed},
 				"meastypes":    {"1,5,6,8,11,76,77,88,170"},
 			}
 			if startDate := r.Form.Get("startdate"); startDate != "" {
@@ -690,8 +734,8 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 			if endDate := r.Form.Get("enddate"); endDate != "" {
 				measureForm.Set("enddate", endDate)
 			}
-			if userID := r.Form.Get("userid"); userID != "" {
-				measureForm.Set("userid", userID)
+			if userid != "" {
+				measureForm.Set("userid", userid)
 			}
 
 			measureReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://wbsapi.withings.net/measure", strings.NewReader(measureForm.Encode()))

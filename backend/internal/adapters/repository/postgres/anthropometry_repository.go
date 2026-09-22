@@ -98,8 +98,16 @@ func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, sess
 		return err
 	}
 
-	query := `INSERT INTO kinesys.active_weigh_in_sessions (tenant_id, patient_id, status, expires_at)
-	          VALUES ($1, $2, $3, $4) RETURNING id, created_at, updated_at`
+	query := `INSERT INTO kinesys.active_weigh_in_sessions (
+		tenant_id, patient_id, status, expires_at
+	) VALUES (
+		$1, $2, $3, $4
+	)
+	ON CONFLICT (tenant_id, patient_id) DO UPDATE SET
+		status = EXCLUDED.status,
+		expires_at = EXCLUDED.expires_at,
+		updated_at = NOW()
+	RETURNING id, created_at, updated_at`
 
 	// FIX: ensure we use tx.QueryRow and maintain strict $1=tenant, $2=patient order
 	err = tx.QueryRow(ctx, query,

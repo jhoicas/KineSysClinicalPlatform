@@ -95,11 +95,13 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
 
   const patientHistory = historyEvaluations.filter((e) => e.patient_id === patient.id);
 
+  const activeHeight = heightCm || patient?.height_cm || 0;
+
   const { somatotype, composition, bmr, isLoading, error } = useAnthropometryCalculations({
     gender,
     age_years: age,
     weight_kg: weightKg,
-    height_cm: heightCm,
+    height_cm: activeHeight,
     measures,
     equation,
   });
@@ -142,8 +144,8 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
     [measures.waist, measures.hip, gender],
   );
   const whtr = useMemo(
-    () => calculateWHtR(measures.waist || 0, heightCm),
-    [measures.waist, heightCm],
+    () => calculateWHtR(measures.waist || 0, activeHeight),
+    [measures.waist, activeHeight],
   );
   const armRatio = useMemo(
     () => calculateArmRatio(measures.arm_flexed, measures.arm_relaxed),
@@ -191,7 +193,7 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
       age,
       gender,
       weight_kg: weightKg > 0 ? weightKg : (historyEvaluations[0]?.weight_kg || 0),
-      height_cm: heightCm > 0 ? heightCm : (patient.height_cm || 0),
+      height_cm: activeHeight,
       activity_factor: activity,
       skinfold_triceps_mm: measures.triceps || 0,
       skinfold_subscapular_mm: measures.subscapular || 0,
@@ -206,7 +208,7 @@ export const AnthropometryEvaluationModule: React.FC<AnthropometryEvaluationModu
       contracted_arm_cm: measures.arm_flexed,
       thigh_cm: measures.thigh_cir,
       calf_cm: measures.calf_cir,
-      bmi: round(weightKg / ((heightCm / 100) ** 2), 1),
+      bmi: round(weightKg / ((activeHeight / 100) ** 2), 1),
       bmr_kcal: 0,
       tdee_kcal: 0,
       waist_hip_ratio: whr.ratio,

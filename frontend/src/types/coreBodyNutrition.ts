@@ -4,23 +4,23 @@ export interface Patient {
   id: string;
   name: string;
   age: number;
-  birthDate: string;
+  birth_date: string;
   gender: 'M' | 'F' | 'Otro';
-  documentId: string;
+  document_id: string;
   phone: string;
   email: string;
-  sportOrActivity: string;
-  diagnosticReason: string;
-  createdAt: string;
+  sport_or_activity: string;
+  diagnostic_reason: string;
+  created_at: string;
   physiotherapist: string;
-  physiotherapistId: string;
+  physiotherapist_id: string;
   nutritionist?: string;
-  nutritionistId?: string;
+  nutritionist_id?: string;
   height_cm?: number;
-  weightKg?: number;
-  evalNumber?: string;
-  isakCertification?: string;
-  activityLevel?: 'Sedentario' | 'Ligero' | 'Moderado (3-5 veces/semana)' | 'Alto rendimiento';
+  weight_kg?: number;
+  eval_number?: string;
+  isak_certification?: string;
+  activity_level?: 'Sedentario' | 'Ligero' | 'Moderado (3-5 veces/semana)' | 'Alto rendimiento';
 }
 
 // ==========================================

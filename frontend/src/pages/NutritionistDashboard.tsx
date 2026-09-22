@@ -602,7 +602,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                       nutritionistId,
                       age: corePatient.age,
                       gender,
-                      weightKg: corePatient.weightKg || 0,
+                      weightKg: corePatient.weight_kg || 0,
                       heightCm: corePatient.height_cm || 0,
                     }),
                   );

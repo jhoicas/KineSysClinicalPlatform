@@ -397,7 +397,7 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">ID / Documento:</span>
-            <span className="font-semibold text-slate-700">{patient.documentId}</span>
+            <span className="font-semibold text-slate-700">{patient.document_id}</span>
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Edad:</span>
@@ -411,7 +411,7 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Deporte:</span>
-            <span className="font-semibold text-slate-700">{patient.sportOrActivity}</span>
+            <span className="font-semibold text-slate-700">{patient.sport_or_activity}</span>
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Estatura</span>

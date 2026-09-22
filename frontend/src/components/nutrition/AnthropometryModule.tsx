@@ -85,7 +85,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     assessment?.generalObservations || ''
   );
 
-  const activeWeight = assessment?.weight_kg || patient.weightKg || 60;
+  const activeWeight = assessment?.weight_kg || patient.weight_kg || 60;
   const activeHeight = assessment?.height_cm || patient.height_cm || 160;
 
   const { somatotype, composition, isLoading, error } = useAnthropometryCalculations({
@@ -153,8 +153,8 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
       patientId: patient.id,
       date: new Date().toISOString().split('T')[0],
       evaluator: patient.nutritionist || 'Dra. Juliana Mesa V.',
-      evaluatorCertification: patient.isakCertification || 'ISAK Nivel 3',
-      evaluationNumber: patient.evalNumber || '1/1',
+      evaluatorCertification: patient.isak_certification || 'ISAK Nivel 3',
+      evaluationNumber: patient.eval_number || '1/1',
       skinfolds,
       activeEquation: equation,
       estimatedBodyFatPct: calculatedFatPct,
@@ -206,7 +206,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
                   Antropometría Clínica (Protocolo ISAK)
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  {patient.isakCertification || 'ISAK Nivel 3'}
+                  {patient.isak_certification || 'ISAK Nivel 3'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -240,7 +240,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Documento / ID</span>
-            <span className="font-semibold text-slate-700">{patient.documentId}</span>
+            <span className="font-semibold text-slate-700">{patient.document_id}</span>
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Edad / Género</span>
@@ -250,12 +250,12 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Deporte / Actividad</span>
-            <span className="font-semibold text-slate-700">{patient.sportOrActivity}</span>
+            <span className="font-semibold text-slate-700">{patient.sport_or_activity}</span>
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Estatura / Peso</span>
             <span className="font-bold text-slate-800">
-              {heightCm > 0 ? heightCm : '—'} cm • {patient.weightKg || '—'} kg
+              {heightCm > 0 ? heightCm : '—'} cm • {patient.weight_kg || '—'} kg
             </span>
           </div>
           <div>
@@ -267,7 +267,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Evaluación</span>
             <span className="font-semibold text-slate-700">
-              N° {patient.evalNumber || '1/1'} • 11/07/2026
+              N° {patient.eval_number || '1/1'} • 11/07/2026
             </span>
           </div>
         </div>

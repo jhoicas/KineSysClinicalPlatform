@@ -18,10 +18,21 @@ func NewAnthropometryRepository(db *pgxpool.Pool) ports.AnthropometryRepository 
 }
 
 func (r *anthropometryRepository) FindAllByPatient(ctx context.Context, patientID, tenantID uuid.UUID) ([]domain.AnthropometricEvaluation, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Set tenant context for RLS
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.current_tenant_id', $1, true)", tenantID.String()); err != nil {
+		return nil, err
+	}
+
 	query := `SELECT id, tenant_id, patient_id, professional_id, evaluation_date, weight_kg, height_cm, bmi, body_fat_percentage, muscle_mass_kg, skinfolds, circumferences, created_at, updated_at
-	          FROM anthropometric_evaluations WHERE patient_id = $1 AND tenant_id = $2 ORDER BY evaluation_date DESC`
+	          FROM kinesys.evaluaciones_antropometricas WHERE patient_id = $1 AND tenant_id = $2 ORDER BY evaluation_date DESC`
 	
-	rows, err := r.db.Query(ctx, query, patientID, tenantID)
+	rows, err := tx.Query(ctx, query, patientID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -40,18 +51,39 @@ func (r *anthropometryRepository) FindAllByPatient(ctx context.Context, patientI
 		}
 		evals = append(evals, ev)
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
 	return evals, nil
 }
 
 func (r *anthropometryRepository) Create(ctx context.Context, ev *domain.AnthropometricEvaluation) error {
-	query := `INSERT INTO anthropometric_evaluations (tenant_id, patient_id, professional_id, evaluation_date, weight_kg, height_cm, bmi, body_fat_percentage, muscle_mass_kg, skinfolds, circumferences)
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Set tenant context for RLS
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.current_tenant_id', $1, true)", ev.TenantID.String()); err != nil {
+		return err
+	}
+
+	query := `INSERT INTO kinesys.evaluaciones_antropometricas (tenant_id, patient_id, professional_id, evaluation_date, weight_kg, height_cm, bmi, body_fat_percentage, muscle_mass_kg, skinfolds, circumferences)
 	          VALUES ($1, $2, $3, COALESCE($4, NOW()), $5, $6, $7, $8, $9, $10, $11) RETURNING id, evaluation_date, created_at, updated_at`
 	
-	return r.db.QueryRow(ctx, query, 
+	err = tx.QueryRow(ctx, query, 
 		ev.TenantID, ev.PatientID, ev.ProfessionalID, ev.EvaluationDate,
 		ev.WeightKg, ev.HeightCm, ev.BMI, ev.BodyFatPercentage, ev.MuscleMassKg,
 		ev.Skinfolds, ev.Circumferences,
 	).Scan(&ev.ID, &ev.EvaluationDate, &ev.CreatedAt, &ev.UpdatedAt)
+
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error {

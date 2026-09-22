@@ -561,6 +561,48 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 		fmt.Printf("[Withings Webhook] Session %s marked as completed!\n", session.ID)
 	}
 
+	// Registrar la evaluación en kinesys.evaluaciones_antropometricas
+	evalHeight := reading.HeightCm
+	if evalHeight == nil {
+		evalHeight = patient.HeightCm
+	}
+
+	// Fallback to 0 if still nil
+	hVal := 0.0
+	if evalHeight != nil {
+		hVal = *evalHeight
+	}
+	wVal := 0.0
+	if reading.WeightKg != nil {
+		wVal = *reading.WeightKg
+	}
+
+	// Provide BMI if possible
+	var bmiVal *float64
+	if hVal > 0 && wVal > 0 {
+		bmi := wVal / ((hVal / 100) * (hVal / 100))
+		bmiVal = &bmi
+	}
+
+	eval := &domain.AnthropometricEvaluation{
+		ID:                uuid.New(),
+		TenantID:          session.TenantID,
+		PatientID:         session.PatientID,
+		ProfessionalID:    uuid.Nil, // Automatically generated from hardware, no specific professional
+		EvaluationDate:    time.Now(),
+		WeightKg:          reading.WeightKg,
+		HeightCm:          evalHeight,
+		BMI:               bmiVal,
+		BodyFatPercentage: reading.BodyFatPct,
+		MuscleMassKg:      reading.MuscleMassKg,
+	}
+
+	if err := h.anthropometrySvc.CreateEvaluation(context.Background(), eval); err != nil {
+		fmt.Printf("[Withings Webhook] Failed to save anthropometric evaluation: %v\n", err)
+	} else {
+		fmt.Printf("[Withings Webhook] Saved anthropometric evaluation for patient %s\n", session.PatientID)
+	}
+
 	// Always return 200 OK to Withings to acknowledge receipt
 	w.WriteHeader(http.StatusOK)
 }

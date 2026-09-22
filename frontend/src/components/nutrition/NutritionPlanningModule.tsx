@@ -40,14 +40,14 @@ const EMPTY_MEALS: NutritionPlan['meals'] = [
 ];
 
 function buildEmptyPlan(patient: Patient): NutritionPlan {
-  const weight = patient.weightKg || 70;
+  const weight = patient.weight_kg || 70;
   const targetCalories = 0;
   return {
     id: crypto.randomUUID(),
     patientId: patient.id,
     date: new Date().toISOString().slice(0, 10),
     nutritionist: patient.nutritionist || '',
-    nutritionistId: patient.nutritionistId || '',
+    nutritionistId: patient.nutritionist_id || '',
     targetObjective: 'Recomposición Corporal',
     basalMetabolicRateKcal: 0,
     totalDailyEnergyExpenditureKcal: 0,
@@ -90,10 +90,10 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
   const totalCarbsG = Number(allEntries.reduce((acc, curr) => acc + curr.carbsTotalG, 0).toFixed(1));
 
   const proteinPerKg = useMemo(() => {
-    const w = patient.weightKg;
+    const w = patient.weight_kg;
     if (!w || w <= 0) return null;
     return Number((totalProteinG / w).toFixed(1));
-  }, [patient.weightKg, totalProteinG]);
+  }, [patient.weight_kg, totalProteinG]);
 
   /** Catálogo real kinesys.food_catalog (valores por 100 g). */
   const handleAddFoodFromCatalog = (food: FoodItem, grams: number) => {

@@ -85,11 +85,14 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     assessment?.generalObservations || ''
   );
 
+  const activeWeight = assessment?.weightKg || patient.weightKg || 60;
+  const activeHeight = assessment?.heightCm || patient.height_cm || 160;
+
   const { somatotype, composition, isLoading, error } = useAnthropometryCalculations({
     gender: patient.gender === 'F' ? 'female' : 'male',
     age_years: patient.age || 30,
-    weight_kg: patient.weightKg || 60,
-    height_cm: patient.height_cm || 160,
+    weight_kg: activeWeight,
+    height_cm: activeHeight,
     measures: {
       triceps: skinfolds.triceps,
       subscapular: skinfolds.subescapular,
@@ -124,7 +127,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
 
   // 2. Perimeters Derived Indices:
   const whr = perimeters.cadera > 0 ? Number((perimeters.cintura / perimeters.cadera).toFixed(2)) : 0;
-  const heightCm = patient.height_cm || 0;
+  const heightCm = activeHeight;
   const whtr = heightCm > 0 ? Number((perimeters.cintura / heightCm).toFixed(2)) : 0;
   const armRatio = perimeters.brazoRelajado > 0 ? Number((perimeters.brazoContraido / perimeters.brazoRelajado).toFixed(2)) : 0;
 

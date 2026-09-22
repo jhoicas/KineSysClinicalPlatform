@@ -55,12 +55,28 @@ func (r *anthropometryRepository) Create(ctx context.Context, ev *domain.Anthrop
 }
 
 func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Set tenant context for RLS
+	if _, err := tx.Exec(ctx, "SET LOCAL app.current_tenant_id = $1", session.TenantID.String()); err != nil {
+		return err
+	}
+
 	query := `INSERT INTO active_weigh_in_sessions (tenant_id, patient_id, status, expires_at)
 	          VALUES ($1, $2, $3, $4) RETURNING id, created_at, updated_at`
 	
-	return r.db.QueryRow(ctx, query,
+	err = tx.QueryRow(ctx, query,
 		session.TenantID, session.PatientID, session.Status, session.ExpiresAt,
 	).Scan(&session.ID, &session.CreatedAt, &session.UpdatedAt)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, patientID, tenantID uuid.UUID) (*domain.ActiveWeighInSession, error) {

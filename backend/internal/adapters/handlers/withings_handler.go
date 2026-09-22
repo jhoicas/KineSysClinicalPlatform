@@ -453,7 +453,8 @@ func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := h.anthropometrySvc.CreateWeighInSession(r.Context(), session); err != nil {
-		http.Error(w, "Failed to start session", http.StatusInternalServerError)
+		fmt.Printf("Error detallado al crear sesión: %v\n", err)
+		http.Error(w, fmt.Sprintf("Failed to start session: %v", err), http.StatusInternalServerError)
 		return
 	}
 

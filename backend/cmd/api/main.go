@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kinesys/clinical-platform-backend/internal/adapters/handlers"
 	"github.com/kinesys/clinical-platform-backend/internal/adapters/repository"
@@ -27,7 +28,16 @@ func main() {
 
 	// Initialize Database Connection Pool
 	ctx := context.Background()
-	dbPool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	
+	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("Unable to parse database config: %v\n", err)
+	}
+	
+	// FIX: Disable statement caching for PgBouncer transaction mode compatibility
+	poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+
+	dbPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v\n", err)
 	}

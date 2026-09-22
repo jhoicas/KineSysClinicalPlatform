@@ -627,29 +627,44 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 			}
 			defer resp.Body.Close()
 
-			var tokenResp struct {
+			var oauthResp struct {
 				Status int `json:"status"`
 				Body   struct {
 					UserID      string `json:"userid"`
 					AccessToken string `json:"access_token"`
 				} `json:"body"`
 			}
-			if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+			if err := json.NewDecoder(resp.Body).Decode(&oauthResp); err != nil {
 				http.Error(w, "Failed to decode token response", http.StatusInternalServerError)
 				return
 			}
 
-			if tokenResp.Status != 0 || tokenResp.Body.AccessToken == "" {
-				http.Error(w, fmt.Sprintf("Withings API error on token exchange: status %d", tokenResp.Status), http.StatusBadGateway)
+			if oauthResp.Status != 0 || oauthResp.Body.AccessToken == "" {
+				http.Error(w, fmt.Sprintf("Withings API error on token exchange: status %d", oauthResp.Status), http.StatusBadGateway)
 				return
 			}
+
+			userid := oauthResp.Body.UserID
+			accessToken := oauthResp.Body.AccessToken
+
+			h.mu.Lock()
+			if h.userTokens == nil {
+				h.userTokens = make(map[string]string)
+			}
+			h.userTokens[userid] = accessToken
+			h.lastAccessToken = accessToken
+			h.userID = userid
+			h.accessToken = accessToken
+			h.mu.Unlock()
+
+			log.Printf("[WITHINGS OAUTH OK] Access Token real asignado para userid=%s (longitud: %d)", userid, len(accessToken))
 
 			// Step 2: Subscribe webhook
 			subData := url.Values{}
 			subData.Set("action", "subscribe")
 			subData.Set("callbackurl", "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/webhook")
 			subData.Set("appli", "1")
-			subData.Set("access_token", tokenResp.Body.AccessToken)
+			subData.Set("access_token", accessToken)
 
 			subResp, err := h.client.PostForm("https://wbsapi.withings.net/notify", subData)
 			if err != nil {
@@ -658,7 +673,7 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 			}
 			defer subResp.Body.Close()
 
-			log.Printf("[WITHINGS OAUTH] Suscripción exitosa para userid=%s", tokenResp.Body.UserID)
+			log.Printf("[WITHINGS OAUTH] Suscripción exitosa para userid=%s", userid)
 
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kinesys/clinical-platform-backend/internal/core/domain"
 	"github.com/kinesys/clinical-platform-backend/internal/core/ports"
 	"github.com/kinesys/clinical-platform-backend/internal/middleware"
@@ -25,6 +26,7 @@ type WithingsHardwareHandler struct {
 	clientID         string
 	clientSecret     string
 	client           *http.Client
+	db               *pgxpool.Pool
 	patientService   ports.PatientService
 	anthropometrySvc ports.AnthropometryService
 }
@@ -64,6 +66,7 @@ type WithingsHardwareReading struct {
 
 func NewWithingsHardwareHandler(
 	accessToken, refreshToken, userID, apiBaseURL, clientID, clientSecret string,
+	db *pgxpool.Pool,
 	patientService ports.PatientService,
 	anthropometrySvc ports.AnthropometryService,
 ) *WithingsHardwareHandler {
@@ -75,9 +78,30 @@ func NewWithingsHardwareHandler(
 		clientID:         clientID,
 		clientSecret:     clientSecret,
 		client:           &http.Client{Timeout: 20 * time.Second},
+		db:               db,
 		patientService:   patientService,
 		anthropometrySvc: anthropometrySvc,
 	}
+}
+
+func (h *WithingsHardwareHandler) resolveTenantID(ctx context.Context, userIDStr string) uuid.UUID {
+	defaultTenant := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	if h.db == nil || userIDStr == "" {
+		return defaultTenant
+	}
+
+	var tidStr string
+	err := h.db.QueryRow(ctx, "SELECT tenant_id::text FROM kinesys.users WHERE id = $1 AND is_active = TRUE", userIDStr).Scan(&tidStr)
+	if err != nil {
+		err = h.db.QueryRow(ctx, "SELECT tenant_id::text FROM kinesys.profiles WHERE id = $1 AND is_active = TRUE", userIDStr).Scan(&tidStr)
+	}
+
+	if tidStr != "" {
+		if t, err := uuid.Parse(tidStr); err == nil {
+			return t
+		}
+	}
+	return defaultTenant
 }
 
 func (h *WithingsHardwareHandler) Sync(w http.ResponseWriter, r *http.Request) {
@@ -91,12 +115,8 @@ func (h *WithingsHardwareHandler) Sync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantIDStr, _ := r.Context().Value(middleware.TenantIDKey).(string)
-	tenantID, err := uuid.Parse(tenantIDStr)
-	if err != nil {
-		http.Error(w, "Missing or invalid tenant ID", http.StatusUnauthorized)
-		return
-	}
+	userIDStr, _ := r.Context().Value(middleware.UserIDKey).(string)
+	tenantID := h.resolveTenantID(r.Context(), userIDStr)
 	
 	patientUUID, err := uuid.Parse(patientID)
 	if err != nil {
@@ -181,6 +201,12 @@ func (h *WithingsHardwareHandler) refreshAccessToken(ctx context.Context) error 
 }
 
 func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+		return
+	}
+
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		http.Error(w, "Missing code parameter", http.StatusBadRequest)
@@ -442,12 +468,8 @@ func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	tenantIDStr, _ := r.Context().Value(middleware.TenantIDKey).(string)
-	tenantID, err := uuid.Parse(tenantIDStr)
-	if err != nil {
-		http.Error(w, "Missing or invalid tenant ID", http.StatusUnauthorized)
-		return
-	}
+	userIDStr, _ := r.Context().Value(middleware.UserIDKey).(string)
+	tenantID := h.resolveTenantID(r.Context(), userIDStr)
 	patientUUID, err := uuid.Parse(patientID)
 	if err != nil {
 		http.Error(w, "Invalid patient UUID", http.StatusBadRequest)
@@ -481,12 +503,8 @@ func (h *WithingsHardwareHandler) CheckSessionStatus(w http.ResponseWriter, r *h
 		return
 	}
 
-	tenantIDStr, _ := r.Context().Value(middleware.TenantIDKey).(string)
-	tenantID, err := uuid.Parse(tenantIDStr)
-	if err != nil {
-		http.Error(w, "Missing or invalid tenant ID", http.StatusUnauthorized)
-		return
-	}
+	userIDStr, _ := r.Context().Value(middleware.UserIDKey).(string)
+	tenantID := h.resolveTenantID(r.Context(), userIDStr)
 	patientUUID, err := uuid.Parse(patientID)
 	if err != nil {
 		http.Error(w, "Invalid patient UUID", http.StatusBadRequest)
@@ -513,6 +531,12 @@ func (h *WithingsHardwareHandler) CheckSessionStatus(w http.ResponseWriter, r *h
 }
 
 func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+		return
+	}
+
 	// Withings sends a POST with application/x-www-form-urlencoded
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)

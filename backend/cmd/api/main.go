@@ -80,6 +80,7 @@ func main() {
 		cfg.WithingsAPIBaseURL,
 		cfg.WithingsClientID,
 		cfg.WithingsClientSecret,
+		dbPool,
 		patientSvc,
 		anthropometrySvc,
 	)
@@ -113,9 +114,11 @@ func main() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 	
-	// Withings OAuth Callback (No JWT required, redirected from Withings)
-	r.Get("/api/v1/withings/callback", withingsHandler.HandleCallback)
-	r.Post("/api/v1/withings/webhook", withingsHandler.Webhook)
+	// Withings OAuth Callback & Webhook (No JWT required, redirected from Withings)
+	r.Get("/api/v1/hardware/withings/callback", withingsHandler.HandleCallback)
+	r.Post("/api/v1/hardware/withings/callback", withingsHandler.HandleCallback)
+	r.Get("/api/v1/hardware/withings/webhook", withingsHandler.Webhook)
+	r.Post("/api/v1/hardware/withings/webhook", withingsHandler.Webhook)
 
 	// Protected Routes (Require Supabase JWT)
 	r.Group(func(r chi.Router) {

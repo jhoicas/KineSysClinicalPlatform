@@ -968,23 +968,76 @@ func (h *WithingsHardwareHandler) CheckSessionStatus(w http.ResponseWriter, r *h
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+
 	session, err := h.anthropometrySvc.GetPendingWeighInSession(r.Context(), patientUUID)
-	if err != nil {
-		// No pending session found
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"status":"not_found"}`))
+	if err != nil || session == nil {
+		// No pending or recent session found -> HTTP 200 with idle status
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":          "idle",
+			"active":          false,
+			"metrics_payload": nil,
+		})
 		return
 	}
 
-	// If it's expired, update it
-	if time.Now().After(session.ExpiresAt) && session.Status == "pending" {
+	// If it's expired, update it and return idle
+	if time.Now().After(session.ExpiresAt) && strings.ToLower(session.Status) == "pending" {
 		session.Status = "expired"
 		_ = h.anthropometrySvc.UpdateWeighInSession(r.Context(), session)
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":              session.ID,
+			"patient_id":      session.PatientID,
+			"status":          "idle",
+			"active":          false,
+			"metrics_payload": nil,
+		})
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(session)
+	if strings.ToLower(session.Status) == "completed" {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":              session.ID,
+			"tenant_id":       session.TenantID,
+			"patient_id":      session.PatientID,
+			"status":          "completed",
+			"active":          false,
+			"metrics_payload": session.MetricsPayload,
+			"created_at":      session.CreatedAt,
+			"expires_at":      session.ExpiresAt,
+			"updated_at":      session.UpdatedAt,
+		})
+		return
+	}
+
+	if strings.ToLower(session.Status) == "pending" {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":              session.ID,
+			"tenant_id":       session.TenantID,
+			"patient_id":      session.PatientID,
+			"status":          "pending",
+			"active":          true,
+			"metrics_payload": nil,
+			"created_at":      session.CreatedAt,
+			"expires_at":      session.ExpiresAt,
+			"updated_at":      session.UpdatedAt,
+		})
+		return
+	}
+
+	// Fallback for any other status (e.g. expired, cancelled)
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":              session.ID,
+		"patient_id":      session.PatientID,
+		"status":          "idle",
+		"active":          false,
+		"metrics_payload": nil,
+	})
 }
 
 func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request) {

@@ -85,8 +85,8 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     assessment?.generalObservations || ''
   );
 
-  const activeWeight = assessment?.weightKg || patient.weightKg || 60;
-  const activeHeight = assessment?.heightCm || patient.height_cm || 160;
+  const activeWeight = assessment?.weight_kg || patient.weightKg || 60;
+  const activeHeight = assessment?.height_cm || patient.height_cm || 160;
 
   const { somatotype, composition, isLoading, error } = useAnthropometryCalculations({
     gender: patient.gender === 'F' ? 'female' : 'male',

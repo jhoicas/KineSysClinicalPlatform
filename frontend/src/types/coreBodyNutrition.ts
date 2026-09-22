@@ -85,6 +85,8 @@ export interface AnthropometryAssessment {
   evaluator: string;
   evaluatorCertification: string; // e.g. 'ISAK Nivel 3'
   evaluationNumber: string; // e.g. '1/1'
+  weight_kg?: number;
+  height_cm?: number;
   skinfolds: SkinfoldMeasurements;
   activeEquation: EstimationEquationId;
   estimatedBodyFatPct: number;

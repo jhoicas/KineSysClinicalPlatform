@@ -113,13 +113,23 @@ func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, sess
 }
 
 func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, patientID, tenantID uuid.UUID) (*domain.ActiveWeighInSession, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.current_tenant_id', $1, true)", tenantID.String()); err != nil {
+		return nil, err
+	}
+
 	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
 	          FROM kinesys.active_weigh_in_sessions 
 			  WHERE patient_id = $1 AND tenant_id = $2 AND status = 'pending' AND expires_at > NOW()
 			  ORDER BY created_at DESC LIMIT 1`
 	
 	var session domain.ActiveWeighInSession
-	err := r.db.QueryRow(ctx, query, patientID, tenantID).Scan(
+	err = tx.QueryRow(ctx, query, patientID, tenantID).Scan(
 		&session.ID, &session.TenantID, &session.PatientID, &session.Status,
 		&session.MetricsPayload, &session.CreatedAt, &session.ExpiresAt, &session.UpdatedAt,
 	)

@@ -481,7 +481,7 @@ func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Re
 		TenantID:  tenantID,
 		PatientID: patientUUID,
 		Status:    "pending",
-		ExpiresAt: time.Now().Add(2 * time.Minute),
+		ExpiresAt: time.Now().Add(10 * time.Minute),
 	}
 
 	log.Printf("Iniciando sesión para paciente: %s", patientUUID)

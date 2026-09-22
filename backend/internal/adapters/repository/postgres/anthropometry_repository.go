@@ -62,7 +62,7 @@ func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, sess
 	defer tx.Rollback(ctx)
 
 	// Set tenant context for RLS
-	if _, err := tx.Exec(ctx, "SET LOCAL app.current_tenant_id = $1", session.TenantID.String()); err != nil {
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.current_tenant_id', $1, true)", session.TenantID.String()); err != nil {
 		return err
 	}
 

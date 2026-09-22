@@ -1,0 +1,55 @@
+package handlers
+
+import (
+	"math"
+	"testing"
+)
+
+func TestParseWithingsMeasures(t *testing.T) {
+	groups := []withingsMeasureGroup{
+		{
+			Date: 1700000000,
+			Measures: []withingsMeasure{
+				{Type: 1, Value: 82.5, Unit: 0},
+				{Type: 5, Value: 61.2, Unit: 0},
+				{Type: 6, Value: 18, Unit: -1},
+				{Type: 8, Value: 18.5, Unit: 0},
+				{Type: 11, Value: 72, Unit: 0},
+				{Type: 76, Value: 31.8, Unit: 0},
+				{Type: 77, Value: 52.4, Unit: 0},
+				{Type: 88, Value: 2.8, Unit: 0},
+				{Type: 170, Value: 9, Unit: 0},
+			},
+		},
+	}
+
+	parsed := parseWithingsMeasures(groups)
+
+	if got, want := parsed["weight_kg"], 82.5; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("weight_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["fat_free_mass_kg"], 61.2; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("fat_free_mass_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["fat_ratio_percent"], 1.8; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("fat_ratio_percent mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["fat_mass_kg"], 18.5; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("fat_mass_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["heart_rate_bpm"], 72.0; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("heart_rate_bpm mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["muscle_mass_kg"], 31.8; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("muscle_mass_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["hydration_kg"], 52.4; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("hydration_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["bone_mass_kg"], 2.8; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("bone_mass_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["visceral_fat_index"], 9.0; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("visceral_fat_index mismatch: got %v want %v", got, want)
+	}
+}

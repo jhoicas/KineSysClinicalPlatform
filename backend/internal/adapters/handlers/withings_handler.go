@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,10 +21,10 @@ import (
 )
 
 type WithingsHardwareHandler struct {
-	accessToken  string
-	refreshToken string
-	userID       string
-	apiBaseURL   string
+	accessToken      string
+	refreshToken     string
+	userID           string
+	apiBaseURL       string
 	clientID         string
 	clientSecret     string
 	client           *http.Client
@@ -125,7 +126,7 @@ func (h *WithingsHardwareHandler) Sync(w http.ResponseWriter, r *http.Request) {
 
 	userIDStr, _ := r.Context().Value(middleware.UserIDKey).(string)
 	tenantID := h.resolveTenantID(r.Context(), userIDStr)
-	
+
 	patientUUID, err := uuid.Parse(patientID)
 	if err != nil {
 		http.Error(w, "Invalid patient UUID", http.StatusBadRequest)
@@ -166,7 +167,7 @@ func (h *WithingsHardwareHandler) refreshAccessToken(ctx context.Context) error 
 		"client_secret": {h.clientSecret},
 		"refresh_token": {h.refreshToken},
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://wbsapi.withings.net/v2/oauth2", strings.NewReader(form.Encode()))
 	if err != nil {
 		return err
@@ -330,14 +331,25 @@ func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *
 		return nil, fmt.Errorf("Withings returned no measurements")
 	}
 
+	parsedMetrics := parseWithingsMeasures(payload.Body.MeasureGroups)
+	if pocSessionActive {
+		pocMutex.Lock()
+		if pocRawPayload == nil {
+			pocRawPayload = make(map[string]interface{})
+		}
+		pocRawPayload["raw_withings_response"] = payload
+		pocRawPayload["parsed_metrics"] = parsedMetrics
+		pocMutex.Unlock()
+	}
+
 	weight, weightAt := latestMeasure(payload.Body.MeasureGroups, 1)
 	height, _ := latestMeasure(payload.Body.MeasureGroups, 4)
 	fatPct, fatAt := latestMeasure(payload.Body.MeasureGroups, 6)
-	
+
 	visceral126, _ := latestMeasure(payload.Body.MeasureGroups, 126)
 	visceral127, _ := latestMeasure(payload.Body.MeasureGroups, 127)
 	visceral170, _ := latestMeasure(payload.Body.MeasureGroups, 170)
-	
+
 	bmr123, _ := latestMeasure(payload.Body.MeasureGroups, 123)
 	bmr135, _ := latestMeasure(payload.Body.MeasureGroups, 135)
 	bmr226, _ := latestMeasure(payload.Body.MeasureGroups, 226)
@@ -405,7 +417,7 @@ func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *
 				age = int(time.Since(pt).Hours() / 24 / 365)
 			}
 		}
-		
+
 		sex := domain.SexMale
 		if patient.Gender != nil && *patient.Gender == "female" {
 			sex = domain.SexFemale
@@ -427,6 +439,36 @@ func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *
 	}
 
 	return reading, nil
+}
+
+func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
+	parsed := make(map[string]float64)
+	for _, group := range groups {
+		for _, measure := range group.Measures {
+			realValue := float64(measure.Value) * math.Pow10(measure.Unit)
+			switch measure.Type {
+			case 1:
+				parsed["weight_kg"] = realValue
+			case 5:
+				parsed["fat_free_mass_kg"] = realValue
+			case 6:
+				parsed["fat_ratio_percent"] = realValue
+			case 8:
+				parsed["fat_mass_kg"] = realValue
+			case 11:
+				parsed["heart_rate_bpm"] = realValue
+			case 76:
+				parsed["muscle_mass_kg"] = realValue
+			case 77:
+				parsed["hydration_kg"] = realValue
+			case 88:
+				parsed["bone_mass_kg"] = realValue
+			case 170:
+				parsed["visceral_fat_index"] = realValue
+			}
+		}
+	}
+	return parsed
 }
 
 func latestMeasure(groups []withingsMeasureGroup, measureType int) (withingsMeasure, int64) {
@@ -607,7 +649,7 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 		w.Write([]byte("OK"))
 		return
 	}
-	
+
 	if r.Method == http.MethodHead {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
@@ -797,7 +839,6 @@ func (h *WithingsHardwareHandler) SubscribeWebhook(w http.ResponseWriter, r *htt
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status": "success", "message": "Webhook subscribed"}`))
 }
-
 
 // POC Endpoints
 

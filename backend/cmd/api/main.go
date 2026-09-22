@@ -119,6 +119,10 @@ func main() {
 	r.Post("/api/v1/hardware/withings/callback", withingsHandler.HandleCallback)
 	r.Get("/api/v1/hardware/withings/webhook", withingsHandler.Webhook)
 	r.Post("/api/v1/hardware/withings/webhook", withingsHandler.Webhook)
+	
+	// Withings POC
+	r.Post("/api/v1/hardware/withings/poc/start", withingsHandler.StartPocSession)
+	r.Get("/api/v1/hardware/withings/poc/data", withingsHandler.GetPocData)
 
 	// Protected Routes (Require Supabase JWT)
 	r.Group(func(r chi.Router) {

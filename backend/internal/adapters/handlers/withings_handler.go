@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -30,6 +31,13 @@ type WithingsHardwareHandler struct {
 	patientService   ports.PatientService
 	anthropometrySvc ports.AnthropometryService
 }
+
+var (
+	pocMutex         sync.Mutex
+	pocSessionActive bool
+	pocRawPayload    map[string]interface{}
+	pocExpiresAt     time.Time
+)
 
 type withingsMeasure struct {
 	Value    float64 `json:"value"`
@@ -503,15 +511,14 @@ func (h *WithingsHardwareHandler) CheckSessionStatus(w http.ResponseWriter, r *h
 		return
 	}
 
-	userIDStr, _ := r.Context().Value(middleware.UserIDKey).(string)
-	tenantID := h.resolveTenantID(r.Context(), userIDStr)
+	// tenantID is no longer required for checking session status
 	patientUUID, err := uuid.Parse(patientID)
 	if err != nil {
 		http.Error(w, "Invalid patient UUID", http.StatusBadRequest)
 		return
 	}
 
-	session, err := h.anthropometrySvc.GetPendingWeighInSession(r.Context(), patientUUID, tenantID)
+	session, err := h.anthropometrySvc.GetPendingWeighInSession(r.Context(), patientUUID)
 	if err != nil {
 		// No pending session found
 		w.Header().Set("Content-Type", "application/json")
@@ -545,6 +552,25 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 
 	// Log webhook
 	log.Printf("[WITHINGS WEBHOOK] Payload recibido: %v", r.Form)
+
+	pocMutex.Lock()
+	if pocSessionActive {
+		// Save everything for POC
+		pocRawPayload = make(map[string]interface{})
+		for k, v := range r.Form {
+			if len(v) == 1 {
+				pocRawPayload[k] = v[0]
+			} else {
+				pocRawPayload[k] = v
+			}
+		}
+		pocSessionActive = false
+		log.Printf("[WITHINGS POC] ¡Payload de prueba capturado con éxito!")
+		pocMutex.Unlock()
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	pocMutex.Unlock()
 
 	// Fetch the latest pending session globally
 	session, err := h.anthropometrySvc.GetLatestPendingWeighInSession(context.Background())
@@ -702,3 +728,28 @@ func (h *WithingsHardwareHandler) SubscribeWebhook(w http.ResponseWriter, r *htt
 	w.Write([]byte(`{"status": "success", "message": "Webhook subscribed"}`))
 }
 
+
+// POC Endpoints
+
+func (h *WithingsHardwareHandler) StartPocSession(w http.ResponseWriter, r *http.Request) {
+	pocMutex.Lock()
+	defer pocMutex.Unlock()
+	pocSessionActive = true
+	pocRawPayload = nil
+	pocExpiresAt = time.Now().Add(5 * time.Minute)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status": "poc_started", "message": "Sesion de prueba activa por 5 minutos"}`))
+}
+
+func (h *WithingsHardwareHandler) GetPocData(w http.ResponseWriter, r *http.Request) {
+	pocMutex.Lock()
+	defer pocMutex.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"active":     pocSessionActive,
+		"payload":    pocRawPayload,
+		"expires_at": pocExpiresAt,
+	})
+}

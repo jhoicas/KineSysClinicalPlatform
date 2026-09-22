@@ -17,6 +17,7 @@ import { AdminAccessControl } from './pages/AdminAccessControl';
 import { HistoriaClinicaPage } from './pages/HistoriaClinicaPage';
 import { EvaluacionKinesicaPage } from './pages/EvaluacionKinesicaPage';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import WithingsPocModule from './components/WithingsPocModule';
 
 function isOAuthFragment(path: string): boolean {
   return (
@@ -147,6 +148,8 @@ function AppRouter() {
             <SettingsPage onNavigate={handleNavigate} />
           </ProtectedRoute>
         );
+      case '/test-withings':
+        return <WithingsPocModule />;
       default:
         return (
           <ProtectedRoute path={currentPath} onNavigate={handleNavigate} fallbackPath={defaultFallback}>

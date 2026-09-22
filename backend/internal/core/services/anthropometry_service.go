@@ -33,8 +33,8 @@ func (s *anthropometryService) CreateWeighInSession(ctx context.Context, session
 	return s.repo.CreateWeighInSession(ctx, session)
 }
 
-func (s *anthropometryService) GetPendingWeighInSession(ctx context.Context, patientID, tenantID uuid.UUID) (*domain.ActiveWeighInSession, error) {
-	return s.repo.GetPendingWeighInSession(ctx, patientID, tenantID)
+func (s *anthropometryService) GetPendingWeighInSession(ctx context.Context, patientID uuid.UUID) (*domain.ActiveWeighInSession, error) {
+	return s.repo.GetPendingWeighInSession(ctx, patientID)
 }
 
 func (s *anthropometryService) GetLatestPendingWeighInSession(ctx context.Context) (*domain.ActiveWeighInSession, error) {

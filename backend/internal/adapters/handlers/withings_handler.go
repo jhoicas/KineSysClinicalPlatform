@@ -538,7 +538,77 @@ func (h *WithingsHardwareHandler) CheckSessionStatus(w http.ResponseWriter, r *h
 }
 
 func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+	if r.Method == http.MethodGet {
+		code := r.URL.Query().Get("code")
+		if code != "" {
+			// Step 1: Request access token
+			data := url.Values{}
+			data.Set("action", "requesttoken")
+			data.Set("client_id", h.clientID)
+			data.Set("client_secret", h.clientSecret)
+			data.Set("grant_type", "authorization_code")
+			data.Set("code", code)
+			data.Set("redirect_uri", "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/webhook")
+
+			resp, err := h.client.PostForm("https://wbsapi.withings.net/v2/oauth2", data)
+			if err != nil {
+				http.Error(w, "Failed to request token", http.StatusInternalServerError)
+				return
+			}
+			defer resp.Body.Close()
+
+			var tokenResp struct {
+				Status int `json:"status"`
+				Body   struct {
+					UserID      string `json:"userid"`
+					AccessToken string `json:"access_token"`
+				} `json:"body"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+				http.Error(w, "Failed to decode token response", http.StatusInternalServerError)
+				return
+			}
+
+			if tokenResp.Status != 0 || tokenResp.Body.AccessToken == "" {
+				http.Error(w, fmt.Sprintf("Withings API error on token exchange: status %d", tokenResp.Status), http.StatusBadGateway)
+				return
+			}
+
+			// Step 2: Subscribe webhook
+			subData := url.Values{}
+			subData.Set("action", "subscribe")
+			subData.Set("callbackurl", "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/webhook")
+			subData.Set("appli", "1")
+			subData.Set("access_token", tokenResp.Body.AccessToken)
+
+			subResp, err := h.client.PostForm("https://wbsapi.withings.net/notify", subData)
+			if err != nil {
+				http.Error(w, "Failed to subscribe webhook", http.StatusInternalServerError)
+				return
+			}
+			defer subResp.Body.Close()
+
+			log.Printf("[WITHINGS OAUTH] Suscripción exitosa para userid=%s", tokenResp.Body.UserID)
+
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`<!DOCTYPE html>
+<html>
+<body style="font-family:sans-serif; text-align:center; padding:50px; background:#0f172a; color:#fff;">
+  <h1 style="color:#22c55e;">¡Báscula Vinculada y Suscrita con Éxito!</h1>
+  <p>Se ha registrado la suscripción para el usuario de Withings.</p>
+  <p>Ya puedes volver a la pantalla del POC (<strong>/#/withings-poc</strong>) y pesarte.</p>
+</body>
+</html>`))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+		return
+	}
+	
+	if r.Method == http.MethodHead {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 		return

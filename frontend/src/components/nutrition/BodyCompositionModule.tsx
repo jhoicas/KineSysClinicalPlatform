@@ -181,28 +181,7 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
                 ...composition.masaGrasaKg,
                 value: fatMassVal,
               },
-              segmental: {
-                brazoIzq: {
-                  muscleKg: Number(reading.muscle_mass_left_arm_kg) || composition.segmental.brazoIzq.muscleKg,
-                  fatKg: Number(reading.fat_mass_left_arm_kg) || composition.segmental.brazoIzq.fatKg,
-                },
-                brazoDer: {
-                  muscleKg: Number(reading.muscle_mass_right_arm_kg) || composition.segmental.brazoDer.muscleKg,
-                  fatKg: Number(reading.fat_mass_right_arm_kg) || composition.segmental.brazoDer.fatKg,
-                },
-                tronco: {
-                  muscleKg: Number(reading.muscle_mass_trunk_kg) || composition.segmental.tronco.muscleKg,
-                  fatKg: Number(reading.fat_mass_trunk_kg) || composition.segmental.tronco.fatKg,
-                },
-                piernaIzq: {
-                  muscleKg: Number(reading.muscle_mass_left_leg_kg) || composition.segmental.piernaIzq.muscleKg,
-                  fatKg: Number(reading.fat_mass_left_leg_kg) || composition.segmental.piernaIzq.fatKg,
-                },
-                piernaDer: {
-                  muscleKg: Number(reading.muscle_mass_right_leg_kg) || composition.segmental.piernaDer.muscleKg,
-                  fatKg: Number(reading.fat_mass_right_leg_kg) || composition.segmental.piernaDer.fatKg,
-                },
-              },
+              segmental: composition.segmental,
               otherIndicators: {
                 ...composition.otherIndicators,
                 aguaCorporalTotalL: {

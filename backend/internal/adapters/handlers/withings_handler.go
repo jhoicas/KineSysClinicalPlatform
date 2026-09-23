@@ -48,9 +48,10 @@ var (
 )
 
 type withingsMeasure struct {
-	Value float64 `json:"value"`
-	Unit  int     `json:"unit"`
-	Type  int     `json:"type"`
+	Value    float64 `json:"value"`
+	Unit     int     `json:"unit"`
+	Type     int     `json:"type"`
+	Position *int    `json:"position,omitempty"`
 }
 
 type withingsMeasureGroup struct {
@@ -943,6 +944,11 @@ func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
 		for _, measure := range group.Measures {
 			realValue := float64(measure.Value) * math.Pow10(measure.Unit)
 
+			pos := 0
+			if measure.Position != nil {
+				pos = *measure.Position
+			}
+
 			switch measure.Type {
 			case 1:
 				parsed["weight_kg"] = realValue
@@ -951,11 +957,15 @@ func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
 			case 6:
 				parsed["fat_ratio_percent"] = realValue
 			case 8:
-				parsed["fat_mass_kg"] = realValue
+				if pos == 0 || pos == 7 {
+					parsed["fat_mass_kg"] = realValue
+				}
 			case 11:
 				parsed["heart_rate_bpm"] = realValue
 			case 76:
-				parsed["muscle_mass_kg"] = realValue
+				if pos == 0 || pos == 7 {
+					parsed["muscle_mass_kg"] = realValue
+				}
 			case 77:
 				parsed["hydration_kg"] = realValue
 			case 88:
@@ -1062,6 +1072,59 @@ func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
 
 		if proteinKg > 0 {
 			parsed["protein_kg"] = math.Round(proteinKg*10) / 10
+		}
+	}
+
+	return parsed
+}
+
+// parseWithingsPocMeasures extrae métricas corporales y análisis segmental exclusivamente para el módulo de pruebas POC.
+// No afecta ni altera la función clínica parseWithingsMeasures utilizada en nutrición.
+func parseWithingsPocMeasures(groups []withingsMeasureGroup) map[string]float64 {
+	// 1. Obtener todas las métricas corporales completas y estables (peso, grasa, músculo, agua, hueso, proteína, etc.)
+	parsed := parseWithingsMeasures(groups)
+
+	// 2. Extraer métricas segmentales exclusivamente para el POC de forma ultra defensiva
+	// Withings Body Scan position: 1=pierna izq, 2=pierna der, 3=brazo izq, 4=brazo der, 5=torso
+	for _, group := range groups {
+		for _, measure := range group.Measures {
+			realValue := float64(measure.Value) * math.Pow10(measure.Unit)
+			pos := 0
+			if measure.Position != nil {
+				pos = *measure.Position
+			}
+
+			if pos >= 1 && pos <= 5 {
+				valRounded := math.Round(realValue*10) / 10
+				switch measure.Type {
+				case 76: // Músculo segmental
+					switch pos {
+					case 1:
+						parsed["muscle_mass_left_leg_kg"] = valRounded
+					case 2:
+						parsed["muscle_mass_right_leg_kg"] = valRounded
+					case 3:
+						parsed["muscle_mass_left_arm_kg"] = valRounded
+					case 4:
+						parsed["muscle_mass_right_arm_kg"] = valRounded
+					case 5:
+						parsed["muscle_mass_trunk_kg"] = valRounded
+					}
+				case 8: // Grasa segmental
+					switch pos {
+					case 1:
+						parsed["fat_mass_left_leg_kg"] = valRounded
+					case 2:
+						parsed["fat_mass_right_leg_kg"] = valRounded
+					case 3:
+						parsed["fat_mass_left_arm_kg"] = valRounded
+					case 4:
+						parsed["fat_mass_right_arm_kg"] = valRounded
+					case 5:
+						parsed["fat_mass_trunk_kg"] = valRounded
+					}
+				}
+			}
 		}
 	}
 
@@ -1419,6 +1482,7 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 	var parsedMetrics map[string]float64
 	var rawMeasurements map[string]interface{}
 	var payloadDate int64
+	var pocMeasureGroups []withingsMeasureGroup
 
 	measureReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://wbsapi.withings.net/measure", strings.NewReader(measureForm.Encode()))
 	if err == nil {
@@ -1430,6 +1494,7 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 				if rawBytes, marshalErr := json.Marshal(rawMeasurements); marshalErr == nil {
 					var parsedResp withingsResponse
 					if unmarshalErr := json.Unmarshal(rawBytes, &parsedResp); unmarshalErr == nil && len(parsedResp.Body.MeasureGroups) > 0 {
+						pocMeasureGroups = parsedResp.Body.MeasureGroups
 						parsedMetrics = parseWithingsMeasures(parsedResp.Body.MeasureGroups)
 						payloadDate = parsedResp.Body.MeasureGroups[0].Date
 					}
@@ -1447,13 +1512,21 @@ func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request
 				notification[key] = val
 			}
 		}
+
+		var pocMetrics map[string]float64
+		if len(pocMeasureGroups) > 0 {
+			pocMetrics = parseWithingsPocMeasures(pocMeasureGroups)
+		} else {
+			pocMetrics = parsedMetrics
+		}
+
 		pocRawPayload = map[string]interface{}{
 			"notification":              notification,
 			"raw_withings_measurements": rawMeasurements,
-			"parsed_metrics":            parsedMetrics,
+			"parsed_metrics":            pocMetrics,
 		}
 		pocSessionActive = false
-		log.Printf("[WITHINGS POC] Payload de prueba capturado con éxito")
+		log.Printf("[WITHINGS POC] Payload de prueba capturado con éxito (segmental incluido)")
 	}
 	pocMutex.Unlock()
 
@@ -1540,6 +1613,18 @@ func (h *WithingsHardwareHandler) StartPocSession(w http.ResponseWriter, r *http
 func (h *WithingsHardwareHandler) GetPocData(w http.ResponseWriter, r *http.Request) {
 	pocMutex.Lock()
 	defer pocMutex.Unlock()
+
+	// Garantizar que si hay mediciones crudas en el payload, parsed_metrics incluya el análisis segmental
+	if pocRawPayload != nil {
+		if rawMeas, ok := pocRawPayload["raw_withings_measurements"]; ok && rawMeas != nil {
+			if rawBytes, err := json.Marshal(rawMeas); err == nil {
+				var parsedResp withingsResponse
+				if err := json.Unmarshal(rawBytes, &parsedResp); err == nil && len(parsedResp.Body.MeasureGroups) > 0 {
+					pocRawPayload["parsed_metrics"] = parseWithingsPocMeasures(parsedResp.Body.MeasureGroups)
+				}
+			}
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

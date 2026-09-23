@@ -135,5 +135,92 @@ func TestParseWithingsMeasures_DerivedTotals(t *testing.T) {
 	}
 }
 
+func TestParseWithingsPocMeasures_Segmental(t *testing.T) {
+	posLeftLeg := 1
+	posRightLeg := 2
+	posLeftArm := 3
+	posRightArm := 4
+	posTrunk := 5
+
+	groups := []withingsMeasureGroup{
+		{
+			Date: 1700000000,
+			Measures: []withingsMeasure{
+				// Totales
+				{Type: 1, Value: 75.0, Unit: 0},
+				{Type: 76, Value: 35.0, Unit: 0},
+				{Type: 8, Value: 15.0, Unit: 0},
+				{Type: 77, Value: 42.0, Unit: 0},
+				{Type: 88, Value: 3.0, Unit: 0},
+				// Segmental músculo (Withings Body Scan)
+				{Type: 76, Value: 9.2, Unit: 0, Position: &posLeftLeg},
+				{Type: 76, Value: 9.3, Unit: 0, Position: &posRightLeg},
+				{Type: 76, Value: 3.5, Unit: 0, Position: &posLeftArm},
+				{Type: 76, Value: 3.6, Unit: 0, Position: &posRightArm},
+				{Type: 76, Value: 26.5, Unit: 0, Position: &posTrunk},
+				// Segmental grasa (Withings Body Scan)
+				{Type: 8, Value: 3.1, Unit: 0, Position: &posLeftLeg},
+				{Type: 8, Value: 3.2, Unit: 0, Position: &posRightLeg},
+				{Type: 8, Value: 1.4, Unit: 0, Position: &posLeftArm},
+				{Type: 8, Value: 1.5, Unit: 0, Position: &posRightArm},
+				{Type: 8, Value: 7.8, Unit: 0, Position: &posTrunk},
+			},
+		},
+	}
+
+	pocParsed := parseWithingsPocMeasures(groups)
+
+	// Validar que los totales existan
+	if pocParsed["weight_kg"] != 75.0 {
+		t.Fatalf("expected weight_kg 75.0, got %v", pocParsed["weight_kg"])
+	}
+	if pocParsed["muscle_mass_kg"] != 35.0 {
+		t.Fatalf("expected muscle_mass_kg 35.0, got %v", pocParsed["muscle_mass_kg"])
+	}
+	if pocParsed["fat_mass_kg"] != 15.0 {
+		t.Fatalf("expected fat_mass_kg 15.0, got %v", pocParsed["fat_mass_kg"])
+	}
+
+	// Validar masas musculares segmentales
+	if pocParsed["muscle_mass_left_leg_kg"] != 9.2 {
+		t.Fatalf("expected muscle_mass_left_leg_kg 9.2, got %v", pocParsed["muscle_mass_left_leg_kg"])
+	}
+	if pocParsed["muscle_mass_right_leg_kg"] != 9.3 {
+		t.Fatalf("expected muscle_mass_right_leg_kg 9.3, got %v", pocParsed["muscle_mass_right_leg_kg"])
+	}
+	if pocParsed["muscle_mass_left_arm_kg"] != 3.5 {
+		t.Fatalf("expected muscle_mass_left_arm_kg 3.5, got %v", pocParsed["muscle_mass_left_arm_kg"])
+	}
+	if pocParsed["muscle_mass_right_arm_kg"] != 3.6 {
+		t.Fatalf("expected muscle_mass_right_arm_kg 3.6, got %v", pocParsed["muscle_mass_right_arm_kg"])
+	}
+	if pocParsed["muscle_mass_trunk_kg"] != 26.5 {
+		t.Fatalf("expected muscle_mass_trunk_kg 26.5, got %v", pocParsed["muscle_mass_trunk_kg"])
+	}
+
+	// Validar masas grasas segmentales
+	if pocParsed["fat_mass_left_leg_kg"] != 3.1 {
+		t.Fatalf("expected fat_mass_left_leg_kg 3.1, got %v", pocParsed["fat_mass_left_leg_kg"])
+	}
+	if pocParsed["fat_mass_right_leg_kg"] != 3.2 {
+		t.Fatalf("expected fat_mass_right_leg_kg 3.2, got %v", pocParsed["fat_mass_right_leg_kg"])
+	}
+	if pocParsed["fat_mass_left_arm_kg"] != 1.4 {
+		t.Fatalf("expected fat_mass_left_arm_kg 1.4, got %v", pocParsed["fat_mass_left_arm_kg"])
+	}
+	if pocParsed["fat_mass_right_arm_kg"] != 1.5 {
+		t.Fatalf("expected fat_mass_right_arm_kg 1.5, got %v", pocParsed["fat_mass_right_arm_kg"])
+	}
+	if pocParsed["fat_mass_trunk_kg"] != 7.8 {
+		t.Fatalf("expected fat_mass_trunk_kg 7.8, got %v", pocParsed["fat_mass_trunk_kg"])
+	}
+
+	// Validar que parseWithingsMeasures clínico NO tenga las segmentales
+	clinicalParsed := parseWithingsMeasures(groups)
+	if _, has := clinicalParsed["muscle_mass_left_arm_kg"]; has {
+		t.Fatalf("clinical parseWithingsMeasures should NOT contain segmental metrics")
+	}
+}
+
 
 

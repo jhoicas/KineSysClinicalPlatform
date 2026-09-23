@@ -79,3 +79,79 @@ func TestParseWithingsMeasures_ProteinFallback(t *testing.T) {
 	}
 }
 
+func TestParseWithingsMeasures_Segmental(t *testing.T) {
+	posLeftLeg := 1
+	posRightLeg := 2
+	posLeftArm := 3
+	posRightArm := 4
+	posTrunk := 5
+	posTotal := 7
+
+	groups := []withingsMeasureGroup{
+		{
+			Date: 1700000000,
+			Measures: []withingsMeasure{
+				// Total
+				{Type: 1, Value: 75.0, Unit: 0},
+				{Type: 76, Value: 35.0, Unit: 0, Position: &posTotal},
+				{Type: 8, Value: 15.0, Unit: 0, Position: &posTotal},
+				// Segmental muscle
+				{Type: 76, Value: 9.2, Unit: 0, Position: &posLeftLeg},
+				{Type: 76, Value: 9.3, Unit: 0, Position: &posRightLeg},
+				{Type: 76, Value: 3.5, Unit: 0, Position: &posLeftArm},
+				{Type: 76, Value: 3.6, Unit: 0, Position: &posRightArm},
+				{Type: 76, Value: 26.5, Unit: 0, Position: &posTrunk},
+				// Segmental fat
+				{Type: 8, Value: 3.1, Unit: 0, Position: &posLeftLeg},
+				{Type: 8, Value: 3.2, Unit: 0, Position: &posRightLeg},
+				{Type: 8, Value: 1.4, Unit: 0, Position: &posLeftArm},
+				{Type: 8, Value: 1.5, Unit: 0, Position: &posRightArm},
+				{Type: 8, Value: 7.8, Unit: 0, Position: &posTrunk},
+			},
+		},
+	}
+
+	parsed := parseWithingsMeasures(groups)
+
+	// Muscle assertions
+	if got, want := parsed["muscle_mass_kg"], 35.0; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("muscle_mass_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["muscle_mass_left_leg_kg"], 9.2; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("muscle_mass_left_leg_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["muscle_mass_right_leg_kg"], 9.3; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("muscle_mass_right_leg_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["muscle_mass_left_arm_kg"], 3.5; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("muscle_mass_left_arm_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["muscle_mass_right_arm_kg"], 3.6; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("muscle_mass_right_arm_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["muscle_mass_trunk_kg"], 26.5; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("muscle_mass_trunk_kg mismatch: got %v want %v", got, want)
+	}
+
+	// Fat assertions
+	if got, want := parsed["fat_mass_kg"], 15.0; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("fat_mass_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["fat_mass_left_leg_kg"], 3.1; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("fat_mass_left_leg_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["fat_mass_right_leg_kg"], 3.2; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("fat_mass_right_leg_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["fat_mass_left_arm_kg"], 1.4; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("fat_mass_left_arm_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["fat_mass_right_arm_kg"], 1.5; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("fat_mass_right_arm_kg mismatch: got %v want %v", got, want)
+	}
+	if got, want := parsed["fat_mass_trunk_kg"], 7.8; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("fat_mass_trunk_kg mismatch: got %v want %v", got, want)
+	}
+}
+
+

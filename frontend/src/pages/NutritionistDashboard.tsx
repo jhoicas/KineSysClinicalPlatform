@@ -306,11 +306,26 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                   status: fatPct < fatMin ? 'Bajo' : fatPct <= fatMax ? 'Adecuada' : 'Elevado',
                 },
                 segmental: {
-                  brazoIzq: { muscleKg: 0, fatKg: 0 },
-                  brazoDer: { muscleKg: 0, fatKg: 0 },
-                  tronco: { muscleKg: 0, fatKg: 0 },
-                  piernaIzq: { muscleKg: 0, fatKg: 0 },
-                  piernaDer: { muscleKg: 0, fatKg: 0 },
+                  brazoIzq: {
+                    muscleKg: Number(reading.muscle_mass_left_arm_kg) || 0,
+                    fatKg: Number(reading.fat_mass_left_arm_kg) || 0,
+                  },
+                  brazoDer: {
+                    muscleKg: Number(reading.muscle_mass_right_arm_kg) || 0,
+                    fatKg: Number(reading.fat_mass_right_arm_kg) || 0,
+                  },
+                  tronco: {
+                    muscleKg: Number(reading.muscle_mass_trunk_kg) || 0,
+                    fatKg: Number(reading.fat_mass_trunk_kg) || 0,
+                  },
+                  piernaIzq: {
+                    muscleKg: Number(reading.muscle_mass_left_leg_kg) || 0,
+                    fatKg: Number(reading.fat_mass_left_leg_kg) || 0,
+                  },
+                  piernaDer: {
+                    muscleKg: Number(reading.muscle_mass_right_leg_kg) || 0,
+                    fatKg: Number(reading.fat_mass_right_leg_kg) || 0,
+                  },
                 },
                 otherIndicators: {
                   aguaCorporalTotalL: { value: hydration, minNormal: 25, maxNormal: 45, unit: 'L', status: 'Normal' },
@@ -484,11 +499,26 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
         status: fatPct < fatMin ? 'Bajo' : fatPct <= fatMax ? 'Adecuada' : 'Elevado',
       },
       segmental: {
-        brazoIzq: { muscleKg: 0, fatKg: 0 },
-        brazoDer: { muscleKg: 0, fatKg: 0 },
-        tronco: { muscleKg: 0, fatKg: 0 },
-        piernaIzq: { muscleKg: 0, fatKg: 0 },
-        piernaDer: { muscleKg: 0, fatKg: 0 },
+        brazoIzq: {
+          muscleKg: Number(evAny.muscle_mass_left_arm_kg) || 0,
+          fatKg: Number(evAny.fat_mass_left_arm_kg) || 0,
+        },
+        brazoDer: {
+          muscleKg: Number(evAny.muscle_mass_right_arm_kg) || 0,
+          fatKg: Number(evAny.fat_mass_right_arm_kg) || 0,
+        },
+        tronco: {
+          muscleKg: Number(evAny.muscle_mass_trunk_kg) || 0,
+          fatKg: Number(evAny.fat_mass_trunk_kg) || 0,
+        },
+        piernaIzq: {
+          muscleKg: Number(evAny.muscle_mass_left_leg_kg) || 0,
+          fatKg: Number(evAny.fat_mass_left_leg_kg) || 0,
+        },
+        piernaDer: {
+          muscleKg: Number(evAny.muscle_mass_right_leg_kg) || 0,
+          fatKg: Number(evAny.fat_mass_right_leg_kg) || 0,
+        },
       },
       otherIndicators: {
         aguaCorporalTotalL: { value: hydration, minNormal: 25, maxNormal: 45, unit: 'L', status: 'Normal' },

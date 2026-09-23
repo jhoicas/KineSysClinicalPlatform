@@ -549,6 +549,18 @@ export interface EvaluacionAntropometrica {
   muscle_mass_kg?: number;
   visceral_fat_index?: number;
 
+  // Análisis segmental (Withings Body Scan / InBody)
+  muscle_mass_left_arm_kg?: number;
+  muscle_mass_right_arm_kg?: number;
+  muscle_mass_left_leg_kg?: number;
+  muscle_mass_right_leg_kg?: number;
+  muscle_mass_trunk_kg?: number;
+  fat_mass_left_arm_kg?: number;
+  fat_mass_right_arm_kg?: number;
+  fat_mass_left_leg_kg?: number;
+  fat_mass_right_leg_kg?: number;
+  fat_mass_trunk_kg?: number;
+
   clinical_notes?: string;
   created_at: string;
 }

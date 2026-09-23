@@ -67,20 +67,30 @@ type withingsResponse struct {
 }
 
 type WithingsHardwareReading struct {
-	PatientID        string            `json:"patient_id"`
-	Source           string            `json:"source"`
-	EvaluationDate   string            `json:"evaluation_date"`
-	WeightKg         *float64          `json:"weight_kg"`
-	HeightCm         *float64          `json:"height_cm"`
-	BodyFatPct       *float64          `json:"body_fat_pct"`
-	FatMassKg        *float64          `json:"fat_mass_kg,omitempty"`
-	MuscleMassKg     *float64          `json:"muscle_mass_kg,omitempty"`
-	HydrationKg      *float64          `json:"hydration_kg,omitempty"`
-	BoneMassKg       *float64          `json:"bone_mass_kg,omitempty"`
-	ProteinKg        *float64          `json:"protein_kg,omitempty"`
-	VisceralFatIndex *float64          `json:"visceral_fat_index"`
-	BMR              *float64          `json:"bmr"`
-	ProviderMeta     map[string]string `json:"provider_meta,omitempty"`
+	PatientID             string            `json:"patient_id"`
+	Source                string            `json:"source"`
+	EvaluationDate        string            `json:"evaluation_date"`
+	WeightKg              *float64          `json:"weight_kg"`
+	HeightCm              *float64          `json:"height_cm"`
+	BodyFatPct            *float64          `json:"body_fat_pct"`
+	FatMassKg             *float64          `json:"fat_mass_kg,omitempty"`
+	MuscleMassKg          *float64          `json:"muscle_mass_kg,omitempty"`
+	HydrationKg           *float64          `json:"hydration_kg,omitempty"`
+	BoneMassKg            *float64          `json:"bone_mass_kg,omitempty"`
+	ProteinKg             *float64          `json:"protein_kg,omitempty"`
+	MuscleMassLeftArmKg   *float64          `json:"muscle_mass_left_arm_kg,omitempty"`
+	MuscleMassRightArmKg  *float64          `json:"muscle_mass_right_arm_kg,omitempty"`
+	MuscleMassLeftLegKg   *float64          `json:"muscle_mass_left_leg_kg,omitempty"`
+	MuscleMassRightLegKg  *float64          `json:"muscle_mass_right_leg_kg,omitempty"`
+	MuscleMassTrunkKg     *float64          `json:"muscle_mass_trunk_kg,omitempty"`
+	FatMassLeftArmKg      *float64          `json:"fat_mass_left_arm_kg,omitempty"`
+	FatMassRightArmKg     *float64          `json:"fat_mass_right_arm_kg,omitempty"`
+	FatMassLeftLegKg      *float64          `json:"fat_mass_left_leg_kg,omitempty"`
+	FatMassRightLegKg     *float64          `json:"fat_mass_right_leg_kg,omitempty"`
+	FatMassTrunkKg        *float64          `json:"fat_mass_trunk_kg,omitempty"`
+	VisceralFatIndex      *float64          `json:"visceral_fat_index"`
+	BMR                   *float64          `json:"bmr"`
+	ProviderMeta          map[string]string `json:"provider_meta,omitempty"`
 }
 
 func NewWithingsHardwareHandler(
@@ -556,6 +566,19 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 		evalDate = time.Unix(payloadDate, 0)
 	}
 
+	// Masas segmentales (Withings Body Scan position: 1=pierna izq, 2=pierna der, 3=brazo izq, 4=brazo der, 5=torso)
+	muscleLeftArm := metrics["muscle_mass_left_arm_kg"]
+	muscleRightArm := metrics["muscle_mass_right_arm_kg"]
+	muscleLeftLeg := metrics["muscle_mass_left_leg_kg"]
+	muscleRightLeg := metrics["muscle_mass_right_leg_kg"]
+	muscleTrunk := metrics["muscle_mass_trunk_kg"]
+
+	fatLeftArm := metrics["fat_mass_left_arm_kg"]
+	fatRightArm := metrics["fat_mass_right_arm_kg"]
+	fatLeftLeg := metrics["fat_mass_left_leg_kg"]
+	fatRightLeg := metrics["fat_mass_right_leg_kg"]
+	fatTrunk := metrics["fat_mass_trunk_kg"]
+
 	clinicalData := map[string]interface{}{
 		"source":              "withings_scale",
 		"device_model":        "Withings Body Scan",
@@ -570,7 +593,22 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 		"bone_mass_kg":        math.Round(boneMassKg*10) / 10,
 		"protein_kg":          math.Round(proteinKg*10) / 10,
 		"visceral_fat_index":  math.Round(visceralFat*10) / 10,
-		"clinical_notes":      "Medición sincronizada automáticamente desde Báscula Withings",
+
+		// Masas musculares segmentales
+		"muscle_mass_left_arm_kg":  math.Round(muscleLeftArm*10) / 10,
+		"muscle_mass_right_arm_kg": math.Round(muscleRightArm*10) / 10,
+		"muscle_mass_left_leg_kg":  math.Round(muscleLeftLeg*10) / 10,
+		"muscle_mass_right_leg_kg": math.Round(muscleRightLeg*10) / 10,
+		"muscle_mass_trunk_kg":     math.Round(muscleTrunk*10) / 10,
+
+		// Masas grasas segmentales
+		"fat_mass_left_arm_kg":     math.Round(fatLeftArm*10) / 10,
+		"fat_mass_right_arm_kg":    math.Round(fatRightArm*10) / 10,
+		"fat_mass_left_leg_kg":     math.Round(fatLeftLeg*10) / 10,
+		"fat_mass_right_leg_kg":    math.Round(fatRightLeg*10) / 10,
+		"fat_mass_trunk_kg":        math.Round(fatTrunk*10) / 10,
+
+		"clinical_notes":           "Medición sincronizada automáticamente desde Báscula Withings",
 	}
 	dataJSON, _ := json.Marshal(clinicalData)
 
@@ -589,12 +627,22 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 
 		// Insertar en kinesys.nutrition_evaluations
 		measJSON, _ := json.Marshal(map[string]interface{}{
-			"fat_mass_kg":       math.Round(fatMassKg*10) / 10,
-			"muscle_mass_kg":    math.Round(muscleMassKg*10) / 10,
-			"hydration_kg":      math.Round(hydrationKg*10) / 10,
-			"bone_mass_kg":      math.Round(boneMassKg*10) / 10,
-			"protein_kg":        math.Round(proteinKg*10) / 10,
-			"fat_ratio_percent": math.Round(fatRatio*10) / 10,
+			"fat_mass_kg":              math.Round(fatMassKg*10) / 10,
+			"muscle_mass_kg":           math.Round(muscleMassKg*10) / 10,
+			"hydration_kg":             math.Round(hydrationKg*10) / 10,
+			"bone_mass_kg":             math.Round(boneMassKg*10) / 10,
+			"protein_kg":               math.Round(proteinKg*10) / 10,
+			"fat_ratio_percent":        math.Round(fatRatio*10) / 10,
+			"muscle_mass_left_arm_kg":  math.Round(muscleLeftArm*10) / 10,
+			"muscle_mass_right_arm_kg": math.Round(muscleRightArm*10) / 10,
+			"muscle_mass_left_leg_kg":  math.Round(muscleLeftLeg*10) / 10,
+			"muscle_mass_right_leg_kg": math.Round(muscleRightLeg*10) / 10,
+			"muscle_mass_trunk_kg":     math.Round(muscleTrunk*10) / 10,
+			"fat_mass_left_arm_kg":     math.Round(fatLeftArm*10) / 10,
+			"fat_mass_right_arm_kg":    math.Round(fatRightArm*10) / 10,
+			"fat_mass_left_leg_kg":     math.Round(fatLeftLeg*10) / 10,
+			"fat_mass_right_leg_kg":    math.Round(fatRightLeg*10) / 10,
+			"fat_mass_trunk_kg":        math.Round(fatTrunk*10) / 10,
 		})
 		_, _ = h.db.Exec(ctx, `
 			INSERT INTO kinesys.nutrition_evaluations (
@@ -873,6 +921,27 @@ func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *
 			}
 		}
 	}
+
+	assignSegmental := func(key string) *float64 {
+		if val, ok := parsedMetrics[key]; ok && val > 0 {
+			rounded := math.Round(val*10) / 10
+			return &rounded
+		}
+		return nil
+	}
+
+	reading.MuscleMassLeftArmKg = assignSegmental("muscle_mass_left_arm_kg")
+	reading.MuscleMassRightArmKg = assignSegmental("muscle_mass_right_arm_kg")
+	reading.MuscleMassLeftLegKg = assignSegmental("muscle_mass_left_leg_kg")
+	reading.MuscleMassRightLegKg = assignSegmental("muscle_mass_right_leg_kg")
+	reading.MuscleMassTrunkKg = assignSegmental("muscle_mass_trunk_kg")
+
+	reading.FatMassLeftArmKg = assignSegmental("fat_mass_left_arm_kg")
+	reading.FatMassRightArmKg = assignSegmental("fat_mass_right_arm_kg")
+	reading.FatMassLeftLegKg = assignSegmental("fat_mass_left_leg_kg")
+	reading.FatMassRightLegKg = assignSegmental("fat_mass_right_leg_kg")
+	reading.FatMassTrunkKg = assignSegmental("fat_mass_trunk_kg")
+
 	if reading.MuscleMassKg == nil && reading.WeightKg != nil && reading.FatMassKg != nil {
 		mm := *reading.WeightKg - *reading.FatMassKg
 		reading.MuscleMassKg = &mm
@@ -922,6 +991,11 @@ func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
 	for _, group := range groups {
 		for _, measure := range group.Measures {
 			realValue := float64(measure.Value) * math.Pow10(measure.Unit)
+			pos := 0
+			if measure.Position != nil {
+				pos = *measure.Position
+			}
+
 			switch measure.Type {
 			case 1:
 				parsed["weight_kg"] = realValue
@@ -930,11 +1004,41 @@ func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
 			case 6:
 				parsed["fat_ratio_percent"] = realValue
 			case 8:
-				parsed["fat_mass_kg"] = realValue
+				// Análisis segmental de grasa (Withings Body Scan)
+				// position: 1=pierna izq, 2=pierna der, 3=brazo izq, 4=brazo der, 5=torso, 7=cuerpo completo
+				switch pos {
+				case 1:
+					parsed["fat_mass_left_leg_kg"] = realValue
+				case 2:
+					parsed["fat_mass_right_leg_kg"] = realValue
+				case 3:
+					parsed["fat_mass_left_arm_kg"] = realValue
+				case 4:
+					parsed["fat_mass_right_arm_kg"] = realValue
+				case 5:
+					parsed["fat_mass_trunk_kg"] = realValue
+				default:
+					parsed["fat_mass_kg"] = realValue
+				}
 			case 11:
 				parsed["heart_rate_bpm"] = realValue
 			case 76:
-				parsed["muscle_mass_kg"] = realValue
+				// Análisis segmental de músculo (Withings Body Scan)
+				// position: 1=pierna izq, 2=pierna der, 3=brazo izq, 4=brazo der, 5=torso, 7=cuerpo completo
+				switch pos {
+				case 1:
+					parsed["muscle_mass_left_leg_kg"] = realValue
+				case 2:
+					parsed["muscle_mass_right_leg_kg"] = realValue
+				case 3:
+					parsed["muscle_mass_left_arm_kg"] = realValue
+				case 4:
+					parsed["muscle_mass_right_arm_kg"] = realValue
+				case 5:
+					parsed["muscle_mass_trunk_kg"] = realValue
+				default:
+					parsed["muscle_mass_kg"] = realValue
+				}
 			case 77:
 				parsed["hydration_kg"] = realValue
 			case 88:
@@ -942,6 +1046,26 @@ func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
 			case 170:
 				parsed["visceral_fat_index"] = realValue
 			}
+		}
+	}
+
+	// Si masa muscular total no vino explícita pero sí las segmentales, calcular sumatoria
+	if parsed["muscle_mass_kg"] == 0 {
+		sumMuscle := parsed["muscle_mass_left_arm_kg"] + parsed["muscle_mass_right_arm_kg"] +
+			parsed["muscle_mass_left_leg_kg"] + parsed["muscle_mass_right_leg_kg"] +
+			parsed["muscle_mass_trunk_kg"]
+		if sumMuscle > 0 {
+			parsed["muscle_mass_kg"] = math.Round(sumMuscle*10) / 10
+		}
+	}
+
+	// Si masa grasa total no vino explícita pero sí las segmentales, calcular sumatoria
+	if parsed["fat_mass_kg"] == 0 {
+		sumFat := parsed["fat_mass_left_arm_kg"] + parsed["fat_mass_right_arm_kg"] +
+			parsed["fat_mass_left_leg_kg"] + parsed["fat_mass_right_leg_kg"] +
+			parsed["fat_mass_trunk_kg"]
+		if sumFat > 0 {
+			parsed["fat_mass_kg"] = math.Round(sumFat*10) / 10
 		}
 	}
 

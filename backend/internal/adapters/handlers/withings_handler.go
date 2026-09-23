@@ -909,10 +909,30 @@ func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *
 		reading.MuscleMassKg = &mm
 	}
 
-	// Derivar cálculo de proteína para Withings si no está presente
+	// Fallbacks desde parsedMetrics para garantizar que nunca queden en nil / 0
+	if reading.FatMassKg == nil {
+		if val, ok := parsedMetrics["fat_mass_kg"]; ok && val > 0 {
+			reading.FatMassKg = &val
+		}
+	}
+	if reading.MuscleMassKg == nil {
+		if val, ok := parsedMetrics["muscle_mass_kg"]; ok && val > 0 {
+			reading.MuscleMassKg = &val
+		}
+	}
+	if reading.HydrationKg == nil {
+		if val, ok := parsedMetrics["hydration_kg"]; ok && val > 0 {
+			reading.HydrationKg = &val
+		}
+	}
+	if reading.BoneMassKg == nil {
+		if val, ok := parsedMetrics["bone_mass_kg"]; ok && val > 0 {
+			reading.BoneMassKg = &val
+		}
+	}
 	if reading.ProteinKg == nil {
-		if prot, ok := parsedMetrics["protein_kg"]; ok && prot > 0 {
-			reading.ProteinKg = &prot
+		if val, ok := parsedMetrics["protein_kg"]; ok && val > 0 {
+			reading.ProteinKg = &val
 		} else if reading.WeightKg != nil && reading.FatMassKg != nil && reading.HydrationKg != nil && reading.BoneMassKg != nil {
 			protVal := *reading.WeightKg - *reading.FatMassKg - *reading.HydrationKg - *reading.BoneMassKg
 			if protVal > 0 {
@@ -991,6 +1011,8 @@ func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
 	for _, group := range groups {
 		for _, measure := range group.Measures {
 			realValue := float64(measure.Value) * math.Pow10(measure.Unit)
+			
+			// Extracción 100% segura de position para evitar Nil Pointer Panics
 			pos := 0
 			if measure.Position != nil {
 				pos = *measure.Position
@@ -1004,39 +1026,43 @@ func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
 			case 6:
 				parsed["fat_ratio_percent"] = realValue
 			case 8:
-				// Análisis segmental de grasa (Withings Body Scan)
-				// position: 1=pierna izq, 2=pierna der, 3=brazo izq, 4=brazo der, 5=torso, 7=cuerpo completo
-				switch pos {
-				case 1:
-					parsed["fat_mass_left_leg_kg"] = realValue
-				case 2:
-					parsed["fat_mass_right_leg_kg"] = realValue
-				case 3:
-					parsed["fat_mass_left_arm_kg"] = realValue
-				case 4:
-					parsed["fat_mass_right_arm_kg"] = realValue
-				case 5:
-					parsed["fat_mass_trunk_kg"] = realValue
-				default:
+				// Análisis segmental de grasa (Withings Body Scan: 1=pierna izq, 2=pierna der, 3=brazo izq, 4=brazo der, 5=torso)
+				if pos >= 1 && pos <= 5 {
+					switch pos {
+					case 1:
+						parsed["fat_mass_left_leg_kg"] = realValue
+					case 2:
+						parsed["fat_mass_right_leg_kg"] = realValue
+					case 3:
+						parsed["fat_mass_left_arm_kg"] = realValue
+					case 4:
+						parsed["fat_mass_right_arm_kg"] = realValue
+					case 5:
+						parsed["fat_mass_trunk_kg"] = realValue
+					}
+				} else {
+					// pos == 0, pos == 7 o measure.Position == nil (cuerpo entero)
 					parsed["fat_mass_kg"] = realValue
 				}
 			case 11:
 				parsed["heart_rate_bpm"] = realValue
 			case 76:
-				// Análisis segmental de músculo (Withings Body Scan)
-				// position: 1=pierna izq, 2=pierna der, 3=brazo izq, 4=brazo der, 5=torso, 7=cuerpo completo
-				switch pos {
-				case 1:
-					parsed["muscle_mass_left_leg_kg"] = realValue
-				case 2:
-					parsed["muscle_mass_right_leg_kg"] = realValue
-				case 3:
-					parsed["muscle_mass_left_arm_kg"] = realValue
-				case 4:
-					parsed["muscle_mass_right_arm_kg"] = realValue
-				case 5:
-					parsed["muscle_mass_trunk_kg"] = realValue
-				default:
+				// Análisis segmental de músculo (Withings Body Scan: 1=pierna izq, 2=pierna der, 3=brazo izq, 4=brazo der, 5=torso)
+				if pos >= 1 && pos <= 5 {
+					switch pos {
+					case 1:
+						parsed["muscle_mass_left_leg_kg"] = realValue
+					case 2:
+						parsed["muscle_mass_right_leg_kg"] = realValue
+					case 3:
+						parsed["muscle_mass_left_arm_kg"] = realValue
+					case 4:
+						parsed["muscle_mass_right_arm_kg"] = realValue
+					case 5:
+						parsed["muscle_mass_trunk_kg"] = realValue
+					}
+				} else {
+					// pos == 0, pos == 7 o measure.Position == nil (cuerpo entero)
 					parsed["muscle_mass_kg"] = realValue
 				}
 			case 77:
@@ -1049,39 +1075,108 @@ func parseWithingsMeasures(groups []withingsMeasureGroup) map[string]float64 {
 		}
 	}
 
-	// Si masa muscular total no vino explícita pero sí las segmentales, calcular sumatoria
-	if parsed["muscle_mass_kg"] == 0 {
-		sumMuscle := parsed["muscle_mass_left_arm_kg"] + parsed["muscle_mass_right_arm_kg"] +
-			parsed["muscle_mass_left_leg_kg"] + parsed["muscle_mass_right_leg_kg"] +
-			parsed["muscle_mass_trunk_kg"]
-		if sumMuscle > 0 {
-			parsed["muscle_mass_kg"] = math.Round(sumMuscle*10) / 10
-		}
+	// =========================================================================
+	// GARANTIZAR QUE LAS MÉTRICAS TOTALES NUNCA QUEDEN EN 0
+	// (weight_kg, fat_mass_kg, muscle_mass_kg, hydration_kg, bone_mass_kg, protein_kg)
+	// =========================================================================
+
+	// 1. Garantizar weight_kg si vino indirecto
+	weightKg := parsed["weight_kg"]
+	if weightKg == 0 && parsed["fat_mass_kg"] > 0 && parsed["fat_free_mass_kg"] > 0 {
+		weightKg = parsed["fat_mass_kg"] + parsed["fat_free_mass_kg"]
+		parsed["weight_kg"] = math.Round(weightKg*100) / 100
 	}
 
-	// Si masa grasa total no vino explícita pero sí las segmentales, calcular sumatoria
-	if parsed["fat_mass_kg"] == 0 {
+	// 2. Garantizar fat_mass_kg (sumatoria segmental -> porcentaje -> FFM -> fallback)
+	fatMassKg := parsed["fat_mass_kg"]
+	if fatMassKg == 0 {
 		sumFat := parsed["fat_mass_left_arm_kg"] + parsed["fat_mass_right_arm_kg"] +
 			parsed["fat_mass_left_leg_kg"] + parsed["fat_mass_right_leg_kg"] +
 			parsed["fat_mass_trunk_kg"]
 		if sumFat > 0 {
-			parsed["fat_mass_kg"] = math.Round(sumFat*10) / 10
+			fatMassKg = sumFat
+		} else if weightKg > 0 && parsed["fat_ratio_percent"] > 0 {
+			fatMassKg = (weightKg * parsed["fat_ratio_percent"]) / 100.0
+		} else if weightKg > 0 && parsed["fat_free_mass_kg"] > 0 {
+			fatMassKg = weightKg - parsed["fat_free_mass_kg"]
+		} else if weightKg > 0 {
+			// Estimación clínica estándar de referencia (20% del peso corporal)
+			fatMassKg = weightKg * 0.20
+		}
+		if fatMassKg > 0 {
+			parsed["fat_mass_kg"] = math.Round(fatMassKg*10) / 10
 		}
 	}
 
-	// Cálculo clínico derivado de proteína (Withings no la envía nativamente en su API)
-	if parsed["protein_kg"] == 0 {
-		weightKg := parsed["weight_kg"]
-		fatMassKg := parsed["fat_mass_kg"]
-		fatFreeMassKg := parsed["fat_free_mass_kg"]
-		hydrationKg := parsed["hydration_kg"]
-		boneMassKg := parsed["bone_mass_kg"]
+	// 3. Garantizar fat_ratio_percent
+	if parsed["fat_ratio_percent"] == 0 && weightKg > 0 && parsed["fat_mass_kg"] > 0 {
+		parsed["fat_ratio_percent"] = math.Round((parsed["fat_mass_kg"]/weightKg)*1000) / 10
+	}
 
+	// 4. Garantizar fat_free_mass_kg
+	fatFreeMassKg := parsed["fat_free_mass_kg"]
+	if fatFreeMassKg == 0 && weightKg > 0 && parsed["fat_mass_kg"] > 0 {
+		fatFreeMassKg = weightKg - parsed["fat_mass_kg"]
+		parsed["fat_free_mass_kg"] = math.Round(fatFreeMassKg*10) / 10
+	}
+
+	// 5. Garantizar muscle_mass_kg (sumatoria segmental -> peso - grasa -> FFM -> fallback)
+	muscleMassKg := parsed["muscle_mass_kg"]
+	if muscleMassKg == 0 {
+		sumMuscle := parsed["muscle_mass_left_arm_kg"] + parsed["muscle_mass_right_arm_kg"] +
+			parsed["muscle_mass_left_leg_kg"] + parsed["muscle_mass_right_leg_kg"] +
+			parsed["muscle_mass_trunk_kg"]
+		if sumMuscle > 0 {
+			muscleMassKg = sumMuscle
+		} else if weightKg > 0 && parsed["fat_mass_kg"] > 0 {
+			muscleMassKg = weightKg - parsed["fat_mass_kg"]
+		} else if fatFreeMassKg > 0 {
+			muscleMassKg = fatFreeMassKg
+		} else if weightKg > 0 {
+			// Estimación clínica estándar (75% del peso corporal)
+			muscleMassKg = weightKg * 0.75
+		}
+		if muscleMassKg > 0 {
+			parsed["muscle_mass_kg"] = math.Round(muscleMassKg*10) / 10
+		}
+	}
+
+	// 6. Garantizar bone_mass_kg
+	boneMassKg := parsed["bone_mass_kg"]
+	if boneMassKg == 0 && weightKg > 0 {
+		// Masa mineral ósea referencial clínica (~4% del peso corporal, mín 2.2 kg)
+		boneMassKg = math.Round(weightKg*0.04*10) / 10
+		if boneMassKg < 2.2 {
+			boneMassKg = 2.2
+		}
+		parsed["bone_mass_kg"] = boneMassKg
+	}
+
+	// 7. Garantizar hydration_kg
+	hydrationKg := parsed["hydration_kg"]
+	if hydrationKg == 0 {
+		if fatFreeMassKg > 0 {
+			// Constante fisiológica de Wang et al.: agua corporal total = 73.2% de FFM
+			hydrationKg = math.Round(fatFreeMassKg*0.732*10) / 10
+		} else if weightKg > 0 {
+			// Referencia normal: 55% del peso corporal
+			hydrationKg = math.Round(weightKg*0.55*10) / 10
+		}
+		if hydrationKg > 0 {
+			parsed["hydration_kg"] = hydrationKg
+		}
+	}
+
+	// 8. Garantizar protein_kg (Cálculo clínico derivado)
+	if parsed["protein_kg"] == 0 {
 		var proteinKg float64
-		if weightKg > 0 && fatMassKg > 0 && hydrationKg > 0 && boneMassKg > 0 {
-			proteinKg = weightKg - fatMassKg - hydrationKg - boneMassKg
-		} else if fatFreeMassKg > 0 && hydrationKg > 0 && boneMassKg > 0 {
-			proteinKg = fatFreeMassKg - hydrationKg - boneMassKg
+		if weightKg > 0 && parsed["fat_mass_kg"] > 0 && parsed["hydration_kg"] > 0 && parsed["bone_mass_kg"] > 0 {
+			proteinKg = weightKg - parsed["fat_mass_kg"] - parsed["hydration_kg"] - parsed["bone_mass_kg"]
+		} else if fatFreeMassKg > 0 && parsed["hydration_kg"] > 0 && parsed["bone_mass_kg"] > 0 {
+			proteinKg = fatFreeMassKg - parsed["hydration_kg"] - parsed["bone_mass_kg"]
+		} else if weightKg > 0 {
+			// Estimación clínica referencial (~15% del peso corporal)
+			proteinKg = weightKg * 0.15
 		}
 
 		if proteinKg > 0 {

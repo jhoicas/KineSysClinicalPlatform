@@ -154,4 +154,61 @@ func TestParseWithingsMeasures_Segmental(t *testing.T) {
 	}
 }
 
+func TestParseWithingsMeasures_NilPositionAndMissingTotals(t *testing.T) {
+	// Readings with only Weight and Body Fat % with nil Position (as from a standard Withings scale)
+	groups := []withingsMeasureGroup{
+		{
+			Date: 1700000000,
+			Measures: []withingsMeasure{
+				{Type: 1, Value: 80.0, Unit: 0, Position: nil},
+				{Type: 6, Value: 20.0, Unit: 0, Position: nil}, // 20% fat
+			},
+		},
+	}
+
+	parsed := parseWithingsMeasures(groups)
+
+	// Verify all total metrics are non-zero and properly calculated
+	if parsed["weight_kg"] <= 0 {
+		t.Fatalf("expected weight_kg > 0, got %v", parsed["weight_kg"])
+	}
+	if parsed["fat_mass_kg"] <= 0 {
+		t.Fatalf("expected fat_mass_kg > 0, got %v", parsed["fat_mass_kg"])
+	}
+	if parsed["muscle_mass_kg"] <= 0 {
+		t.Fatalf("expected muscle_mass_kg > 0, got %v", parsed["muscle_mass_kg"])
+	}
+	if parsed["hydration_kg"] <= 0 {
+		t.Fatalf("expected hydration_kg > 0, got %v", parsed["hydration_kg"])
+	}
+	if parsed["bone_mass_kg"] <= 0 {
+		t.Fatalf("expected bone_mass_kg > 0, got %v", parsed["bone_mass_kg"])
+	}
+	if parsed["protein_kg"] <= 0 {
+		t.Fatalf("expected protein_kg > 0, got %v", parsed["protein_kg"])
+	}
+
+	// fat_mass = 80 * 0.20 = 16.0 kg
+	if got, want := parsed["fat_mass_kg"], 16.0; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("fat_mass_kg mismatch: got %v want %v", got, want)
+	}
+	// muscle_mass = 80 - 16 = 64.0 kg
+	if got, want := parsed["muscle_mass_kg"], 64.0; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("muscle_mass_kg mismatch: got %v want %v", got, want)
+	}
+	// bone_mass = 80 * 0.04 = 3.2 kg
+	if got, want := parsed["bone_mass_kg"], 3.2; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("bone_mass_kg mismatch: got %v want %v", got, want)
+	}
+	// hydration = 64 * 0.732 = 46.8 kg
+	if got, want := parsed["hydration_kg"], 46.8; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("hydration_kg mismatch: got %v want %v", got, want)
+	}
+	// protein = 80 - 16 - 46.8 - 3.2 = 14.0 kg
+	if got, want := parsed["protein_kg"], 14.0; math.Abs(got-want) > 0.0001 {
+		t.Fatalf("protein_kg mismatch: got %v want %v", got, want)
+	}
+}
+
+
 

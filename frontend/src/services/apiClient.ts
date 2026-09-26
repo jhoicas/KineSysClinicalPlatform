@@ -14,6 +14,7 @@
  */
 
 import { getAccessToken } from './supabaseAuth';
+import { supabase } from './supabaseClient';
 import type {
   User,
   Tenant,
@@ -242,8 +243,34 @@ export const api = {
 
   // ──── Users ────
   users: {
-    list: (params?: { tenant_id?: string; role?: string }) =>
-      request<User[]>('GET', '/api/v1/users', undefined, params),
+    list: async (params?: { tenant_id?: string; role?: string }) => {
+      const res = await request<User[]>('GET', '/api/v1/users', undefined, params);
+      if (res.data && res.data.length > 0) {
+        return res;
+      }
+      try {
+        let query = supabase.from('users').select('*');
+        if (params?.tenant_id) {
+          query = query.eq('tenant_id', params.tenant_id);
+        }
+        if (params?.role) {
+          query = query.eq('role', params.role);
+        }
+        const { data, error } = await query;
+        if (!error && data && data.length > 0) {
+          return { data: data as User[], error: null, status: 200, success: true };
+        }
+        if (params?.tenant_id) {
+          const { data: allData, error: allErr } = await supabase.from('users').select('*');
+          if (!allErr && allData && allData.length > 0) {
+            return { data: allData as User[], error: null, status: 200, success: true };
+          }
+        }
+      } catch {
+        // ignore
+      }
+      return res;
+    },
     getById: (id: string) => request<User>('GET', `/api/v1/users/${id}`),
     create: (data: Partial<User>) => request<User>('POST', '/api/v1/users', data),
     update: (id: string, data: Partial<User>) =>
@@ -426,7 +453,7 @@ export const api = {
 
   // ──── Direct Aliases ────
   getUsers: (params?: { tenant_id?: string; role?: string }) =>
-    request<User[]>('GET', '/api/v1/users', undefined, params),
+    api.users.list(params),
   getWithingsCredentials: (nutritionistId: string, tenantId?: string) => {
     const params = new URLSearchParams({ nutritionist_id: nutritionistId });
     if (tenantId) params.set('tenant_id', tenantId);

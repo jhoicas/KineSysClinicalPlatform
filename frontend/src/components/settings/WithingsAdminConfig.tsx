@@ -13,7 +13,7 @@ const DEFAULT_REDIRECT_URI = 'https://clinicalplatform.ludoia.com/api/v1/hardwar
 export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigProps) {
   const { tenantId, user } = useAuth();
 
-  const [nutritionists, setNutritionists] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [selectedNutritionistId, setSelectedNutritionistId] = useState<string>('');
   const [customNutritionistId, setCustomNutritionistId] = useState<string>('');
   const [isManualInput, setIsManualInput] = useState<boolean>(false);
@@ -33,43 +33,57 @@ export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigP
 
   const [alert, setAlert] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
-  // 1. Cargar lista de profesionales/nutricionistas de la clínica
+  // 1. Cargar lista de usuarios (Nutricionistas y Administradores) de la clínica
   useEffect(() => {
-    async function fetchUsers() {
+    const loadUsers = async () => {
       setLoadingUsers(true);
       try {
-        const usersRes = await apiClient.getUsers({ tenant_id: tenantId || undefined });
-        const usersList: User[] = usersRes.data || [];
-        const eligible = usersList.filter(
-          (u: User) =>
-            u.role === 'nutricionista' ||
-            u.role === 'clinic_admin' ||
-            u.role === 'super_admin' ||
-            u.role === 'professional' ||
-            (u.role as string) === 'nutritionist' ||
-            (u.role as string) === 'admin'
-        );
+        const res = await apiClient.getUsers({ tenant_id: tenantId || undefined });
+        const list = res.data || [];
 
-        const listToDisplay = eligible.length > 0 ? eligible : usersList;
-        setNutritionists(listToDisplay);
+        // Incluir roles de Nutricionista Y Administradores (con todas sus variaciones de nombre)
+        const eligible = list.filter((u: User) => {
+          const role = (u.role || '').toLowerCase();
+          return (
+            role.includes('admin') ||
+            role.includes('nutri') ||
+            role.includes('profe') ||
+            role === 'clinic_admin' ||
+            role === 'super_admin' ||
+            role === 'nutritionist' ||
+            role === 'nutricionista'
+          );
+        });
 
-        if (listToDisplay.length > 0) {
-          const currentInList = listToDisplay.find((u: User) => u.id === user?.id);
-          setSelectedNutritionistId(currentInList ? currentInList.id : listToDisplay[0].id);
-        } else if (user?.id) {
-          setSelectedNutritionistId(user.id);
+        // Si el filtro resulta vacío por alguna razón, usar la lista completa como fallback
+        const finalUsers = eligible.length > 0 ? eligible : list;
+        setUsers(finalUsers);
+
+        // Auto-seleccionar el primer usuario o el usuario actual si no hay ninguno elegido
+        if (finalUsers.length > 0) {
+          if (!selectedNutritionistId) {
+            const currentUser = finalUsers.find((u: User) => u.id === user?.id);
+            setSelectedNutritionistId(currentUser ? currentUser.id : finalUsers[0].id);
+          }
+        } else {
+          // Si users está vacío, habilita automáticamente el modo de "Ingresar UUID manual"
+          setIsManualInput(true);
+          if (user?.id && !customNutritionistId) {
+            setCustomNutritionistId(user.id);
+          }
         }
-      } catch (err: any) {
-        console.warn('Error al cargar usuarios:', err);
-        if (user?.id) {
-          setSelectedNutritionistId(user.id);
+      } catch (err) {
+        console.error('Error cargando usuarios para Withings Admin:', err);
+        setIsManualInput(true);
+        if (user?.id && !customNutritionistId) {
+          setCustomNutritionistId(user.id);
         }
       } finally {
         setLoadingUsers(false);
       }
-    }
+    };
 
-    fetchUsers();
+    loadUsers();
   }, [tenantId, user?.id]);
 
   // ID activo del nutricionista a consultar o configurar
@@ -266,9 +280,10 @@ export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigP
                 disabled={loadingUsers}
                 className="w-full px-4 py-2.5 rounded-xl border border-outline-variant/40 bg-surface text-on-surface text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer disabled:opacity-50"
               >
-                {nutritionists.map((nutri: User) => (
-                  <option key={nutri.id} value={nutri.id}>
-                    {nutri.full_name || nutri.email || nutri.id} {nutri.role ? `(${nutri.role})` : ''}
+                <option value="" disabled>-- Seleccionar Nutricionista o Administrador --</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.first_name || u.name || u.full_name || u.email} {u.last_name || ''} ({u.role})
                   </option>
                 ))}
               </select>

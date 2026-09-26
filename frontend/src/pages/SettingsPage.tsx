@@ -7,6 +7,7 @@ import { TopNavBar } from '../components/layout/TopNavBar';
 import { PhoneInputWithCountry } from '../components/common/PhoneInputWithCountry';
 import { ToastContainer, ToastMessage } from '../components/common/Toast';
 import { BrandingCustomizer } from '../components/settings/BrandingCustomizer';
+import { WithingsAdminConfig } from '../components/settings/WithingsAdminConfig';
 import { Tenant } from '../types';
 
 interface SettingsPageProps {
@@ -19,7 +20,7 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'branding' | 'general' | 'team' | 'database'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'general' | 'team' | 'database' | 'hardware'>('branding');
 
   // Form Fields State
   const [clinicName, setClinicName] = useState('');
@@ -228,6 +229,20 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
               >
                 <span className="material-symbols-outlined text-base">groups</span>
                 <span>Equipo Profesional</span>
+              </button>
+            )}
+
+            {(role === 'clinic_admin' || role === 'super_admin' || role === 'nutricionista') && (
+              <button
+                onClick={() => setActiveTab('hardware')}
+                className={`px-4 py-2.5 rounded-2xl font-extrabold text-xs flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === 'hardware'
+                    ? 'bg-primary text-white shadow-md shadow-primary/20'
+                    : 'bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                }`}
+              >
+                <span className="material-symbols-outlined text-base">scale</span>
+                <span>Básculas & Hardware (Withings)</span>
               </button>
             )}
           </div>
@@ -584,6 +599,16 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
                   </form>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Withings Hardware Admin Config Tab */}
+          {activeTab === 'hardware' && (
+            <div className="space-y-6 animate-fadeIn">
+              <WithingsAdminConfig
+                onSuccess={(msg) => addToast('success', t('common.success', 'Éxito'), msg)}
+                onError={(err) => addToast('error', t('common.error', 'Error'), err)}
+              />
             </div>
           )}
         </div>

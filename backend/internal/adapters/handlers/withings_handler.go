@@ -273,6 +273,13 @@ func (h *WithingsHardwareHandler) initDatabaseAndTokens(ctx context.Context) {
 	CREATE INDEX IF NOT EXISTS idx_withings_integrations_withings_user_id ON kinesys.withings_integrations(withings_user_id);
 	CREATE INDEX IF NOT EXISTS idx_withings_integrations_tenant_nutri ON kinesys.withings_integrations(tenant_id, nutritionist_id);
 
+	ALTER TABLE kinesys.withings_integrations ADD COLUMN IF NOT EXISTS redirect_uri TEXT;
+	ALTER TABLE kinesys.withings_integrations ALTER COLUMN withings_user_id DROP NOT NULL;
+	ALTER TABLE kinesys.withings_integrations ALTER COLUMN access_token DROP NOT NULL;
+	ALTER TABLE kinesys.withings_integrations ALTER COLUMN refresh_token DROP NOT NULL;
+	ALTER TABLE kinesys.withings_integrations ALTER COLUMN expires_at DROP NOT NULL;
+	CREATE UNIQUE INDEX IF NOT EXISTS uq_withings_integrations_tenant_nutritionist ON kinesys.withings_integrations(tenant_id, nutritionist_id);
+
 	ALTER TABLE kinesys.active_weigh_in_sessions 
 	ADD COLUMN IF NOT EXISTS nutritionist_id UUID REFERENCES kinesys.users(id) ON DELETE SET NULL;
 	CREATE INDEX IF NOT EXISTS idx_active_weigh_in_sessions_tenant_nutri ON kinesys.active_weigh_in_sessions(tenant_id, nutritionist_id);
@@ -351,6 +358,32 @@ func (h *WithingsHardwareHandler) initDatabaseAndTokens(ctx context.Context) {
 	}
 }
 
+func (h *WithingsHardwareHandler) getIntegrationByNutritionist(ctx context.Context, tenantID, nutritionistID uuid.UUID) (*domain.WithingsIntegration, error) {
+	if h.withingsRepo != nil {
+		return h.withingsRepo.FindByNutritionist(ctx, tenantID, nutritionistID)
+	}
+	if h.db == nil {
+		return nil, fmt.Errorf("no database configured")
+	}
+	query := `
+		SELECT id, tenant_id, nutritionist_id, COALESCE(withings_user_id, ''), COALESCE(client_id, ''), COALESCE(client_secret, ''),
+		       COALESCE(redirect_uri, ''), COALESCE(access_token, ''), COALESCE(refresh_token, ''), COALESCE(expires_at, NOW()), is_active, created_at, updated_at
+		FROM kinesys.withings_integrations
+		WHERE ((tenant_id = $1 AND nutritionist_id = $2) OR nutritionist_id = $2) AND is_active = TRUE
+		ORDER BY updated_at DESC LIMIT 1
+	`
+	var item domain.WithingsIntegration
+	err := h.db.QueryRow(ctx, query, tenantID, nutritionistID).Scan(
+		&item.ID, &item.TenantID, &item.NutritionistID, &item.WithingsUserID,
+		&item.ClientID, &item.ClientSecret, &item.RedirectURI, &item.AccessToken, &item.RefreshToken,
+		&item.ExpiresAt, &item.IsActive, &item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
 func (h *WithingsHardwareHandler) saveWithingsIntegration(ctx context.Context, integ *domain.WithingsIntegration) error {
 	if h.withingsRepo != nil {
 		return h.withingsRepo.Upsert(ctx, integ)
@@ -360,16 +393,17 @@ func (h *WithingsHardwareHandler) saveWithingsIntegration(ctx context.Context, i
 	}
 	query := `
 		INSERT INTO kinesys.withings_integrations (
-			tenant_id, nutritionist_id, withings_user_id, client_id, client_secret,
+			tenant_id, nutritionist_id, withings_user_id, client_id, client_secret, redirect_uri,
 			access_token, refresh_token, expires_at, is_active, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, true, NOW()
+			$1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''),
+			$7, $8, $9, true, NOW()
 		)
-		ON CONFLICT (withings_user_id) DO UPDATE SET
-			tenant_id = EXCLUDED.tenant_id,
-			nutritionist_id = EXCLUDED.nutritionist_id,
+		ON CONFLICT (tenant_id, nutritionist_id) DO UPDATE SET
+			withings_user_id = COALESCE(NULLIF(EXCLUDED.withings_user_id, ''), kinesys.withings_integrations.withings_user_id),
 			client_id = COALESCE(NULLIF(EXCLUDED.client_id, ''), kinesys.withings_integrations.client_id),
 			client_secret = COALESCE(NULLIF(EXCLUDED.client_secret, ''), kinesys.withings_integrations.client_secret),
+			redirect_uri = COALESCE(NULLIF(EXCLUDED.redirect_uri, ''), kinesys.withings_integrations.redirect_uri),
 			access_token = EXCLUDED.access_token,
 			refresh_token = EXCLUDED.refresh_token,
 			expires_at = EXCLUDED.expires_at,
@@ -379,8 +413,8 @@ func (h *WithingsHardwareHandler) saveWithingsIntegration(ctx context.Context, i
 	`
 	return h.db.QueryRow(ctx, query,
 		integ.TenantID, integ.NutritionistID, integ.WithingsUserID,
-		integ.ClientID, integ.ClientSecret, integ.AccessToken,
-		integ.RefreshToken, integ.ExpiresAt,
+		integ.ClientID, integ.ClientSecret, integ.RedirectURI,
+		integ.AccessToken, integ.RefreshToken, integ.ExpiresAt,
 	).Scan(&integ.ID, &integ.CreatedAt, &integ.UpdatedAt)
 }
 
@@ -896,6 +930,38 @@ func (h *WithingsHardwareHandler) HandleAuthorize(w http.ResponseWriter, r *http
 		tenantUUID = h.resolveTenantID(r.Context(), userIDStr)
 	}
 
+	nutritionistUUID := uuid.Nil
+	if userIDStr != "" {
+		nutritionistUUID, _ = uuid.Parse(userIDStr)
+	}
+
+	var clientID string
+	var redirectURI string
+
+	if nutritionistUUID != uuid.Nil {
+		integ, err := h.getIntegrationByNutritionist(r.Context(), tenantUUID, nutritionistUUID)
+		if err == nil && integ != nil {
+			clientID = strings.TrimSpace(integ.ClientID)
+			redirectURI = strings.TrimSpace(integ.RedirectURI)
+		}
+	}
+
+	// Si no existen credenciales configuradas en la BD para este usuario
+	if clientID == "" {
+		if (h.withingsRepo != nil || h.db != nil) || h.clientID == "" {
+			http.Error(w, "El administrador no ha configurado las credenciales de Withings para este usuario", http.StatusBadRequest)
+			return
+		}
+		clientID = h.clientID
+	}
+
+	if redirectURI == "" {
+		redirectURI = "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
+	}
+	if customRedirect := r.URL.Query().Get("redirect_uri"); customRedirect != "" {
+		redirectURI = customRedirect
+	}
+
 	// Codificar state con tenant_id y user_id
 	type stateData struct {
 		TenantID       string `json:"tenant_id"`
@@ -910,14 +976,9 @@ func (h *WithingsHardwareHandler) HandleAuthorize(w http.ResponseWriter, r *http
 	stBytes, _ := json.Marshal(st)
 	encodedState := base64.RawURLEncoding.EncodeToString(stBytes)
 
-	redirectURI := "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
-	if customRedirect := r.URL.Query().Get("redirect_uri"); customRedirect != "" {
-		redirectURI = customRedirect
-	}
-
 	authURL := fmt.Sprintf(
-		"https://account.withings.net/oauth2_user/authorize2?response_type=code&client_id=%s&state=%s&scope=%s&redirect_uri=%s",
-		url.QueryEscape(h.clientID),
+		"https://account.withings.com/oauth2_user/authorize2?response_type=code&client_id=%s&state=%s&scope=%s&redirect_uri=%s",
+		url.QueryEscape(clientID),
 		url.QueryEscape(encodedState),
 		url.QueryEscape("user.metrics,user.info,user.activity"),
 		url.QueryEscape(redirectURI),
@@ -1000,18 +1061,36 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 		nutritionistUUID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	}
 
-	redirectURI := "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
+	// Obtener client_id, client_secret y redirect_uri del registro de integración para este nutricionista
+	targetClientID := h.clientID
+	targetClientSecret := h.clientSecret
+	targetRedirectURI := "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
 	if r.URL.Path == "/api/v1/withings/callback" {
-		redirectURI = "https://clinicalplatform.ludoia.com/api/v1/withings/callback"
+		targetRedirectURI = "https://clinicalplatform.ludoia.com/api/v1/withings/callback"
+	}
+
+	if nutritionistUUID != uuid.Nil {
+		integ, err := h.getIntegrationByNutritionist(r.Context(), tenantUUID, nutritionistUUID)
+		if err == nil && integ != nil {
+			if strings.TrimSpace(integ.ClientID) != "" {
+				targetClientID = strings.TrimSpace(integ.ClientID)
+			}
+			if strings.TrimSpace(integ.ClientSecret) != "" {
+				targetClientSecret = strings.TrimSpace(integ.ClientSecret)
+			}
+			if strings.TrimSpace(integ.RedirectURI) != "" {
+				targetRedirectURI = strings.TrimSpace(integ.RedirectURI)
+			}
+		}
 	}
 
 	form := url.Values{
 		"action":        {"requesttoken"},
 		"grant_type":    {"authorization_code"},
-		"client_id":     {h.clientID},
-		"client_secret": {h.clientSecret},
+		"client_id":     {targetClientID},
+		"client_secret": {targetClientSecret},
 		"code":          {code},
-		"redirect_uri":  {redirectURI},
+		"redirect_uri":  {targetRedirectURI},
 	}
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://wbsapi.withings.net/v2/oauth2", strings.NewReader(form.Encode()))
@@ -1059,8 +1138,9 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 		TenantID:       tenantUUID,
 		NutritionistID: nutritionistUUID,
 		WithingsUserID: payload.Body.UserID,
-		ClientID:       h.clientID,
-		ClientSecret:   h.clientSecret,
+		ClientID:       targetClientID,
+		ClientSecret:   targetClientSecret,
+		RedirectURI:    targetRedirectURI,
 		AccessToken:    payload.Body.AccessToken,
 		RefreshToken:   payload.Body.RefreshToken,
 		ExpiresAt:      expiresAt,
@@ -1124,6 +1204,148 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 	</div>
 </body>
 </html>`))
+}
+
+type WithingsAdminCredentialsRequest struct {
+	TenantID       string `json:"tenant_id"`
+	NutritionistID string `json:"nutritionist_id"`
+	ClientID       string `json:"client_id"`
+	ClientSecret   string `json:"client_secret"`
+	RedirectURI    string `json:"redirect_uri"`
+}
+
+// SaveAdminCredentials handles POST /api/v1/admin/hardware/withings/credentials
+// Performs UPSERT in withings_integrations inserting client credentials and leaving tokens null/empty
+func (h *WithingsHardwareHandler) SaveAdminCredentials(w http.ResponseWriter, r *http.Request) {
+	var req WithingsAdminCredentialsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON payload: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	req.ClientID = strings.TrimSpace(req.ClientID)
+	req.ClientSecret = strings.TrimSpace(req.ClientSecret)
+	req.NutritionistID = strings.TrimSpace(req.NutritionistID)
+	req.RedirectURI = strings.TrimSpace(req.RedirectURI)
+	if req.RedirectURI == "" {
+		req.RedirectURI = "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
+	}
+
+	if req.NutritionistID == "" {
+		if uid, ok := r.Context().Value(middleware.UserIDKey).(string); ok && uid != "" {
+			req.NutritionistID = uid
+		} else {
+			http.Error(w, "nutritionist_id es requerido", http.StatusBadRequest)
+			return
+		}
+	}
+
+	nutritionistUUID, err := uuid.Parse(req.NutritionistID)
+	if err != nil {
+		http.Error(w, "nutritionist_id inválido", http.StatusBadRequest)
+		return
+	}
+
+	tenantUUID := uuid.Nil
+	if req.TenantID != "" {
+		tenantUUID, _ = uuid.Parse(req.TenantID)
+	}
+	if tenantUUID == uuid.Nil {
+		tenantUUID = h.resolveTenantID(r.Context(), req.NutritionistID)
+	}
+
+	if req.ClientID == "" || req.ClientSecret == "" {
+		http.Error(w, "client_id y client_secret son requeridos", http.StatusBadRequest)
+		return
+	}
+
+	if h.withingsRepo != nil {
+		err = h.withingsRepo.UpsertCredentials(r.Context(), tenantUUID, nutritionistUUID, req.ClientID, req.ClientSecret, req.RedirectURI)
+	} else if h.db != nil {
+		query := `
+			INSERT INTO kinesys.withings_integrations (
+				tenant_id, nutritionist_id, client_id, client_secret, redirect_uri,
+				withings_user_id, access_token, refresh_token, expires_at, is_active, updated_at
+			) VALUES (
+				$1, $2, $3, $4, $5,
+				NULL, NULL, NULL, NULL, TRUE, NOW()
+			)
+			ON CONFLICT (tenant_id, nutritionist_id) DO UPDATE SET
+				client_id = EXCLUDED.client_id,
+				client_secret = EXCLUDED.client_secret,
+				redirect_uri = EXCLUDED.redirect_uri,
+				is_active = TRUE,
+				updated_at = NOW()
+		`
+		_, err = h.db.Exec(r.Context(), query, tenantUUID, nutritionistUUID, req.ClientID, req.ClientSecret, req.RedirectURI)
+	}
+
+	if err != nil {
+		log.Printf("[WITHINGS ADMIN ERROR] Error guardando credenciales: %v", err)
+		http.Error(w, "Error guardando credenciales: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[WITHINGS ADMIN OK] Credenciales guardadas para tenant=%s, nutritionist=%s", tenantUUID, nutritionistUUID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":          "ok",
+		"message":         "Credenciales de Withings guardadas exitosamente",
+		"tenant_id":       tenantUUID.String(),
+		"nutritionist_id": nutritionistUUID.String(),
+		"redirect_uri":    req.RedirectURI,
+	})
+}
+
+// GetAdminCredentials handles GET /api/v1/admin/hardware/withings/credentials
+func (h *WithingsHardwareHandler) GetAdminCredentials(w http.ResponseWriter, r *http.Request) {
+	nutriIDStr := strings.TrimSpace(r.URL.Query().Get("nutritionist_id"))
+	if nutriIDStr == "" {
+		if uid, ok := r.Context().Value(middleware.UserIDKey).(string); ok {
+			nutriIDStr = uid
+		}
+	}
+	if nutriIDStr == "" {
+		http.Error(w, "nutritionist_id es requerido", http.StatusBadRequest)
+		return
+	}
+	nutriUUID, err := uuid.Parse(nutriIDStr)
+	if err != nil {
+		http.Error(w, "nutritionist_id inválido", http.StatusBadRequest)
+		return
+	}
+
+	tenantUUID := uuid.Nil
+	if tStr := r.URL.Query().Get("tenant_id"); tStr != "" {
+		tenantUUID, _ = uuid.Parse(tStr)
+	}
+	if tenantUUID == uuid.Nil {
+		tenantUUID = h.resolveTenantID(r.Context(), nutriIDStr)
+	}
+
+	integ, err := h.getIntegrationByNutritionist(r.Context(), tenantUUID, nutriUUID)
+	if err != nil || integ == nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"configured":   false,
+			"redirect_uri": "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback",
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"configured":       integ.ClientID != "",
+		"tenant_id":        integ.TenantID.String(),
+		"nutritionist_id":  integ.NutritionistID.String(),
+		"client_id":        integ.ClientID,
+		"client_secret":    maskToken(integ.ClientSecret),
+		"redirect_uri":     integ.RedirectURI,
+		"withings_user_id": integ.WithingsUserID,
+		"is_connected":     integ.AccessToken != "" && integ.WithingsUserID != "",
+		"is_active":        integ.IsActive,
+	})
 }
 
 func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *domain.Patient) (*WithingsHardwareReading, error) {

@@ -34,7 +34,9 @@ type WithingsRepository interface {
 	FindByWithingsUserID(ctx context.Context, withingsUserID string) (*domain.WithingsIntegration, error)
 	FindByNutritionist(ctx context.Context, tenantID, nutritionistID uuid.UUID) (*domain.WithingsIntegration, error)
 	Upsert(ctx context.Context, integration *domain.WithingsIntegration) error
+	UpsertCredentials(ctx context.Context, tenantID, nutritionistID uuid.UUID, clientID, clientSecret, redirectURI string) error
 	UpdateTokens(ctx context.Context, withingsUserID, accessToken, refreshToken string, expiresAt time.Time) error
+	UpdateTokensByNutritionist(ctx context.Context, tenantID, nutritionistID uuid.UUID, withingsUserID, accessToken, refreshToken string, expiresAt time.Time) error
 }
 
 type NutritionRepository interface {

@@ -253,6 +253,10 @@ func TestHandleAuthorize(t *testing.T) {
 		t.Fatalf("expected non-empty auth url, got: %v", jsonResp)
 	}
 
+	if !strings.Contains(authURL, "account.withings.com") {
+		t.Fatalf("expected account.withings.com in authURL, got: %s", authURL)
+	}
+
 	if !strings.Contains(authURL, "test_client_id") {
 		t.Fatalf("authURL missing client_id: %s", authURL)
 	}
@@ -277,6 +281,28 @@ func TestHandleAuthorize(t *testing.T) {
 	}
 	if stateMap["user_id"] != "11111111-1111-1111-1111-111111111111" {
 		t.Fatalf("user_id mismatch in state: %v", stateMap["user_id"])
+	}
+}
+
+func TestSaveAdminCredentialsValidation(t *testing.T) {
+	h := NewWithingsHardwareHandler(
+		"test_at", "test_rt", "test_user", "https://wbsapi.withings.net", "test_client_id", "test_client_secret",
+		nil, nil, nil,
+	)
+
+	// Missing client_secret
+	body := strings.NewReader(`{
+		"tenant_id": "00000000-0000-0000-0000-000000000001",
+		"nutritionist_id": "11111111-1111-1111-1111-111111111111",
+		"client_id": "my_client_id"
+	}`)
+	req := httptest.NewRequest("POST", "/api/v1/admin/hardware/withings/credentials", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	h.SaveAdminCredentials(w, req)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing client_secret, got %d", w.Result().StatusCode)
 	}
 }
 

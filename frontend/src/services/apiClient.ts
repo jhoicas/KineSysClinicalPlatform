@@ -202,6 +202,33 @@ export const api = {
         `/api/v1/hardware/withings/authorize?${params.toString()}`,
       );
     },
+    saveWithingsCredentials: (data: {
+      tenant_id?: string;
+      nutritionist_id: string;
+      client_id: string;
+      client_secret: string;
+      redirect_uri?: string;
+    }) =>
+      request<{ status: string; message: string; tenant_id: string; nutritionist_id: string; redirect_uri: string }>(
+        'POST',
+        '/api/v1/admin/hardware/withings/credentials',
+        data,
+      ),
+    getWithingsCredentials: (nutritionistId: string, tenantId?: string) => {
+      const params = new URLSearchParams({ nutritionist_id: nutritionistId });
+      if (tenantId) params.set('tenant_id', tenantId);
+      return request<{
+        configured: boolean;
+        tenant_id?: string;
+        nutritionist_id?: string;
+        client_id?: string;
+        client_secret?: string;
+        redirect_uri?: string;
+        withings_user_id?: string;
+        is_connected?: boolean;
+        is_active?: boolean;
+      }>('GET', `/api/v1/admin/hardware/withings/credentials?${params.toString()}`);
+    },
   },
 
   exercises: {

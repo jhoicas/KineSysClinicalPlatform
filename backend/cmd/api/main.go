@@ -130,6 +130,12 @@ func main() {
 	r.Get("/hardware/withings/webhook", withingsHandler.Webhook)
 	r.Post("/hardware/withings/webhook", withingsHandler.Webhook)
 	
+	// Withings Admin Hardware Configuration
+	r.Post("/api/v1/admin/hardware/withings/credentials", withingsHandler.SaveAdminCredentials)
+	r.Get("/api/v1/admin/hardware/withings/credentials", withingsHandler.GetAdminCredentials)
+	r.Post("/admin/hardware/withings/credentials", withingsHandler.SaveAdminCredentials)
+	r.Get("/admin/hardware/withings/credentials", withingsHandler.GetAdminCredentials)
+
 	// Withings POC
 	r.Post("/api/v1/hardware/withings/poc/start", withingsHandler.StartPocSession)
 	r.Get("/api/v1/hardware/withings/poc/data", withingsHandler.GetPocData)
@@ -137,6 +143,10 @@ func main() {
 	// Protected Routes (Require Supabase JWT)
 	r.Group(func(r chi.Router) {
 		r.Use(customMiddleware.SupabaseAuthWithJWKSAndDB(cfg.SupabaseJWTSecret, cfg.SupabaseURL, dbPool))
+
+		// Admin Hardware Credentials (Protected)
+		r.Post("/api/v1/admin/hardware/withings/credentials", withingsHandler.SaveAdminCredentials)
+		r.Get("/api/v1/admin/hardware/withings/credentials", withingsHandler.GetAdminCredentials)
 
 		// Patients
 		r.Get("/api/v1/patients", patientHandler.List)

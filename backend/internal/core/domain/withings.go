@@ -13,6 +13,7 @@ type WithingsIntegration struct {
 	WithingsUserID string    `json:"withings_user_id"`
 	ClientID       string    `json:"client_id,omitempty"`
 	ClientSecret   string    `json:"client_secret,omitempty"`
+	RedirectURI    string    `json:"redirect_uri,omitempty"`
 	AccessToken    string    `json:"access_token"`
 	RefreshToken   string    `json:"refresh_token"`
 	ExpiresAt      time.Time `json:"expires_at"`

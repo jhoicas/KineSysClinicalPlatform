@@ -936,26 +936,19 @@ func (h *WithingsHardwareHandler) HandleAuthorize(w http.ResponseWriter, r *http
 		nutritionistUUID, _ = uuid.Parse(userIDStr)
 	}
 
-	var clientID string
-	var redirectURI string
-
-	if nutritionistUUID != uuid.Nil {
-		integ, err := h.getIntegrationByNutritionist(r.Context(), tenantUUID, nutritionistUUID)
-		if err == nil && integ != nil {
-			clientID = strings.TrimSpace(integ.ClientID)
-			redirectURI = strings.TrimSpace(integ.RedirectURI)
-		}
+	if nutritionistUUID == uuid.Nil {
+		http.Error(w, "El administrador no ha configurado las credenciales de Withings para tu usuario específico.", http.StatusBadRequest)
+		return
 	}
 
-	// Si no existen credenciales configuradas en la BD para este usuario
-	if clientID == "" {
-		if (h.withingsRepo != nil || h.db != nil) || h.clientID == "" {
-			http.Error(w, "El administrador no ha configurado las credenciales de Withings para este usuario", http.StatusBadRequest)
-			return
-		}
-		clientID = h.clientID
+	integ, err := h.getIntegrationByNutritionist(r.Context(), tenantUUID, nutritionistUUID)
+	if err != nil || integ == nil || strings.TrimSpace(integ.ClientID) == "" || strings.TrimSpace(integ.ClientSecret) == "" {
+		http.Error(w, "El administrador no ha configurado las credenciales de Withings para tu usuario específico.", http.StatusBadRequest)
+		return
 	}
 
+	clientID := strings.TrimSpace(integ.ClientID)
+	redirectURI := strings.TrimSpace(integ.RedirectURI)
 	if redirectURI == "" {
 		redirectURI = "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
 	}
@@ -1060,49 +1053,25 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 		}
 	}
 	if nutritionistUUID == uuid.Nil {
-		nutritionistUUID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+		http.Error(w, "Credenciales OAuth incompletas en la base de datos para este usuario. Contacte al administrador.", http.StatusBadRequest)
+		return
 	}
 
-	// Obtener registro de integración para este nutricionista
-	var integration *domain.WithingsIntegration
-	if nutritionistUUID != uuid.Nil {
-		integration, _ = h.getIntegrationByNutritionist(r.Context(), tenantUUID, nutritionistUUID)
-	}
-	if integration == nil {
-		integration = &domain.WithingsIntegration{
-			TenantID:       tenantUUID,
-			NutritionistID: nutritionistUUID,
-			ClientID:       h.clientID,
-			ClientSecret:   h.clientSecret,
-			RedirectURI:    "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback",
-		}
-		if r.URL.Path == "/api/v1/withings/callback" {
-			integration.RedirectURI = "https://clinicalplatform.ludoia.com/api/v1/withings/callback"
-		}
+	// Obtener registro de integración para este nutricionista exclusivamente desde la base de datos
+	integration, err := h.getIntegrationByNutritionist(r.Context(), tenantUUID, nutritionistUUID)
+	if err != nil || integration == nil || strings.TrimSpace(integration.ClientID) == "" || strings.TrimSpace(integration.ClientSecret) == "" {
+		http.Error(w, "Credenciales OAuth incompletas en la base de datos para este usuario. Contacte al administrador.", http.StatusBadRequest)
+		return
 	}
 
 	clientID := strings.TrimSpace(integration.ClientID)
 	clientSecret := strings.TrimSpace(integration.ClientSecret)
 	redirectURI := strings.TrimSpace(integration.RedirectURI)
-
-	// Fallback de seguridad si los campos en la integración estaban vacíos
-	if clientID == "" {
-		clientID = strings.TrimSpace(h.clientID)
-	}
-	if clientSecret == "" {
-		clientSecret = strings.TrimSpace(h.clientSecret)
-	}
 	if redirectURI == "" {
 		redirectURI = "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
 		if r.URL.Path == "/api/v1/withings/callback" {
 			redirectURI = "https://clinicalplatform.ludoia.com/api/v1/withings/callback"
 		}
-	}
-
-	// Validación de seguridad: Si clientID o clientSecret están vacíos, devuelve un error HTTP 400 antes de llamar a Withings
-	if clientID == "" || clientSecret == "" {
-		http.Error(w, "Credenciales de Withings no configuradas (client_id o client_secret vacíos)", http.StatusBadRequest)
-		return
 	}
 
 	data := url.Values{}

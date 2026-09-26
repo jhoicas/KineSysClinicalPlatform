@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"math"
@@ -8,6 +9,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/kinesys/clinical-platform-backend/internal/core/domain"
 )
 
 func TestParseWithingsMeasures(t *testing.T) {
@@ -227,12 +232,52 @@ func TestParseWithingsPocMeasures_Segmental(t *testing.T) {
 	}
 }
 
-func TestHandleAuthorize(t *testing.T) {
-	h := NewWithingsHardwareHandler(
-		"test_at", "test_rt", "test_user", "https://wbsapi.withings.net", "test_client_id", "test_client_secret",
-		nil, nil, nil,
-	)
+type mockWithingsRepo struct {
+	integration *domain.WithingsIntegration
+}
 
+func (m *mockWithingsRepo) FindByWithingsUserID(ctx context.Context, withingsUserID string) (*domain.WithingsIntegration, error) {
+	return m.integration, nil
+}
+func (m *mockWithingsRepo) FindByNutritionist(ctx context.Context, tenantID, nutritionistID uuid.UUID) (*domain.WithingsIntegration, error) {
+	if m.integration != nil && m.integration.NutritionistID == nutritionistID {
+		return m.integration, nil
+	}
+	return nil, nil
+}
+func (m *mockWithingsRepo) Upsert(ctx context.Context, integration *domain.WithingsIntegration) error {
+	m.integration = integration
+	return nil
+}
+func (m *mockWithingsRepo) UpsertCredentials(ctx context.Context, tenantID, nutritionistID uuid.UUID, clientID, clientSecret, redirectURI string) error {
+	return nil
+}
+func (m *mockWithingsRepo) UpdateTokens(ctx context.Context, withingsUserID, accessToken, refreshToken string, expiresAt time.Time) error {
+	return nil
+}
+func (m *mockWithingsRepo) UpdateTokensByNutritionist(ctx context.Context, tenantID, nutritionistID uuid.UUID, withingsUserID, accessToken, refreshToken string, expiresAt time.Time) error {
+	return nil
+}
+
+func TestHandleAuthorize(t *testing.T) {
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	nutritionistID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+
+	repo := &mockWithingsRepo{
+		integration: &domain.WithingsIntegration{
+			TenantID:       tenantID,
+			NutritionistID: nutritionistID,
+			ClientID:       "test_client_id",
+			ClientSecret:   "test_client_secret",
+			RedirectURI:    "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback",
+		},
+	}
+
+	h := &WithingsHardwareHandler{
+		withingsRepo: repo,
+	}
+
+	// 1. Caso exitoso: nutricionista con credenciales configuradas en BD
 	req := httptest.NewRequest("GET", "/api/v1/hardware/withings/authorize?tenant_id=00000000-0000-0000-0000-000000000001&user_id=11111111-1111-1111-1111-111111111111&format=json", nil)
 	w := httptest.NewRecorder()
 
@@ -281,6 +326,14 @@ func TestHandleAuthorize(t *testing.T) {
 	}
 	if stateMap["user_id"] != "11111111-1111-1111-1111-111111111111" {
 		t.Fatalf("user_id mismatch in state: %v", stateMap["user_id"])
+	}
+
+	// 2. Fail-fast: usuario sin credenciales configuradas
+	reqUnconfigured := httptest.NewRequest("GET", "/api/v1/hardware/withings/authorize?tenant_id=00000000-0000-0000-0000-000000000001&user_id=22222222-2222-2222-2222-222222222222&format=json", nil)
+	wUnconfigured := httptest.NewRecorder()
+	h.HandleAuthorize(wUnconfigured, reqUnconfigured)
+	if wUnconfigured.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for unconfigured user, got %d", wUnconfigured.Result().StatusCode)
 	}
 }
 

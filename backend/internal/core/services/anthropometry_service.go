@@ -41,6 +41,10 @@ func (s *anthropometryService) GetLatestPendingWeighInSession(ctx context.Contex
 	return s.repo.GetLatestPendingWeighInSession(ctx)
 }
 
+func (s *anthropometryService) GetPendingSessionByTenantAndNutritionist(ctx context.Context, tenantID, nutritionistID uuid.UUID) (*domain.ActiveWeighInSession, error) {
+	return s.repo.GetPendingSessionByTenantAndNutritionist(ctx, tenantID, nutritionistID)
+}
+
 func (s *anthropometryService) UpdateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error {
 	return s.repo.UpdateWeighInSession(ctx, session)
 }

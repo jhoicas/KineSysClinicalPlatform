@@ -356,12 +356,25 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
     };
   }, [isWeighInActive, activePatient?.id, currentClinico]);
 
+  const handleConnectWithings = async () => {
+    try {
+      const res = await api.hardware.getWithingsAuthorizeUrl(tenantId, nutritionistId);
+      if (res.data?.url) {
+        window.open(res.data.url, '_blank', 'width=650,height=750');
+      } else {
+        window.open(`/api/v1/hardware/withings/authorize?tenant_id=${tenantId}&user_id=${nutritionistId}`, '_blank', 'width=650,height=750');
+      }
+    } catch {
+      window.open(`/api/v1/hardware/withings/authorize?tenant_id=${tenantId}&user_id=${nutritionistId}`, '_blank', 'width=650,height=750');
+    }
+  };
+
   const handleStartWithingsWeighIn = async () => {
     if (!activePatient?.id) return;
     setIsWeighInActive(true);
     setWithingsStatusMessage('Iniciando sesión de pesaje en báscula Withings... (3 minutos máx)');
     try {
-      const response = await api.hardware.startWithingsSession(activePatient.id);
+      const response = await api.hardware.startWithingsSession(activePatient.id, nutritionistId);
       if (response.error || !response.data) {
         throw new Error(response.error || 'No se pudo iniciar la sesión de pesaje');
       }
@@ -531,6 +544,19 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               </p>
             </div>
           </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleConnectWithings}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 cursor-pointer shadow-xs bg-surface-container-high hover:bg-surface-container-highest text-on-surface border-outline-variant/50 hover:border-primary/50 group"
+              title="Vincular tu cuenta y báscula Withings vía OAuth2"
+            >
+              <div className="w-5 h-5 rounded-md bg-secondary/10 flex items-center justify-center text-secondary group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-sm">link</span>
+              </div>
+              <span>Vincular Báscula Withings</span>
+            </button>
+          </div>
         </div>
 
         {/* =========================================================================
@@ -699,6 +725,15 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                     showPreviewOption={true}
                   />
                 )}
+                <button
+                  type="button"
+                  onClick={handleConnectWithings}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all border border-outline-variant/40 bg-surface-container hover:bg-surface-container-high text-on-surface flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Vincular báscula Withings del nutricionista vía OAuth2"
+                >
+                  <span className="material-symbols-outlined text-sm text-secondary">link</span>
+                  <span>Vincular Báscula</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleStartWithingsWeighIn}

@@ -181,16 +181,27 @@ export const api = {
         'GET',
         `/api/v1/patients/${patientId}/hardware/withings/sync`,
       ),
-    startWithingsSession: (patientId: string) =>
+    startWithingsSession: (patientId: string, nutritionistId?: string) =>
       request<{ id: string; status: string; expires_at: string }>(
         'POST',
         `/api/v1/patients/${patientId}/hardware/withings/start`,
+        { nutritionist_id: nutritionistId, patient_id: patientId },
       ),
     checkWithingsSession: (patientId: string) =>
       request<{ status: 'idle' | 'pending' | 'completed' | 'expired' | string; active?: boolean; metrics_payload?: any }>(
         'GET',
         `/api/v1/patients/${patientId}/hardware/withings/status`,
       ),
+    getWithingsAuthorizeUrl: (tenantId?: string, userId?: string) => {
+      const params = new URLSearchParams();
+      if (tenantId) params.set('tenant_id', tenantId);
+      if (userId) params.set('user_id', userId);
+      params.set('format', 'json');
+      return request<{ url: string; state: string }>(
+        'GET',
+        `/api/v1/hardware/withings/authorize?${params.toString()}`,
+      );
+    },
   },
 
   exercises: {

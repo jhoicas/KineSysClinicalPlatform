@@ -73,6 +73,7 @@ func main() {
 	exerciseHandler := handlers.NewExerciseHandler(exerciseSvc)
 	dietPlannerHandler := handlers.NewDietPlannerHandler(dietPlannerSvc)
 	groceryListHandler := handlers.NewGroceryListHandler(groceryListSvc)
+	withingsRepo := postgres.NewWithingsRepository(dbPool)
 	withingsHandler := handlers.NewWithingsHardwareHandler(
 		cfg.WithingsAccessToken,
 		cfg.WithingsRefreshToken,
@@ -83,6 +84,7 @@ func main() {
 		dbPool,
 		patientSvc,
 		anthropometrySvc,
+		withingsRepo,
 	)
 
 	// Initialize Router
@@ -114,11 +116,19 @@ func main() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 	
-	// Withings OAuth Callback & Webhook (No JWT required, redirected from Withings)
+	// Withings OAuth Authorize, Callback & Webhook
+	r.Get("/api/v1/hardware/withings/authorize", withingsHandler.HandleAuthorize)
+	r.Get("/hardware/withings/authorize", withingsHandler.HandleAuthorize)
 	r.Get("/api/v1/hardware/withings/callback", withingsHandler.HandleCallback)
 	r.Post("/api/v1/hardware/withings/callback", withingsHandler.HandleCallback)
+	r.Get("/api/v1/withings/callback", withingsHandler.HandleCallback)
+	r.Post("/api/v1/withings/callback", withingsHandler.HandleCallback)
+	r.Get("/hardware/withings/callback", withingsHandler.HandleCallback)
+	r.Post("/hardware/withings/callback", withingsHandler.HandleCallback)
 	r.Get("/api/v1/hardware/withings/webhook", withingsHandler.Webhook)
 	r.Post("/api/v1/hardware/withings/webhook", withingsHandler.Webhook)
+	r.Get("/hardware/withings/webhook", withingsHandler.Webhook)
+	r.Post("/hardware/withings/webhook", withingsHandler.Webhook)
 	
 	// Withings POC
 	r.Post("/api/v1/hardware/withings/poc/start", withingsHandler.StartPocSession)
@@ -145,6 +155,8 @@ func main() {
 		r.Post("/api/v1/anthropometry/calculate/composition", anthropometryHandler.CalculateComposition)
 		r.Get("/api/v1/patients/{patientId}/hardware/withings/sync", withingsHandler.Sync)
 		r.Post("/api/v1/patients/{patientId}/hardware/withings/start", withingsHandler.StartSession)
+		r.Post("/api/v1/hardware/withings/start", withingsHandler.StartSession)
+		r.Post("/hardware/withings/start", withingsHandler.StartSession)
 		r.Get("/api/v1/patients/{patientId}/hardware/withings/status", withingsHandler.CheckSessionStatus)
 		r.Post("/api/v1/withings/subscribe", withingsHandler.SubscribeWebhook)
 

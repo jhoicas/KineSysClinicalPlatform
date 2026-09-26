@@ -103,6 +103,7 @@ type BmrResult struct {
 type ActiveWeighInSession struct {
 	ID             uuid.UUID       `json:"id"`
 	TenantID       uuid.UUID       `json:"tenant_id"`
+	NutritionistID *uuid.UUID      `json:"nutritionist_id,omitempty"`
 	PatientID      uuid.UUID       `json:"patient_id"`
 	Status         string          `json:"status"` // "pending", "completed", "expired"
 	MetricsPayload json.RawMessage `json:"metrics_payload,omitempty"`

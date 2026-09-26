@@ -1,7 +1,12 @@
 package handlers
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -219,6 +224,59 @@ func TestParseWithingsPocMeasures_Segmental(t *testing.T) {
 	clinicalParsed := parseWithingsMeasures(groups)
 	if _, has := clinicalParsed["muscle_mass_left_arm_kg"]; has {
 		t.Fatalf("clinical parseWithingsMeasures should NOT contain segmental metrics")
+	}
+}
+
+func TestHandleAuthorize(t *testing.T) {
+	h := NewWithingsHardwareHandler(
+		"test_at", "test_rt", "test_user", "https://wbsapi.withings.net", "test_client_id", "test_client_secret",
+		nil, nil, nil,
+	)
+
+	req := httptest.NewRequest("GET", "/api/v1/hardware/withings/authorize?tenant_id=00000000-0000-0000-0000-000000000001&user_id=11111111-1111-1111-1111-111111111111&format=json", nil)
+	w := httptest.NewRecorder()
+
+	h.HandleAuthorize(w, req)
+
+	res := w.Result()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", res.StatusCode)
+	}
+
+	var jsonResp map[string]string
+	if err := json.NewDecoder(res.Body).Decode(&jsonResp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	authURL, ok := jsonResp["url"]
+	if !ok || authURL == "" {
+		t.Fatalf("expected non-empty auth url, got: %v", jsonResp)
+	}
+
+	if !strings.Contains(authURL, "test_client_id") {
+		t.Fatalf("authURL missing client_id: %s", authURL)
+	}
+
+	encodedState := jsonResp["state"]
+	if encodedState == "" {
+		t.Fatalf("expected state in response")
+	}
+
+	decodedBytes, err := base64.RawURLEncoding.DecodeString(encodedState)
+	if err != nil {
+		t.Fatalf("failed to decode state: %v", err)
+	}
+
+	var stateMap map[string]interface{}
+	if err := json.Unmarshal(decodedBytes, &stateMap); err != nil {
+		t.Fatalf("failed to unmarshal state: %v", err)
+	}
+
+	if stateMap["tenant_id"] != "00000000-0000-0000-0000-000000000001" {
+		t.Fatalf("tenant_id mismatch in state: %v", stateMap["tenant_id"])
+	}
+	if stateMap["user_id"] != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("user_id mismatch in state: %v", stateMap["user_id"])
 	}
 }
 

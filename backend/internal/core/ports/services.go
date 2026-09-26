@@ -33,6 +33,7 @@ type AnthropometryService interface {
 	CreateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error
 	GetPendingWeighInSession(ctx context.Context, patientID uuid.UUID) (*domain.ActiveWeighInSession, error)
 	GetLatestPendingWeighInSession(ctx context.Context) (*domain.ActiveWeighInSession, error)
+	GetPendingSessionByTenantAndNutritionist(ctx context.Context, tenantID, nutritionistID uuid.UUID) (*domain.ActiveWeighInSession, error)
 	UpdateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error
 }
 

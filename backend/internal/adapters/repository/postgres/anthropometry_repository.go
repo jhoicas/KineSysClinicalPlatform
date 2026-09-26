@@ -155,20 +155,21 @@ func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, sess
 	}
 
 	query := `INSERT INTO kinesys.active_weigh_in_sessions (
-		tenant_id, patient_id, status, expires_at
+		tenant_id, patient_id, nutritionist_id, status, expires_at
 	) VALUES (
-		$1, $2, $3, $4
+		$1, $2, $3, $4, $5
 	)
 	ON CONFLICT (tenant_id, patient_id) DO UPDATE SET
+		nutritionist_id = COALESCE(EXCLUDED.nutritionist_id, kinesys.active_weigh_in_sessions.nutritionist_id),
 		status = EXCLUDED.status,
 		metrics_payload = NULL,
 		expires_at = EXCLUDED.expires_at,
 		updated_at = NOW()
 	RETURNING id, created_at, updated_at`
 
-	// FIX: ensure we use tx.QueryRow and maintain strict $1=tenant, $2=patient order
+	// FIX: ensure we use tx.QueryRow and maintain strict $1=tenant, $2=patient, $3=nutritionist order
 	err = tx.QueryRow(ctx, query,
-		session.TenantID, session.PatientID, session.Status, session.ExpiresAt,
+		session.TenantID, session.PatientID, session.NutritionistID, session.Status, session.ExpiresAt,
 	).Scan(&session.ID, &session.CreatedAt, &session.UpdatedAt)
 	if err != nil {
 		return err
@@ -178,7 +179,7 @@ func (r *anthropometryRepository) CreateWeighInSession(ctx context.Context, sess
 }
 
 func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, patientID uuid.UUID) (*domain.ActiveWeighInSession, error) {
-	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
+	query := `SELECT id, tenant_id, nutritionist_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
 	          FROM kinesys.active_weigh_in_sessions 
 			  WHERE patient_id = $1 
 			    AND (LOWER(status) = 'pending' OR (LOWER(status) = 'completed' AND updated_at > NOW() - INTERVAL '10 minutes'))
@@ -186,7 +187,7 @@ func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, 
 	
 	var session domain.ActiveWeighInSession
 	err := r.db.QueryRow(ctx, query, patientID).Scan(
-		&session.ID, &session.TenantID, &session.PatientID, &session.Status,
+		&session.ID, &session.TenantID, &session.NutritionistID, &session.PatientID, &session.Status,
 		&session.MetricsPayload, &session.CreatedAt, &session.ExpiresAt, &session.UpdatedAt,
 	)
 	if err != nil {
@@ -197,14 +198,32 @@ func (r *anthropometryRepository) GetPendingWeighInSession(ctx context.Context, 
 }
 
 func (r *anthropometryRepository) GetLatestPendingWeighInSession(ctx context.Context) (*domain.ActiveWeighInSession, error) {
-	query := `SELECT id, tenant_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
+	query := `SELECT id, tenant_id, nutritionist_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
 	          FROM kinesys.active_weigh_in_sessions 
 			  WHERE LOWER(status) = 'pending' AND expires_at > NOW()
 			  ORDER BY created_at DESC LIMIT 1`
 	
 	var session domain.ActiveWeighInSession
 	err := r.db.QueryRow(ctx, query).Scan(
-		&session.ID, &session.TenantID, &session.PatientID, &session.Status,
+		&session.ID, &session.TenantID, &session.NutritionistID, &session.PatientID, &session.Status,
+		&session.MetricsPayload, &session.CreatedAt, &session.ExpiresAt, &session.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
+func (r *anthropometryRepository) GetPendingSessionByTenantAndNutritionist(ctx context.Context, tenantID, nutritionistID uuid.UUID) (*domain.ActiveWeighInSession, error) {
+	query := `SELECT id, tenant_id, nutritionist_id, patient_id, status, metrics_payload, created_at, expires_at, updated_at
+	          FROM kinesys.active_weigh_in_sessions 
+			  WHERE tenant_id = $1 AND nutritionist_id = $2
+			    AND LOWER(status) = 'pending' AND expires_at > NOW()
+			  ORDER BY created_at DESC LIMIT 1`
+	
+	var session domain.ActiveWeighInSession
+	err := r.db.QueryRow(ctx, query, tenantID, nutritionistID).Scan(
+		&session.ID, &session.TenantID, &session.NutritionistID, &session.PatientID, &session.Status,
 		&session.MetricsPayload, &session.CreatedAt, &session.ExpiresAt, &session.UpdatedAt,
 	)
 	if err != nil {

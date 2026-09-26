@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -34,6 +35,7 @@ type WithingsHardwareHandler struct {
 	db               *pgxpool.Pool
 	patientService   ports.PatientService
 	anthropometrySvc ports.AnthropometryService
+	withingsRepo     ports.WithingsRepository
 }
 
 var (
@@ -88,7 +90,12 @@ func NewWithingsHardwareHandler(
 	db *pgxpool.Pool,
 	patientService ports.PatientService,
 	anthropometrySvc ports.AnthropometryService,
+	withingsRepo ...ports.WithingsRepository,
 ) *WithingsHardwareHandler {
+	var repo ports.WithingsRepository
+	if len(withingsRepo) > 0 {
+		repo = withingsRepo[0]
+	}
 	h := &WithingsHardwareHandler{
 		accessToken:      accessToken,
 		refreshToken:     refreshToken,
@@ -102,6 +109,7 @@ func NewWithingsHardwareHandler(
 		db:               db,
 		patientService:   patientService,
 		anthropometrySvc: anthropometrySvc,
+		withingsRepo:     repo,
 	}
 	if db != nil {
 		go h.initDatabaseAndTokens(context.Background())
@@ -246,6 +254,29 @@ func (h *WithingsHardwareHandler) initDatabaseAndTokens(ctx context.Context) {
 	}
 
 	createTableSQL := `
+	CREATE TABLE IF NOT EXISTS kinesys.withings_integrations (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		tenant_id UUID NOT NULL REFERENCES kinesys.tenants(id) ON DELETE CASCADE,
+		nutritionist_id UUID NOT NULL REFERENCES kinesys.users(id) ON DELETE CASCADE,
+		withings_user_id VARCHAR(100) NOT NULL UNIQUE,
+		client_id TEXT,
+		client_secret TEXT,
+		access_token TEXT NOT NULL,
+		refresh_token TEXT NOT NULL,
+		expires_at TIMESTAMPTZ NOT NULL,
+		is_active BOOLEAN NOT NULL DEFAULT true,
+		created_at TIMESTAMPTZ DEFAULT NOW(),
+		updated_at TIMESTAMPTZ DEFAULT NOW()
+	);
+	CREATE INDEX IF NOT EXISTS idx_withings_integrations_tenant_id ON kinesys.withings_integrations(tenant_id);
+	CREATE INDEX IF NOT EXISTS idx_withings_integrations_nutritionist_id ON kinesys.withings_integrations(nutritionist_id);
+	CREATE INDEX IF NOT EXISTS idx_withings_integrations_withings_user_id ON kinesys.withings_integrations(withings_user_id);
+	CREATE INDEX IF NOT EXISTS idx_withings_integrations_tenant_nutri ON kinesys.withings_integrations(tenant_id, nutritionist_id);
+
+	ALTER TABLE kinesys.active_weigh_in_sessions 
+	ADD COLUMN IF NOT EXISTS nutritionist_id UUID REFERENCES kinesys.users(id) ON DELETE SET NULL;
+	CREATE INDEX IF NOT EXISTS idx_active_weigh_in_sessions_tenant_nutri ON kinesys.active_weigh_in_sessions(tenant_id, nutritionist_id);
+
 	CREATE TABLE IF NOT EXISTS kinesys.withings_oauth_tokens (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		tenant_id UUID NOT NULL REFERENCES kinesys.tenants(id) ON DELETE CASCADE,
@@ -261,11 +292,31 @@ func (h *WithingsHardwareHandler) initDatabaseAndTokens(ctx context.Context) {
 	CREATE INDEX IF NOT EXISTS idx_withings_oauth_tokens_userid ON kinesys.withings_oauth_tokens(userid);
 	`
 	if _, err := h.db.Exec(ctx, createTableSQL); err != nil {
-		log.Printf("[WITHINGS INIT DB ERROR] Error creando tabla withings_oauth_tokens: %v", err)
+		log.Printf("[WITHINGS INIT DB ERROR] Error creando tablas withings: %v", err)
 	}
 
 	// Asegurar que active_weigh_in_sessions no bloquee lecturas/escrituras de webhooks
 	_, _ = h.db.Exec(ctx, "ALTER TABLE kinesys.active_weigh_in_sessions DISABLE ROW LEVEL SECURITY")
+
+	// Cargar tokens activos desde withings_integrations
+	if integRows, err := h.db.Query(ctx, `
+		SELECT withings_user_id, access_token 
+		FROM kinesys.withings_integrations 
+		WHERE is_active = TRUE
+	`); err == nil {
+		defer integRows.Close()
+		h.mu.Lock()
+		if h.userTokens == nil {
+			h.userTokens = make(map[string]string)
+		}
+		for integRows.Next() {
+			var uid, aToken string
+			if err := integRows.Scan(&uid, &aToken); err == nil {
+				h.userTokens[uid] = aToken
+			}
+		}
+		h.mu.Unlock()
+	}
 
 	rows, err := h.db.Query(ctx, `
 		SELECT userid, access_token, refresh_token, expires_at 
@@ -298,6 +349,39 @@ func (h *WithingsHardwareHandler) initDatabaseAndTokens(ctx context.Context) {
 			log.Printf("[WITHINGS INIT] %d tokens de Withings cargados desde BD a memoria", count)
 		}
 	}
+}
+
+func (h *WithingsHardwareHandler) saveWithingsIntegration(ctx context.Context, integ *domain.WithingsIntegration) error {
+	if h.withingsRepo != nil {
+		return h.withingsRepo.Upsert(ctx, integ)
+	}
+	if h.db == nil {
+		return nil
+	}
+	query := `
+		INSERT INTO kinesys.withings_integrations (
+			tenant_id, nutritionist_id, withings_user_id, client_id, client_secret,
+			access_token, refresh_token, expires_at, is_active, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, true, NOW()
+		)
+		ON CONFLICT (withings_user_id) DO UPDATE SET
+			tenant_id = EXCLUDED.tenant_id,
+			nutritionist_id = EXCLUDED.nutritionist_id,
+			client_id = COALESCE(NULLIF(EXCLUDED.client_id, ''), kinesys.withings_integrations.client_id),
+			client_secret = COALESCE(NULLIF(EXCLUDED.client_secret, ''), kinesys.withings_integrations.client_secret),
+			access_token = EXCLUDED.access_token,
+			refresh_token = EXCLUDED.refresh_token,
+			expires_at = EXCLUDED.expires_at,
+			is_active = true,
+			updated_at = NOW()
+		RETURNING id, created_at, updated_at
+	`
+	return h.db.QueryRow(ctx, query,
+		integ.TenantID, integ.NutritionistID, integ.WithingsUserID,
+		integ.ClientID, integ.ClientSecret, integ.AccessToken,
+		integ.RefreshToken, integ.ExpiresAt,
+	).Scan(&integ.ID, &integ.CreatedAt, &integ.UpdatedAt)
 }
 
 func (h *WithingsHardwareHandler) saveUserTokens(ctx context.Context, tenantID, patientID *uuid.UUID, userid, accessToken, refreshToken string, expiresIn int) error {
@@ -336,12 +420,21 @@ func (h *WithingsHardwareHandler) saveUserTokens(ctx context.Context, tenantID, 
 	return err
 }
 
-func (h *WithingsHardwareHandler) performTokenRefresh(ctx context.Context, refreshToken string) (string, string, int, error) {
+func (h *WithingsHardwareHandler) performTokenRefreshWithCredentials(ctx context.Context, clientID, clientSecret, refreshToken string) (string, string, int, error) {
+	cid := clientID
+	if cid == "" {
+		cid = h.clientID
+	}
+	csec := clientSecret
+	if csec == "" {
+		csec = h.clientSecret
+	}
+
 	form := url.Values{
 		"action":        {"requesttoken"},
 		"grant_type":    {"refresh_token"},
-		"client_id":     {h.clientID},
-		"client_secret": {h.clientSecret},
+		"client_id":     {cid},
+		"client_secret": {csec},
 		"refresh_token": {refreshToken},
 	}
 
@@ -381,6 +474,10 @@ func (h *WithingsHardwareHandler) performTokenRefresh(ctx context.Context, refre
 	return payload.Body.AccessToken, payload.Body.RefreshToken, payload.Body.ExpiresIn, nil
 }
 
+func (h *WithingsHardwareHandler) performTokenRefresh(ctx context.Context, refreshToken string) (string, string, int, error) {
+	return h.performTokenRefreshWithCredentials(ctx, h.clientID, h.clientSecret, refreshToken)
+}
+
 func (h *WithingsHardwareHandler) getValidAccessToken(ctx context.Context, userid string) (string, error) {
 	if h.db == nil {
 		h.mu.RLock()
@@ -396,6 +493,46 @@ func (h *WithingsHardwareHandler) getValidAccessToken(ctx context.Context, useri
 		return h.accessToken, nil
 	}
 
+	// 1. Prioridad Multi-tenant: kinesys.withings_integrations
+	if userid != "" {
+		var tID, nID uuid.UUID
+		var rowUID, cID, cSec, aToken, rToken string
+		var expAt time.Time
+		err := h.db.QueryRow(ctx, `
+			SELECT tenant_id, nutritionist_id, withings_user_id, COALESCE(client_id, ''), COALESCE(client_secret, ''),
+			       access_token, refresh_token, expires_at
+			FROM kinesys.withings_integrations
+			WHERE withings_user_id = $1 AND is_active = TRUE
+			LIMIT 1
+		`, userid).Scan(&tID, &nID, &rowUID, &cID, &cSec, &aToken, &rToken, &expAt)
+		if err == nil {
+			if time.Now().Add(5*time.Minute).After(expAt) && rToken != "" {
+				log.Printf("[WITHINGS REFRESH] Renovando token en withings_integrations para userid=%s...", rowUID)
+				newAT, newRT, expIn, refErr := h.performTokenRefreshWithCredentials(ctx, cID, cSec, rToken)
+				if refErr == nil {
+					newExpAt := time.Now().Add(time.Duration(expIn) * time.Second)
+					_, _ = h.db.Exec(ctx, `
+						UPDATE kinesys.withings_integrations
+						SET access_token = $1, refresh_token = $2, expires_at = $3, updated_at = NOW()
+						WHERE withings_user_id = $4
+					`, newAT, newRT, newExpAt, rowUID)
+					_ = h.saveUserTokens(ctx, &tID, nil, rowUID, newAT, newRT, expIn)
+					h.mu.Lock()
+					if h.userTokens == nil {
+						h.userTokens = make(map[string]string)
+					}
+					h.userTokens[rowUID] = newAT
+					h.lastAccessToken = newAT
+					h.mu.Unlock()
+					return newAT, nil
+				}
+				log.Printf("[WITHINGS REFRESH ERROR] Falló renovación en withings_integrations para userid=%s: %v", rowUID, refErr)
+			}
+			return aToken, nil
+		}
+	}
+
+	// 2. Fallback: kinesys.withings_oauth_tokens
 	var rowUserID, accessToken, refreshToken string
 	var expiresAt time.Time
 	var patID *uuid.UUID
@@ -462,35 +599,99 @@ func (h *WithingsHardwareHandler) getValidAccessToken(ctx context.Context, useri
 func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context, userid string, metrics map[string]float64, payloadDate int64) {
 	defaultTenant := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	tenantUUID := defaultTenant
+	var nutritionistUUID uuid.UUID
 	var patientUUID uuid.UUID
+	var specificSessionID uuid.UUID
+	foundSpecificSession := false
 
-	// 1. Prioridad: Sesión de pesaje activa en curso (en memoria o base de datos)
-	clinicalSessionMutex.RLock()
-	lastPat := lastActiveClinicalPatID
-	clinicalSessionMutex.RUnlock()
+	// Enrutamiento Webhook Dinámico multi-tenant:
+	if userid != "" {
+		var integTenantID, integNutriID uuid.UUID
+		foundIntegration := false
+		if h.withingsRepo != nil {
+			if integ, err := h.withingsRepo.FindByWithingsUserID(ctx, userid); err == nil && integ != nil {
+				integTenantID = integ.TenantID
+				integNutriID = integ.NutritionistID
+				foundIntegration = true
+			}
+		}
+		if !foundIntegration && h.db != nil {
+			err := h.db.QueryRow(ctx, `
+				SELECT tenant_id, nutritionist_id 
+				FROM kinesys.withings_integrations 
+				WHERE withings_user_id = $1 AND is_active = TRUE 
+				LIMIT 1
+			`, userid).Scan(&integTenantID, &integNutriID)
+			if err == nil {
+				foundIntegration = true
+			}
+		}
 
-	if session, err := h.anthropometrySvc.GetLatestPendingWeighInSession(ctx); err == nil && session != nil {
-		patientUUID = session.PatientID
-		tenantUUID = session.TenantID
-	} else if lastPat != uuid.Nil {
-		patientUUID = lastPat
-	}
+		if foundIntegration {
+			tenantUUID = integTenantID
+			nutritionistUUID = integNutriID
+			log.Printf("[WITHINGS WEBHOOK ROUTING] Integración multi-tenant encontrada para userid=%s -> tenant_id=%s, nutritionist_id=%s", userid, tenantUUID, nutritionistUUID)
 
-	// 2. Fallback: identificar patient_id y tenant_id desde withings_oauth_tokens
-	if patientUUID == uuid.Nil && h.db != nil && userid != "" {
-		var pID *uuid.UUID
-		var tID uuid.UUID
-		if err := h.db.QueryRow(ctx, "SELECT tenant_id, patient_id FROM kinesys.withings_oauth_tokens WHERE userid = $1", userid).Scan(&tID, &pID); err == nil {
-			tenantUUID = tID
-			if pID != nil && *pID != uuid.Nil {
-				patientUUID = *pID
+			// Actualiza active_weigh_in_sessions filtrando por tenant_id, nutritionist_id y status = 'pending'
+			if h.anthropometrySvc != nil {
+				if s, err := h.anthropometrySvc.GetPendingSessionByTenantAndNutritionist(ctx, tenantUUID, nutritionistUUID); err == nil && s != nil {
+					patientUUID = s.PatientID
+					specificSessionID = s.ID
+					foundSpecificSession = true
+				}
+			}
+			if !foundSpecificSession && h.db != nil {
+				var sID, pID uuid.UUID
+				err := h.db.QueryRow(ctx, `
+					SELECT id, patient_id 
+					FROM kinesys.active_weigh_in_sessions 
+					WHERE tenant_id = $1 AND nutritionist_id = $2 
+					  AND LOWER(status) = 'pending' AND expires_at > NOW() 
+					ORDER BY created_at DESC LIMIT 1
+				`, tenantUUID, nutritionistUUID).Scan(&sID, &pID)
+				if err == nil {
+					patientUUID = pID
+					specificSessionID = sID
+					foundSpecificSession = true
+				}
 			}
 		}
 	}
 
-	// 3. Fallback: paciente clínico activo más reciente
-	if patientUUID == uuid.Nil && h.db != nil {
-		_ = h.db.QueryRow(ctx, "SELECT id, tenant_id FROM kinesys.pacientes_clinicos WHERE active = TRUE ORDER BY updated_at DESC LIMIT 1").Scan(&patientUUID, &tenantUUID)
+	// Si no se encuentra mapeo específico, utiliza el comportamiento fallback actual
+	if !foundSpecificSession {
+		log.Printf("[WITHINGS WEBHOOK ROUTING] Sin sesión pendiente específica para userid=%s. Usando fallback actual.", userid)
+		clinicalSessionMutex.RLock()
+		lastPat := lastActiveClinicalPatID
+		clinicalSessionMutex.RUnlock()
+
+		if session, err := h.anthropometrySvc.GetLatestPendingWeighInSession(ctx); err == nil && session != nil {
+			patientUUID = session.PatientID
+			tenantUUID = session.TenantID
+			specificSessionID = session.ID
+			if session.NutritionistID != nil && *session.NutritionistID != uuid.Nil {
+				nutritionistUUID = *session.NutritionistID
+			}
+		} else if lastPat != uuid.Nil {
+			patientUUID = lastPat
+		}
+
+		// Fallback: identificar patient_id y tenant_id desde withings_oauth_tokens
+		if patientUUID == uuid.Nil && h.db != nil && userid != "" {
+			var pID *uuid.UUID
+			var tID uuid.UUID
+			if err := h.db.QueryRow(ctx, "SELECT tenant_id, patient_id FROM kinesys.withings_oauth_tokens WHERE userid = $1", userid).Scan(&tID, &pID); err == nil {
+				tenantUUID = tID
+				if pID != nil && *pID != uuid.Nil {
+					patientUUID = *pID
+				}
+			}
+		}
+
+		// Fallback: paciente clínico activo más reciente
+		if patientUUID == uuid.Nil && h.db != nil {
+			_ = h.db.QueryRow(ctx, "SELECT id, tenant_id FROM kinesys.pacientes_clinicos WHERE active = TRUE ORDER BY updated_at DESC LIMIT 1").Scan(&patientUUID, &tenantUUID)
+		}
 	}
 
 	if patientUUID == uuid.Nil {
@@ -541,13 +742,16 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 	}
 
 	// Obtener ID de usuario profesional válido para la FK
-	defaultNutriID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	if h.db != nil {
-		var foundID uuid.UUID
-		if err := h.db.QueryRow(ctx, "SELECT id FROM kinesys.users WHERE tenant_id = $1 AND role IN ('nutricionista', 'clinic_admin', 'professional') LIMIT 1", tenantUUID).Scan(&foundID); err == nil {
-			defaultNutriID = foundID
-		} else if err := h.db.QueryRow(ctx, "SELECT id FROM kinesys.users LIMIT 1").Scan(&foundID); err == nil {
-			defaultNutriID = foundID
+	defaultNutriID := nutritionistUUID
+	if defaultNutriID == uuid.Nil {
+		defaultNutriID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+		if h.db != nil {
+			var foundID uuid.UUID
+			if err := h.db.QueryRow(ctx, "SELECT id FROM kinesys.users WHERE tenant_id = $1 AND role IN ('nutricionista', 'clinic_admin', 'professional') LIMIT 1", tenantUUID).Scan(&foundID); err == nil {
+				defaultNutriID = foundID
+			} else if err := h.db.QueryRow(ctx, "SELECT id FROM kinesys.users LIMIT 1").Scan(&foundID); err == nil {
+				defaultNutriID = foundID
+			}
 		}
 	}
 
@@ -633,6 +837,16 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 
 	// Marcar sesión pendiente en base de datos como completada
 	if h.db != nil {
+		if specificSessionID != uuid.Nil {
+			res, err := h.db.Exec(ctx, `
+				UPDATE kinesys.active_weigh_in_sessions
+				SET status = 'completed', metrics_payload = $1, updated_at = NOW()
+				WHERE id = $2
+			`, dataJSON, specificSessionID)
+			if err == nil && res.RowsAffected() > 0 {
+				log.Printf("[WITHINGS SESSION COMPLETED DB SPECIFIC] Sesión id=%s para patient_id=%s actualizada a completed", specificSessionID, patientUUID)
+			}
+		}
 		if patientUUID != uuid.Nil {
 			res, err := h.db.Exec(ctx, `
 				UPDATE kinesys.active_weigh_in_sessions
@@ -644,29 +858,151 @@ func (h *WithingsHardwareHandler) saveBioimpedanceEvaluation(ctx context.Context
 			}
 		}
 
-		// Salvaguarda: actualizar cualquier sesión pendiente activa global
-		resAny, errAny := h.db.Exec(ctx, `
-			UPDATE kinesys.active_weigh_in_sessions
-			SET status = 'completed', metrics_payload = $1, updated_at = NOW()
-			WHERE LOWER(status) = 'pending' AND expires_at > NOW()
-		`, dataJSON)
-		if errAny == nil && resAny.RowsAffected() > 0 {
-			log.Printf("[WITHINGS SESSION COMPLETED DB GLOBAL] %d sesión(es) pendientes globales actualizadas a completed", resAny.RowsAffected())
+		if !foundSpecificSession {
+			// Salvaguarda: actualizar cualquier sesión pendiente activa global
+			resAny, errAny := h.db.Exec(ctx, `
+				UPDATE kinesys.active_weigh_in_sessions
+				SET status = 'completed', metrics_payload = $1, updated_at = NOW()
+				WHERE LOWER(status) = 'pending' AND expires_at > NOW()
+			`, dataJSON)
+			if errAny == nil && resAny.RowsAffected() > 0 {
+				log.Printf("[WITHINGS SESSION COMPLETED DB GLOBAL] %d sesión(es) pendientes globales actualizadas a completed", resAny.RowsAffected())
+			}
 		}
 	}
 }
 
-func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+// HandleAuthorize handles GET /api/v1/hardware/withings/authorize
+// Generates OAuth2 authorization URL with client_id and state encoded with tenant_id and user_id
+func (h *WithingsHardwareHandler) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	userIDStr := strings.TrimSpace(r.URL.Query().Get("user_id"))
+	if userIDStr == "" {
+		userIDStr = strings.TrimSpace(r.URL.Query().Get("nutritionist_id"))
+	}
+	if userIDStr == "" {
+		if uID, ok := r.Context().Value(middleware.UserIDKey).(string); ok && uID != "" {
+			userIDStr = uID
+		}
+	}
+
+	tenantUUID := uuid.Nil
+	if tenantIDStr != "" {
+		if t, err := uuid.Parse(tenantIDStr); err == nil {
+			tenantUUID = t
+		}
+	}
+	if tenantUUID == uuid.Nil {
+		tenantUUID = h.resolveTenantID(r.Context(), userIDStr)
+	}
+
+	// Codificar state con tenant_id y user_id
+	type stateData struct {
+		TenantID       string `json:"tenant_id"`
+		NutritionistID string `json:"user_id"`
+		Timestamp      int64  `json:"ts"`
+	}
+	st := stateData{
+		TenantID:       tenantUUID.String(),
+		NutritionistID: userIDStr,
+		Timestamp:      time.Now().Unix(),
+	}
+	stBytes, _ := json.Marshal(st)
+	encodedState := base64.RawURLEncoding.EncodeToString(stBytes)
+
+	redirectURI := "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
+	if customRedirect := r.URL.Query().Get("redirect_uri"); customRedirect != "" {
+		redirectURI = customRedirect
+	}
+
+	authURL := fmt.Sprintf(
+		"https://account.withings.net/oauth2_user/authorize2?response_type=code&client_id=%s&state=%s&scope=%s&redirect_uri=%s",
+		url.QueryEscape(h.clientID),
+		url.QueryEscape(encodedState),
+		url.QueryEscape("user.metrics,user.info,user.activity"),
+		url.QueryEscape(redirectURI),
+	)
+
+	log.Printf("[WITHINGS AUTHORIZE] Generada URL OAuth para tenant=%s, user=%s: %s", tenantUUID, userIDStr, authURL)
+
+	if r.Header.Get("Accept") == "application/json" || r.URL.Query().Get("format") == "json" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"url":   authURL,
+			"state": encodedState,
+		})
 		return
 	}
 
+	http.Redirect(w, r, authURL, http.StatusTemporaryRedirect)
+}
+
+// HandleCallback handles GET /api/v1/hardware/withings/callback
+// Exchanges authorization code with Withings (gettoken), extracts userid, and saves to kinesys.withings_integrations
+func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
+	if code == "" && r.Method == http.MethodPost {
+		_ = r.ParseForm()
+		code = r.Form.Get("code")
+	}
+
+	// Probes/checks from Withings
 	if code == "" {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+			return
+		}
 		http.Error(w, "Missing code parameter", http.StatusBadRequest)
 		return
+	}
+
+	stateParam := r.URL.Query().Get("state")
+	if stateParam == "" && r.Method == http.MethodPost {
+		stateParam = r.Form.Get("state")
+	}
+
+	var stateObj struct {
+		TenantID string `json:"tenant_id"`
+		UserID   string `json:"user_id"`
+	}
+	if stateParam != "" {
+		if decBytes, err := base64.RawURLEncoding.DecodeString(stateParam); err == nil {
+			_ = json.Unmarshal(decBytes, &stateObj)
+		} else if decBytes, err := base64.StdEncoding.DecodeString(stateParam); err == nil {
+			_ = json.Unmarshal(decBytes, &stateObj)
+		}
+	}
+
+	tenantUUID := uuid.Nil
+	if stateObj.TenantID != "" {
+		if t, err := uuid.Parse(stateObj.TenantID); err == nil {
+			tenantUUID = t
+		}
+	}
+	if tenantUUID == uuid.Nil {
+		tenantUUID = h.resolveTenantID(r.Context(), stateObj.UserID)
+	}
+
+	nutritionistUUID := uuid.Nil
+	if stateObj.UserID != "" {
+		if nID, err := uuid.Parse(stateObj.UserID); err == nil {
+			nutritionistUUID = nID
+		}
+	}
+	if nutritionistUUID == uuid.Nil && h.db != nil {
+		_ = h.db.QueryRow(r.Context(), "SELECT id FROM kinesys.users WHERE tenant_id = $1 AND role IN ('nutricionista', 'clinic_admin', 'professional') LIMIT 1", tenantUUID).Scan(&nutritionistUUID)
+		if nutritionistUUID == uuid.Nil {
+			_ = h.db.QueryRow(r.Context(), "SELECT id FROM kinesys.users WHERE tenant_id = $1 LIMIT 1", tenantUUID).Scan(&nutritionistUUID)
+		}
+	}
+	if nutritionistUUID == uuid.Nil {
+		nutritionistUUID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	}
+
+	redirectURI := "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
+	if r.URL.Path == "/api/v1/withings/callback" {
+		redirectURI = "https://clinicalplatform.ludoia.com/api/v1/withings/callback"
 	}
 
 	form := url.Values{
@@ -675,7 +1011,7 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 		"client_id":     {h.clientID},
 		"client_secret": {h.clientSecret},
 		"code":          {code},
-		"redirect_uri":  {"https://clinicalplatform.ludoia.com/api/v1/withings/callback"},
+		"redirect_uri":  {redirectURI},
 	}
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://wbsapi.withings.net/v2/oauth2", strings.NewReader(form.Encode()))
@@ -698,6 +1034,7 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 			UserID       string `json:"userid"`
 			AccessToken  string `json:"access_token"`
 			RefreshToken string `json:"refresh_token"`
+			ExpiresIn    int    `json:"expires_in"`
 		} `json:"body"`
 	}
 
@@ -706,15 +1043,37 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if payload.Status != 0 {
+	if payload.Status != 0 || payload.Body.AccessToken == "" {
 		http.Error(w, fmt.Sprintf("Withings API returned status %d", payload.Status), http.StatusBadGateway)
 		return
 	}
 
-	// Store tokens in memory (in production, these should be persisted to DB)
-	h.userID = payload.Body.UserID
-	h.accessToken = payload.Body.AccessToken
-	h.refreshToken = payload.Body.RefreshToken
+	expiresIn := payload.Body.ExpiresIn
+	if expiresIn <= 0 {
+		expiresIn = 10800
+	}
+	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
+
+	// 1. Guardar/actualizar en kinesys.withings_integrations
+	integration := &domain.WithingsIntegration{
+		TenantID:       tenantUUID,
+		NutritionistID: nutritionistUUID,
+		WithingsUserID: payload.Body.UserID,
+		ClientID:       h.clientID,
+		ClientSecret:   h.clientSecret,
+		AccessToken:    payload.Body.AccessToken,
+		RefreshToken:   payload.Body.RefreshToken,
+		ExpiresAt:      expiresAt,
+		IsActive:       true,
+	}
+	if err := h.saveWithingsIntegration(r.Context(), integration); err != nil {
+		log.Printf("[WITHINGS OAUTH WARN] Error guardando en withings_integrations: %v", err)
+	} else {
+		log.Printf("[WITHINGS OAUTH OK] Integración multi-tenant guardada: tenant_id=%s, nutritionist_id=%s, withings_user_id=%s", tenantUUID, nutritionistUUID, payload.Body.UserID)
+	}
+
+	// 2. Guardar en withings_oauth_tokens y memoria para compatibilidad retrospectiva con POC
+	_ = h.saveUserTokens(r.Context(), &tenantUUID, nil, payload.Body.UserID, payload.Body.AccessToken, payload.Body.RefreshToken, expiresIn)
 
 	h.mu.Lock()
 	if h.userTokens == nil {
@@ -722,34 +1081,49 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 	}
 	h.userTokens[payload.Body.UserID] = payload.Body.AccessToken
 	h.lastAccessToken = payload.Body.AccessToken
+	h.userID = payload.Body.UserID
+	h.accessToken = payload.Body.AccessToken
+	h.refreshToken = payload.Body.RefreshToken
 	h.mu.Unlock()
 
-	log.Printf("[WITHINGS OAUTH] Token guardado en memoria para userid=%s: %s...", payload.Body.UserID, payload.Body.AccessToken[:min(10, len(payload.Body.AccessToken))])
-	log.Printf("[WITHINGS OAUTH] Link exitoso para userid=%s", payload.Body.UserID)
+	// 3. Suscribir webhook
+	subData := url.Values{}
+	subData.Set("action", "subscribe")
+	subData.Set("callbackurl", "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/webhook")
+	subData.Set("appli", "1")
+	subData.Set("access_token", payload.Body.AccessToken)
+	subResp, subErr := h.client.PostForm("https://wbsapi.withings.net/notify", subData)
+	if subErr == nil {
+		_ = subResp.Body.Close()
+		log.Printf("[WITHINGS OAUTH OK] Suscripción de webhook registrada para withings_user_id=%s", payload.Body.UserID)
+	}
 
-	// HTML Response
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`
-		<!DOCTYPE html>
-		<html>
-		<head>
-			<title>Vinculación Exitosa</title>
-			<style>
-				body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f4f7f6; margin: 0; }
-				.card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; }
-				h2 { color: #2ecc71; }
-				p { color: #555; }
-			</style>
-		</head>
-		<body>
-			<div class="card">
-				<h2>✅ Báscula Withings vinculada con éxito.</h2>
-				<p>Ya puedes cerrar esta ventana y volver a la plataforma.</p>
-			</div>
-		</body>
-		</html>
-	`))
+	w.Write([]byte(`<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>Vinculación Exitosa | KineSys</title>
+	<style>
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #0f172a; margin: 0; color: #f8fafc; }
+		.card { background: #1e293b; padding: 2.5rem; border-radius: 1.25rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); text-align: center; max-width: 480px; border: 1px solid #334155; }
+		.icon { width: 64px; height: 64px; border-radius: 50%; background: rgba(34, 197, 94, 0.15); color: #22c55e; display: inline-flex; align-items: center; justify-content: center; font-size: 32px; margin-bottom: 1.25rem; }
+		h2 { color: #f8fafc; margin: 0 0 0.5rem 0; font-size: 1.5rem; font-weight: 800; }
+		p { color: #94a3b8; font-size: 0.95rem; line-height: 1.5; margin: 0 0 1.5rem 0; }
+		.btn { display: inline-block; background: #22c55e; color: #022c22; font-weight: 700; padding: 0.75rem 1.5rem; border-radius: 0.75rem; text-decoration: none; transition: background 0.2s; cursor: pointer; border: none; font-size: 0.9rem; }
+		.btn:hover { background: #16a34a; color: #ffffff; }
+	</style>
+</head>
+<body>
+	<div class="card">
+		<div class="icon">✓</div>
+		<h2>¡Báscula Withings Vinculada con Éxito!</h2>
+		<p>Tu cuenta y báscula Withings han sido enlazadas a tu perfil clínico en KineSys. Las mediciones se sincronizarán automáticamente con las sesiones de tus pacientes.</p>
+		<button class="btn" onclick="window.close(); window.opener && window.opener.location.reload();">Cerrar Ventana</button>
+	</div>
+</body>
+</html>`))
 }
 
 func (h *WithingsHardwareHandler) fetchEvaluation(ctx context.Context, patient *domain.Patient) (*WithingsHardwareReading, error) {
@@ -1173,6 +1547,18 @@ func pow10(exponent int) float64 {
 
 func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Request) {
 	patientID := strings.TrimSpace(chi.URLParam(r, "patientId"))
+
+	var reqBody struct {
+		PatientID      string `json:"patient_id"`
+		NutritionistID string `json:"nutritionist_id"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+	}
+
+	if patientID == "" && reqBody.PatientID != "" {
+		patientID = strings.TrimSpace(reqBody.PatientID)
+	}
 	if patientID == "" {
 		http.Error(w, "Invalid patient ID", http.StatusBadRequest)
 		return
@@ -1186,15 +1572,28 @@ func (h *WithingsHardwareHandler) StartSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Create a new session
-	session := &domain.ActiveWeighInSession{
-		TenantID:  tenantID,
-		PatientID: patientUUID,
-		Status:    "pending",
-		ExpiresAt: time.Now().Add(3 * time.Minute),
+	var nutriUUID *uuid.UUID
+	if reqBody.NutritionistID != "" {
+		if nID, err := uuid.Parse(strings.TrimSpace(reqBody.NutritionistID)); err == nil && nID != uuid.Nil {
+			nutriUUID = &nID
+		}
+	}
+	if nutriUUID == nil && userIDStr != "" {
+		if nID, err := uuid.Parse(userIDStr); err == nil && nID != uuid.Nil {
+			nutriUUID = &nID
+		}
 	}
 
-	log.Printf("[WITHINGS] Sesión PENDING creada para paciente %s. Expirará a las %s", session.PatientID, session.ExpiresAt)
+	// Create a new session
+	session := &domain.ActiveWeighInSession{
+		TenantID:       tenantID,
+		NutritionistID: nutriUUID,
+		PatientID:      patientUUID,
+		Status:         "pending",
+		ExpiresAt:      time.Now().Add(3 * time.Minute),
+	}
+
+	log.Printf("[WITHINGS] Sesión PENDING creada para paciente=%s, tenant=%s, nutri=%v. Expirará a las %s", session.PatientID, session.TenantID, session.NutritionistID, session.ExpiresAt)
 
 	if err := h.anthropometrySvc.CreateWeighInSession(r.Context(), session); err != nil {
 		fmt.Printf("Error detallado al crear sesión: %v\n", err)
@@ -1343,99 +1742,10 @@ func (h *WithingsHardwareHandler) CheckSessionStatus(w http.ResponseWriter, r *h
 
 func (h *WithingsHardwareHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		code := r.URL.Query().Get("code")
-		if code != "" {
-			// Step 1: Request access token
-			data := url.Values{}
-			data.Set("action", "requesttoken")
-			data.Set("client_id", h.clientID)
-			data.Set("client_secret", h.clientSecret)
-			data.Set("grant_type", "authorization_code")
-			data.Set("code", code)
-			data.Set("redirect_uri", "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/webhook")
-
-			resp, err := h.client.PostForm("https://wbsapi.withings.net/v2/oauth2", data)
-			if err != nil {
-				http.Error(w, "Failed to request token", http.StatusInternalServerError)
-				return
-			}
-			defer resp.Body.Close()
-
-			var oauthResp struct {
-				Status int `json:"status"`
-				Body   struct {
-					UserID       string `json:"userid"`
-					AccessToken  string `json:"access_token"`
-					RefreshToken string `json:"refresh_token"`
-					ExpiresIn    int    `json:"expires_in"`
-				} `json:"body"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&oauthResp); err != nil {
-				http.Error(w, "Failed to decode token response", http.StatusInternalServerError)
-				return
-			}
-
-			if oauthResp.Status != 0 || oauthResp.Body.AccessToken == "" {
-				http.Error(w, fmt.Sprintf("Withings API error on token exchange: status %d", oauthResp.Status), http.StatusBadGateway)
-				return
-			}
-
-			userid := oauthResp.Body.UserID
-			accessToken := oauthResp.Body.AccessToken
-			refreshToken := oauthResp.Body.RefreshToken
-			expiresIn := oauthResp.Body.ExpiresIn
-
-			h.mu.Lock()
-			if h.userTokens == nil {
-				h.userTokens = make(map[string]string)
-			}
-			h.userTokens[userid] = accessToken
-			h.lastAccessToken = accessToken
-			h.userID = userid
-			h.accessToken = accessToken
-			h.refreshToken = refreshToken
-			h.mu.Unlock()
-
-			log.Printf("[WITHINGS OAUTH OK] Access Token real asignado para userid=%s (longitud: %d)", userid, len(accessToken))
-
-			// Check if there is an active weigh-in session to link patient_id
-			var pendingPatientID *uuid.UUID
-			var sessionTenantID *uuid.UUID
-			if pendingSession, err := h.anthropometrySvc.GetLatestPendingWeighInSession(r.Context()); err == nil && pendingSession != nil {
-				pendingPatientID = &pendingSession.PatientID
-				sessionTenantID = &pendingSession.TenantID
-			}
-			_ = h.saveUserTokens(r.Context(), sessionTenantID, pendingPatientID, userid, accessToken, refreshToken, expiresIn)
-
-			// Step 2: Subscribe webhook
-			subData := url.Values{}
-			subData.Set("action", "subscribe")
-			subData.Set("callbackurl", "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/webhook")
-			subData.Set("appli", "1")
-			subData.Set("access_token", accessToken)
-
-			subResp, err := h.client.PostForm("https://wbsapi.withings.net/notify", subData)
-			if err != nil {
-				http.Error(w, "Failed to subscribe webhook", http.StatusInternalServerError)
-				return
-			}
-			defer subResp.Body.Close()
-
-			log.Printf("[WITHINGS OAUTH] Suscripción exitosa para userid=%s", userid)
-
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`<!DOCTYPE html>
-<html>
-<body style="font-family:sans-serif; text-align:center; padding:50px; background:#0f172a; color:#fff;">
-  <h1 style="color:#22c55e;">¡Báscula Vinculada y Suscrita con Éxito!</h1>
-  <p>Se ha registrado la suscripción y guardado de credenciales para el usuario de Withings.</p>
-  <p>Ya puedes volver a la plataforma (<strong>/#/nutricion</strong> o <strong>/#/withings-poc</strong>) y pesarte.</p>
-</body>
-</html>`))
+		if r.URL.Query().Get("code") != "" {
+			h.HandleCallback(w, r)
 			return
 		}
-
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 		return

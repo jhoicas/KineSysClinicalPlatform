@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/kinesys/clinical-platform-backend/internal/core/domain"
@@ -25,7 +26,15 @@ type AnthropometryRepository interface {
 	CreateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error
 	GetPendingWeighInSession(ctx context.Context, patientID uuid.UUID) (*domain.ActiveWeighInSession, error)
 	GetLatestPendingWeighInSession(ctx context.Context) (*domain.ActiveWeighInSession, error)
+	GetPendingSessionByTenantAndNutritionist(ctx context.Context, tenantID, nutritionistID uuid.UUID) (*domain.ActiveWeighInSession, error)
 	UpdateWeighInSession(ctx context.Context, session *domain.ActiveWeighInSession) error
+}
+
+type WithingsRepository interface {
+	FindByWithingsUserID(ctx context.Context, withingsUserID string) (*domain.WithingsIntegration, error)
+	FindByNutritionist(ctx context.Context, tenantID, nutritionistID uuid.UUID) (*domain.WithingsIntegration, error)
+	Upsert(ctx context.Context, integration *domain.WithingsIntegration) error
+	UpdateTokens(ctx context.Context, withingsUserID, accessToken, refreshToken string, expiresAt time.Time) error
 }
 
 type NutritionRepository interface {

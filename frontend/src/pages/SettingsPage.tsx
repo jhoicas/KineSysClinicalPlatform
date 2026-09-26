@@ -20,7 +20,7 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'branding' | 'general' | 'team' | 'database' | 'hardware'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'general' | 'team' | 'hardware'>('branding');
 
   // Form Fields State
   const [clinicName, setClinicName] = useState('');
@@ -31,14 +31,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
   const [address, setAddress] = useState('');
   const [appointmentDuration, setAppointmentDuration] = useState<number>(45);
   const [currency, setCurrency] = useState('COP');
-
-  // Supabase Custom Credentials State
-  const [customSupabaseUrl, setCustomSupabaseUrl] = useState(
-    localStorage.getItem('kinesys_supabase_url') || ''
-  );
-  const [customSupabaseKey, setCustomSupabaseKey] = useState(
-    localStorage.getItem('kinesys_supabase_key') || ''
-  );
 
   // Alerts / Toasts State
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -126,19 +118,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
       addToast('error', t('common.error', 'Error al guardar'), err?.message || 'Ocurrió un problema al guardar los ajustes.');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleSaveSupabaseConfig = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (customSupabaseUrl && customSupabaseKey) {
-      localStorage.setItem('kinesys_supabase_url', customSupabaseUrl.trim());
-      localStorage.setItem('kinesys_supabase_key', customSupabaseKey.trim());
-      addToast('success', t('common.success', 'Credenciales Guardadas'), 'Recarga para conectar.');
-    } else {
-      localStorage.removeItem('kinesys_supabase_url');
-      localStorage.removeItem('kinesys_supabase_key');
-      addToast('info', 'Supabase Local', 'Usando almacenamiento local.');
     }
   };
 
@@ -296,11 +275,15 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
                 </button>
               )}
             </div>
+          ) : activeTab === 'hardware' ? (
+            <div className="space-y-6 animate-fadeIn">
+              <WithingsAdminConfig
+                onSuccess={(msg) => addToast('success', t('common.success', 'Éxito'), msg)}
+                onError={(err) => addToast('error', t('common.error', 'Error'), err)}
+              />
+            </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              
-              {/* Left Form: Main Tenant Settings (8 cols) */}
-              <div className="lg:col-span-8 bg-surface-container-lowest rounded-3xl border border-outline-variant/30 clinical-shadow p-6 md:p-8">
+            <div className="max-w-4xl mx-auto bg-surface-container-lowest rounded-3xl border border-outline-variant/30 clinical-shadow p-6 md:p-8">
                 <div className="flex items-center justify-between pb-4 mb-6 border-b border-outline-variant/20">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
@@ -521,95 +504,6 @@ export function SettingsPage({ onNavigate }: SettingsPageProps) {
                   </div>
                 </form>
               </div>
-
-              {/* Right Column: Supabase & DB Info Card (4 cols) */}
-              <div className="lg:col-span-4 space-y-6">
-                
-                {/* Database State Card */}
-                <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 clinical-shadow p-6 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                      <span className="material-symbols-outlined text-xl">database</span>
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-sm text-on-surface">Supabase Engine</h4>
-                      <p className="text-[11px] text-on-surface-variant">PostgreSQL Multi-Tenant</p>
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 bg-surface-container-low rounded-2xl border border-outline-variant/20 space-y-2 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-on-surface-variant">Tablas:</span>
-                      <strong className="font-mono text-primary">users, appointments, tenants</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-on-surface-variant">Modo:</span>
-                      <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-extrabold text-[10px]">
-                        {t('patients.active_status', 'Activo')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Cloud Supabase Connect Card */}
-                <div className="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 clinical-shadow p-6 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                      <span className="material-symbols-outlined text-xl">cloud_sync</span>
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-sm text-on-surface">Conectar Proyecto Supabase</h4>
-                      <p className="text-[11px] text-on-surface-variant">Opcional para nube externa</p>
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleSaveSupabaseConfig} className="space-y-3">
-                    <div>
-                      <label className="block text-[11px] font-black uppercase text-on-surface-variant mb-1">
-                        SUPABASE_URL
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="https://xyzcompany.supabase.co"
-                        value={customSupabaseUrl}
-                        onChange={(e) => setCustomSupabaseUrl(e.target.value)}
-                        className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl p-2.5 text-xs text-on-surface outline-none focus:border-primary font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-black uppercase text-on-surface-variant mb-1">
-                        SUPABASE_ANON_KEY
-                      </label>
-                      <input
-                        type="password"
-                        placeholder="eyJhbGciOi..."
-                        value={customSupabaseKey}
-                        onChange={(e) => setCustomSupabaseKey(e.target.value)}
-                        className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl p-2.5 text-xs text-on-surface outline-none focus:border-primary font-mono"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-bold text-xs py-2.5 rounded-xl transition-all cursor-pointer"
-                    >
-                      {t('common.save', 'Guardar')}
-                    </button>
-                  </form>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Withings Hardware Admin Config Tab */}
-          {activeTab === 'hardware' && (
-            <div className="space-y-6 animate-fadeIn">
-              <WithingsAdminConfig
-                onSuccess={(msg) => addToast('success', t('common.success', 'Éxito'), msg)}
-                onError={(err) => addToast('error', t('common.error', 'Error'), err)}
-              />
-            </div>
           )}
         </div>
       </main>

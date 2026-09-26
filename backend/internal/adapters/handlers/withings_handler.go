@@ -977,13 +977,14 @@ func (h *WithingsHardwareHandler) HandleAuthorize(w http.ResponseWriter, r *http
 	stBytes, _ := json.Marshal(st)
 	encodedState := base64.RawURLEncoding.EncodeToString(stBytes)
 
-	authURL := fmt.Sprintf(
-		"https://account.withings.com/oauth2_user/authorize2?response_type=code&client_id=%s&state=%s&scope=%s&redirect_uri=%s",
-		url.QueryEscape(clientID),
-		url.QueryEscape(encodedState),
-		url.QueryEscape("user.metrics,user.info,user.activity"),
-		url.QueryEscape(redirectURI),
-	)
+	q := url.Values{}
+	q.Set("response_type", "code")
+	q.Set("client_id", clientID)
+	q.Set("state", encodedState)
+	q.Set("scope", "user.info,user.metrics,user.activity")
+	q.Set("redirect_uri", redirectURI)
+
+	authURL := "https://account.withings.com/oauth2_user/authorize2?" + q.Encode()
 
 	log.Printf("[WITHINGS AUTHORIZE] Generada URL OAuth para tenant=%s, user=%s: %s", tenantUUID, userIDStr, authURL)
 

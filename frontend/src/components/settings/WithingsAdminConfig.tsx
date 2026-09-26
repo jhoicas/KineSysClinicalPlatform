@@ -1,25 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '../../services/apiClient';
+import { apiClient } from '../../services/apiClient';
 import { useAuth } from '../../app/providers/AuthProvider';
+import type { User } from '../../types';
 
 interface WithingsAdminConfigProps {
   onSuccess?: (message: string) => void;
   onError?: (error: string) => void;
 }
 
-interface ProfessionalUser {
-  id: string;
-  name?: string;
-  email?: string;
-  role?: string;
-}
-
 const DEFAULT_REDIRECT_URI = 'https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback';
 
 export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigProps) {
-  const { tenantId, user, role } = useAuth();
+  const { tenantId, user } = useAuth();
 
-  const [nutritionists, setNutritionists] = useState<ProfessionalUser[]>([]);
+  const [nutritionists, setNutritionists] = useState<User[]>([]);
   const [selectedNutritionistId, setSelectedNutritionistId] = useState<string>('');
   const [customNutritionistId, setCustomNutritionistId] = useState<string>('');
   const [isManualInput, setIsManualInput] = useState<boolean>(false);
@@ -32,35 +26,41 @@ export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigP
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [statusInfo, setStatusInfo] = useState<{
-    configured: boolean;
-    isConnected?: boolean;
-    withingsUserId?: string;
-  } | null>(null);
+
+  const [isConfigured, setIsConfigured] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [withingsUserId, setWithingsUserId] = useState('');
 
   const [alert, setAlert] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
-  // Cargar lista de profesionales/nutricionistas de la clínica
+  // 1. Cargar lista de profesionales/nutricionistas de la clínica
   useEffect(() => {
     async function fetchUsers() {
       setLoadingUsers(true);
       try {
-        const users = await api.users.list({ tenant_id: tenantId || undefined });
-        const eligible = users.filter((u: any) =>
-          ['nutricionista', 'nutritionist', 'clinic_admin', 'professional', 'doctor'].includes(
-            (u.role || '').toLowerCase()
-          )
+        const usersRes = await apiClient.getUsers({ tenant_id: tenantId || undefined });
+        const usersList: User[] = usersRes.data || [];
+        const eligible = usersList.filter(
+          (u: User) =>
+            u.role === 'nutricionista' ||
+            u.role === 'clinic_admin' ||
+            u.role === 'super_admin' ||
+            u.role === 'professional' ||
+            (u.role as string) === 'nutritionist' ||
+            (u.role as string) === 'admin'
         );
-        setNutritionists(eligible.length > 0 ? eligible : users);
-        if (eligible.length > 0) {
-          // Preseleccionar al usuario actual si es elegible, o el primero
-          const currentInList = eligible.find((u) => u.id === user?.id);
-          setSelectedNutritionistId(currentInList ? currentInList.id : eligible[0].id);
+
+        const listToDisplay = eligible.length > 0 ? eligible : usersList;
+        setNutritionists(listToDisplay);
+
+        if (listToDisplay.length > 0) {
+          const currentInList = listToDisplay.find((u: User) => u.id === user?.id);
+          setSelectedNutritionistId(currentInList ? currentInList.id : listToDisplay[0].id);
         } else if (user?.id) {
           setSelectedNutritionistId(user.id);
         }
       } catch (err: any) {
-        console.warn('No se pudo cargar la lista de usuarios mediante api.users.list:', err);
+        console.warn('Error al cargar usuarios:', err);
         if (user?.id) {
           setSelectedNutritionistId(user.id);
         }
@@ -72,9 +72,10 @@ export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigP
     fetchUsers();
   }, [tenantId, user?.id]);
 
-  // Cargar credenciales existentes para el usuario seleccionado
+  // ID activo del nutricionista a consultar o configurar
   const activeNutriId = isManualInput ? customNutritionistId.trim() : selectedNutritionistId;
 
+  // 2. Cargar credenciales existentes para el usuario seleccionado
   useEffect(() => {
     if (!activeNutriId) return;
 
@@ -82,27 +83,26 @@ export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigP
     async function loadCurrentConfig() {
       setLoadingConfig(true);
       try {
-        const data = await api.hardware.getWithingsCredentials(activeNutriId, tenantId || undefined);
+        const res = await apiClient.getWithingsCredentials(activeNutriId, tenantId || undefined);
         if (!mounted) return;
-        if (data && data.configured) {
-          setClientId(data.client_id || '');
-          setClientSecret(data.client_secret || '');
-          if (data.redirect_uri) {
-            setRedirectUri(data.redirect_uri);
-          }
-          setStatusInfo({
-            configured: true,
-            isConnected: !!data.is_connected,
-            withingsUserId: data.withings_user_id,
-          });
+        if (res.data) {
+          const cfg = res.data;
+          setIsConfigured(!!cfg.configured);
+          setClientId(cfg.client_id || '');
+          setClientSecret(cfg.client_secret || '');
+          setRedirectUri(cfg.redirect_uri || DEFAULT_REDIRECT_URI);
+          setIsConnected(!!cfg.is_connected);
+          setWithingsUserId(cfg.withings_user_id || '');
         } else {
-          setStatusInfo({
-            configured: false,
-          });
+          setIsConfigured(false);
+          setIsConnected(false);
+          setWithingsUserId('');
         }
       } catch (err) {
         if (!mounted) return;
-        setStatusInfo(null);
+        setIsConfigured(false);
+        setIsConnected(false);
+        setWithingsUserId('');
       } finally {
         if (mounted) setLoadingConfig(false);
       }
@@ -114,6 +114,7 @@ export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigP
     };
   }, [activeNutriId, tenantId]);
 
+  // 3. Guardar credenciales con desestructuración segura de ApiResponse<T>
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeNutriId) {
@@ -133,22 +134,25 @@ export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigP
     setAlert(null);
 
     try {
-      const res = await api.hardware.saveWithingsCredentials({
+      const payload = {
         tenant_id: tenantId || undefined,
         nutritionist_id: activeNutriId,
         client_id: clientId.trim(),
         client_secret: clientSecret.trim(),
         redirect_uri: redirectUri.trim() || DEFAULT_REDIRECT_URI,
-      });
+      };
 
-      const successMsg = res.message || 'Credenciales de Withings guardadas exitosamente.';
-      setAlert({ type: 'success', text: successMsg });
-      setStatusInfo((prev) => ({
-        configured: true,
-        isConnected: prev?.isConnected ?? false,
-        withingsUserId: prev?.withingsUserId,
-      }));
-      if (onSuccess) onSuccess(successMsg);
+      const res = await apiClient.saveWithingsCredentials(payload);
+      if (res.success || res.data) {
+        const successMsg = res.data?.message || 'Credenciales de Withings guardadas exitosamente.';
+        setAlert({ type: 'success', text: successMsg });
+        setIsConfigured(true);
+        if (onSuccess) onSuccess(successMsg);
+      } else {
+        const errorMsg = res.error || 'Error al guardar las credenciales en el servidor.';
+        setAlert({ type: 'error', text: errorMsg });
+        if (onError) onError(errorMsg);
+      }
     } catch (err: any) {
       const errorMsg = err?.message || 'Error al guardar las credenciales en el servidor.';
       setAlert({ type: 'error', text: errorMsg });
@@ -186,11 +190,11 @@ export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigP
           </div>
         </div>
 
-        {statusInfo?.configured && (
+        {isConfigured && (
           <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 rounded-xl text-xs font-semibold">
             <span className="material-symbols-outlined text-base">check_circle</span>
             <span>
-              {statusInfo.isConnected ? 'Báscula Enlazada' : 'Credenciales Listas'}
+              {isConnected ? `Báscula Enlazada (${withingsUserId})` : 'Credenciales Listas'}
             </span>
           </div>
         )}
@@ -262,9 +266,9 @@ export function WithingsAdminConfig({ onSuccess, onError }: WithingsAdminConfigP
                 disabled={loadingUsers}
                 className="w-full px-4 py-2.5 rounded-xl border border-outline-variant/40 bg-surface text-on-surface text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer disabled:opacity-50"
               >
-                {nutritionists.map((nutri) => (
+                {nutritionists.map((nutri: User) => (
                   <option key={nutri.id} value={nutri.id}>
-                    {nutri.name || nutri.email || nutri.id} {nutri.role ? `(${nutri.role})` : ''}
+                    {nutri.full_name || nutri.email || nutri.id} {nutri.role ? `(${nutri.role})` : ''}
                   </option>
                 ))}
               </select>

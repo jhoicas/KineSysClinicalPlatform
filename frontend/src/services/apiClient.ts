@@ -55,6 +55,7 @@ export interface ApiResponse<T> {
   data: T | null;
   error: string | null;
   status: number;
+  success?: boolean;
 }
 
 export interface PaginatedResponse<T> {
@@ -139,12 +140,12 @@ async function request<T>(
     if (response.status === 401) {
       const authError = 'Sesión expirada. Por favor, vuelve a iniciar sesión';
       console.error(`[KineSys API] ${authError}`, { method, path: url.pathname });
-      return { data: null, error: authError, status: 401 };
+      return { data: null, error: authError, status: 401, success: false };
     }
 
     // Handle no-content responses
     if (response.status === 204) {
-      return { data: null, error: null, status: 204 };
+      return { data: null, error: null, status: 204, success: true };
     }
 
     const responseData = await response.json().catch(() => null);
@@ -154,15 +155,16 @@ async function request<T>(
         (responseData as any)?.message ||
         (responseData as any)?.error ||
         `Error HTTP ${response.status}`;
-      return { data: null, error: errorMessage, status: response.status };
+      return { data: null, error: errorMessage, status: response.status, success: false };
     }
 
-    return { data: responseData as T, error: null, status: response.status };
+    return { data: responseData as T, error: null, status: response.status, success: true };
   } catch (err: any) {
     return {
       data: null,
       error: err?.message || 'Error de red — No se pudo conectar con el servidor.',
       status: 0,
+      success: false,
     };
   }
 }
@@ -421,6 +423,38 @@ export const api = {
         data
       ),
   },
+
+  // ──── Direct Aliases ────
+  getUsers: (params?: { tenant_id?: string; role?: string }) =>
+    request<User[]>('GET', '/api/v1/users', undefined, params),
+  getWithingsCredentials: (nutritionistId: string, tenantId?: string) => {
+    const params = new URLSearchParams({ nutritionist_id: nutritionistId });
+    if (tenantId) params.set('tenant_id', tenantId);
+    return request<{
+      configured: boolean;
+      tenant_id?: string;
+      nutritionist_id?: string;
+      client_id?: string;
+      client_secret?: string;
+      redirect_uri?: string;
+      withings_user_id?: string;
+      is_connected?: boolean;
+      is_active?: boolean;
+    }>('GET', `/api/v1/admin/hardware/withings/credentials?${params.toString()}`);
+  },
+  saveWithingsCredentials: (data: {
+    tenant_id?: string;
+    nutritionist_id: string;
+    client_id: string;
+    client_secret: string;
+    redirect_uri?: string;
+  }) =>
+    request<{ status: string; message: string; tenant_id: string; nutritionist_id: string; redirect_uri: string }>(
+      'POST',
+      '/api/v1/admin/hardware/withings/credentials',
+      data,
+    ),
 };
 
+export const apiClient = api;
 export default api;

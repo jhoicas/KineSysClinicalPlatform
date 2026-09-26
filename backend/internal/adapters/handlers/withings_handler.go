@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -1061,39 +1062,57 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 		nutritionistUUID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	}
 
-	// Obtener client_id, client_secret y redirect_uri del registro de integración para este nutricionista
-	targetClientID := h.clientID
-	targetClientSecret := h.clientSecret
-	targetRedirectURI := "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
-	if r.URL.Path == "/api/v1/withings/callback" {
-		targetRedirectURI = "https://clinicalplatform.ludoia.com/api/v1/withings/callback"
-	}
-
+	// Obtener registro de integración para este nutricionista
+	var integration *domain.WithingsIntegration
 	if nutritionistUUID != uuid.Nil {
-		integ, err := h.getIntegrationByNutritionist(r.Context(), tenantUUID, nutritionistUUID)
-		if err == nil && integ != nil {
-			if strings.TrimSpace(integ.ClientID) != "" {
-				targetClientID = strings.TrimSpace(integ.ClientID)
-			}
-			if strings.TrimSpace(integ.ClientSecret) != "" {
-				targetClientSecret = strings.TrimSpace(integ.ClientSecret)
-			}
-			if strings.TrimSpace(integ.RedirectURI) != "" {
-				targetRedirectURI = strings.TrimSpace(integ.RedirectURI)
-			}
+		integration, _ = h.getIntegrationByNutritionist(r.Context(), tenantUUID, nutritionistUUID)
+	}
+	if integration == nil {
+		integration = &domain.WithingsIntegration{
+			TenantID:       tenantUUID,
+			NutritionistID: nutritionistUUID,
+			ClientID:       h.clientID,
+			ClientSecret:   h.clientSecret,
+			RedirectURI:    "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback",
+		}
+		if r.URL.Path == "/api/v1/withings/callback" {
+			integration.RedirectURI = "https://clinicalplatform.ludoia.com/api/v1/withings/callback"
 		}
 	}
 
-	form := url.Values{
-		"action":        {"requesttoken"},
-		"grant_type":    {"authorization_code"},
-		"client_id":     {targetClientID},
-		"client_secret": {targetClientSecret},
-		"code":          {code},
-		"redirect_uri":  {targetRedirectURI},
+	clientID := strings.TrimSpace(integration.ClientID)
+	clientSecret := strings.TrimSpace(integration.ClientSecret)
+	redirectURI := strings.TrimSpace(integration.RedirectURI)
+
+	// Fallback de seguridad si los campos en la integración estaban vacíos
+	if clientID == "" {
+		clientID = strings.TrimSpace(h.clientID)
+	}
+	if clientSecret == "" {
+		clientSecret = strings.TrimSpace(h.clientSecret)
+	}
+	if redirectURI == "" {
+		redirectURI = "https://clinicalplatform.ludoia.com/api/v1/hardware/withings/callback"
+		if r.URL.Path == "/api/v1/withings/callback" {
+			redirectURI = "https://clinicalplatform.ludoia.com/api/v1/withings/callback"
+		}
 	}
 
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://wbsapi.withings.net/v2/oauth2", strings.NewReader(form.Encode()))
+	// Validación de seguridad: Si clientID o clientSecret están vacíos, devuelve un error HTTP 400 antes de llamar a Withings
+	if clientID == "" || clientSecret == "" {
+		http.Error(w, "Credenciales de Withings no configuradas (client_id o client_secret vacíos)", http.StatusBadRequest)
+		return
+	}
+
+	data := url.Values{}
+	data.Set("action", "requesttoken")
+	data.Set("grant_type", "authorization_code")
+	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
+	data.Set("code", code)
+	data.Set("redirect_uri", redirectURI) // CRÍTICO PARA EVITAR 503
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://wbsapi.withings.net/v2/oauth2", strings.NewReader(data.Encode()))
 	if err != nil {
 		http.Error(w, "Error creating request", http.StatusInternalServerError)
 		return
@@ -1107,6 +1126,12 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 	}
 	defer res.Body.Close()
 
+	bodyBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		http.Error(w, "Error reading response from Withings", http.StatusBadGateway)
+		return
+	}
+
 	var payload struct {
 		Status int `json:"status"`
 		Body   struct {
@@ -1117,12 +1142,14 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 		} `json:"body"`
 	}
 
-	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
+		log.Printf("[WITHINGS OAUTH ERROR] Error parsing response: %v, raw: %s", err, string(bodyBytes))
 		http.Error(w, "Invalid response from Withings", http.StatusBadGateway)
 		return
 	}
 
 	if payload.Status != 0 || payload.Body.AccessToken == "" {
+		log.Printf("[WITHINGS OAUTH ERROR] Withings API error status=%d, raw=%s", payload.Status, string(bodyBytes))
 		http.Error(w, fmt.Sprintf("Withings API returned status %d", payload.Status), http.StatusBadGateway)
 		return
 	}
@@ -1134,18 +1161,17 @@ func (h *WithingsHardwareHandler) HandleCallback(w http.ResponseWriter, r *http.
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
 
 	// 1. Guardar/actualizar en kinesys.withings_integrations
-	integration := &domain.WithingsIntegration{
-		TenantID:       tenantUUID,
-		NutritionistID: nutritionistUUID,
-		WithingsUserID: payload.Body.UserID,
-		ClientID:       targetClientID,
-		ClientSecret:   targetClientSecret,
-		RedirectURI:    targetRedirectURI,
-		AccessToken:    payload.Body.AccessToken,
-		RefreshToken:   payload.Body.RefreshToken,
-		ExpiresAt:      expiresAt,
-		IsActive:       true,
-	}
+	integration.TenantID = tenantUUID
+	integration.NutritionistID = nutritionistUUID
+	integration.WithingsUserID = payload.Body.UserID
+	integration.ClientID = clientID
+	integration.ClientSecret = clientSecret
+	integration.RedirectURI = redirectURI
+	integration.AccessToken = payload.Body.AccessToken
+	integration.RefreshToken = payload.Body.RefreshToken
+	integration.ExpiresAt = expiresAt
+	integration.IsActive = true
+
 	if err := h.saveWithingsIntegration(r.Context(), integration); err != nil {
 		log.Printf("[WITHINGS OAUTH WARN] Error guardando en withings_integrations: %v", err)
 	} else {

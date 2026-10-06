@@ -1,11 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
 import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
 import { ToastContainer, ToastMessage } from '../components/common/Toast';
 import { useAppStore } from '../store/useAppStore';
-import { getHistoriaClinicaByPatient, getKinesiologyEvaluations, saveKinesiologyEvaluation } from '../services/dataService';
+import {
+  createKinesiologyEvaluation,
+  getHistoriaClinicaByPatient,
+  getKinesiologyEvaluations,
+  patchKinesiologyEvaluation,
+  type KinesiologyEvaluationFields,
+} from '../services/dataService';
+import { useAutosave } from '../hooks/useAutosave';
+import { AutosaveIndicator } from '../components/common/AutosaveIndicator';
 import {
   HistoriaClinica,
   KinesiologyEvaluation,
@@ -54,6 +62,7 @@ function mapActiveToPacienteClinico(active: {
   email?: string;
   allergies?: string[];
   medical_conditions?: string[];
+  height_cm?: number;
   created_at?: string;
 }, tenantId: string): PacienteClinico {
   const parts = (active.full_name || 'Paciente').trim().split(/\s+/);
@@ -70,6 +79,7 @@ function mapActiveToPacienteClinico(active: {
     telecom_email: active.email || '',
     known_allergies: active.allergies || [],
     chronic_conditions: active.medical_conditions || [],
+    height_cm: active.height_cm,
     active: true,
     created_at: active.created_at || new Date().toISOString(),
   };
@@ -100,6 +110,25 @@ function emptyForm(patientId = '') {
   };
 }
 
+type EvaluationForm = ReturnType<typeof emptyForm>;
+
+/** Destino de guardado de un contexto de edición: el registro se crea en el primer guardado. */
+interface EvaluationContext {
+  patientId: string;
+  id?: string;
+}
+
+/** Solo se guardan los campos recibidos; el plan siempre queda ligado al paciente. */
+function toEvaluationFields(form: Partial<EvaluationForm>, patientId: string): KinesiologyEvaluationFields {
+  const { plan_tratamiento, ...rest } = form;
+  return plan_tratamiento ? { ...rest, plan_tratamiento: { ...plan_tratamiento, patientId } } : rest;
+}
+
+/** Cada contexto lleva su propio onSave; el global del hook nunca se usa en esta página. */
+const rejectUnscopedSave = async (): Promise<void> => {
+  throw new Error('No hay una evaluación activa para autoguardar.');
+};
+
 function mergePosture(raw?: PostureAssessment | null): PostureAssessment {
   const base = createEmptyPosture();
   if (!raw) return base;
@@ -127,11 +156,49 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
   const [currentId, setCurrentId] = useState<string | undefined>();
   const [readOnly, setReadOnly] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [biomechanicsEvidences, setBiomechanicsEvidences] = useState<string[]>([]);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [historiaForPdf, setHistoriaForPdf] = useState<HistoriaClinica | null>(null);
+
+  const evalCtxRef = useRef<EvaluationContext | null>(null);
+  // Los contextos de guardado viven más que un render: leen la sesión al guardar, no al crearse.
+  const sessionRef = useRef({ tenantId, userId: user?.id });
+  sessionRef.current = { tenantId, userId: user?.id };
+  const autosave = useAutosave({
+    value: form,
+    onSave: rejectUnscopedSave,
+    scopeKey: activePatient?.id ?? null,
+    enabled: !readOnly,
+  });
+
+  const buildSaveFn = (ctx: EvaluationContext) => async (
+    changes: Partial<EvaluationForm>,
+    snapshot: EvaluationForm
+  ): Promise<void> => {
+    const { tenantId: sessionTenantId, userId } = sessionRef.current;
+    if (!sessionTenantId || !userId) throw new Error('Falta sesión de profesional.');
+
+    if (!ctx.id) {
+      const created = await createKinesiologyEvaluation(
+        sessionTenantId,
+        ctx.patientId,
+        userId,
+        toEvaluationFields(snapshot, ctx.patientId)
+      );
+      ctx.id = created.id;
+      if (evalCtxRef.current === ctx) {
+        setCurrentId(created.id);
+        setHistory((prev) => [created, ...prev.filter((row) => row.id !== created.id)]);
+      }
+      return;
+    }
+
+    const saved = await patchKinesiologyEvaluation(ctx.id, toEvaluationFields(changes, ctx.patientId));
+    if (evalCtxRef.current === ctx) {
+      setHistory((prev) => prev.map((row) => (row.id === saved.id ? saved : row)));
+    }
+  };
 
   const addToast = (type: ToastMessage['type'], title: string, message: string) => {
     const id = Date.now().toString();
@@ -162,9 +229,7 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
   }, [activePatient?.id, tenantId]);
 
   const applyEvaluation = (row: KinesiologyEvaluation, historic: boolean) => {
-    setCurrentId(row.id);
-    setReadOnly(historic);
-    setForm({
+    const loaded: EvaluationForm = {
       postura: mergePosture(row.postura),
       movilidad: row.movilidad?.length ? row.movilidad : createEmptyMobility(),
       fuerza: mergeStrength(row.fuerza),
@@ -178,15 +243,34 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
       diagnostico_kinesico: row.diagnostico_kinesico || '',
       plan_tratamiento: normalizeTreatmentPlan(row.plan_tratamiento, row.patient_id),
       observaciones_generales: row.observaciones_generales || '',
-    });
+    };
+
+    const ctx: EvaluationContext = { patientId: row.patient_id, id: row.id };
+    evalCtxRef.current = ctx;
+    setCurrentId(row.id);
+    setReadOnly(historic);
+    setForm(loaded);
+    autosave.reset(loaded, buildSaveFn(ctx));
   };
 
+  // Cambiar de evaluación guarda antes lo pendiente de la actual (reset drena el contexto anterior).
   const startNewEvaluation = () => {
+    const patientId = activePatient?.id || '';
+    const blank = emptyForm(patientId);
+
     setCurrentId(undefined);
     setReadOnly(false);
     setBiomechanicsEvidences([]);
-    setForm(emptyForm(activePatient?.id || ''));
+    setForm(blank);
     setTab('postura');
+
+    if (!patientId) {
+      evalCtxRef.current = null;
+      return;
+    }
+    const ctx: EvaluationContext = { patientId };
+    evalCtxRef.current = ctx;
+    autosave.reset(blank, buildSaveFn(ctx));
   };
 
   const openPdfExport = async () => {
@@ -255,43 +339,6 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
         return next;
       }),
     }));
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (readOnly) return;
-    if (!activePatient?.id || !tenantId || !user?.id) {
-      addToast('error', 'No se puede guardar', 'Falta paciente activo o sesión de profesional.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const planToSave: TreatmentPlan = {
-        ...form.plan_tratamiento,
-        patientId: activePatient.id,
-      };
-      const saved = await saveKinesiologyEvaluation({
-        id: currentId,
-        tenant_id: tenantId,
-        patient_id: activePatient.id,
-        professional_id: user.id,
-        postura: form.postura,
-        movilidad: form.movilidad,
-        fuerza: form.fuerza,
-        gestos_movimiento: form.gestos_movimiento,
-        diagnostico_kinesico: form.diagnostico_kinesico,
-        plan_tratamiento: planToSave,
-        observaciones_generales: form.observaciones_generales,
-      });
-      setCurrentId(saved.id);
-      addToast('success', 'Evaluación guardada', 'La valoración kinésica quedó registrada en la bitácora.');
-      await loadHistory();
-    } catch (err) {
-      console.error(err);
-      addToast('error', 'Error al guardar', 'No se pudo persistir la evaluación kinésica.');
-    } finally {
-      setSaving(false);
-    }
   };
 
   return (
@@ -384,7 +431,11 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
             </div>
           ) : (
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-6 animate-fadeIn">
-              <form onSubmit={handleSave} className="space-y-4 min-w-0">
+              <form
+                onSubmit={(e) => e.preventDefault()}
+                onBlur={() => void autosave.flush()}
+                className="space-y-4 min-w-0"
+              >
                 {readOnly && (
                   <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-on-surface">
                     Vista de solo lectura de una evaluación histórica. Usa <strong>Nueva Evaluación</strong> para
@@ -641,14 +692,12 @@ export function EvaluacionKinesicaPage({ onNavigate }: EvaluacionKinesicaPagePro
 
                 {!readOnly && (
                   <div className="flex justify-end">
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-primary text-on-primary px-6 py-3 text-sm font-bold disabled:opacity-60"
-                    >
-                      <span className="material-symbols-outlined text-lg">{saving ? 'sync' : 'save'}</span>
-                      {saving ? 'Guardando...' : 'Guardar evaluación'}
-                    </button>
+                    <AutosaveIndicator
+                      status={autosave.status}
+                      lastSavedAt={autosave.lastSavedAt}
+                      error={autosave.error}
+                      onRetry={() => void autosave.flush()}
+                    />
                   </div>
                 )}
               </form>

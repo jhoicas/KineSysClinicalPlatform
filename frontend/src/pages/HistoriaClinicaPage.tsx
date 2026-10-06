@@ -1,11 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { SideNavBar } from '../components/layout/SideNavBar';
 import { TopNavBar } from '../components/layout/TopNavBar';
 import { PatientSearchCombobox } from '../components/common/PatientSearchCombobox';
 import { ToastContainer, ToastMessage } from '../components/common/Toast';
 import { useAppStore } from '../store/useAppStore';
-import { getHistoriaClinicaByPatient, getKinesiologyEvaluations, saveHistoriaClinica } from '../services/dataService';
+import {
+  getHistoriaClinicaByPatient,
+  getKinesiologyEvaluations,
+  patchHistoriaClinica,
+  type HistoriaClinicaFields,
+} from '../services/dataService';
+import { useAutosave } from '../hooks/useAutosave';
+import { AutosaveIndicator } from '../components/common/AutosaveIndicator';
 import { HistoriaClinica, KinesiologyEvaluation, NivelDeporte, PacienteClinico } from '../types';
 import { KinesiologyPdfModal } from '../components/medical/KinesiologyPdfModal';
 
@@ -95,7 +102,6 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
   const [recordId, setRecordId] = useState<string | undefined>();
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [evaluationForPdf, setEvaluationForPdf] = useState<Partial<KinesiologyEvaluation> | null>(null);
@@ -107,6 +113,28 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
   };
+
+  const activePatientIdRef = useRef<string | undefined>(activePatient?.id);
+  activePatientIdRef.current = activePatient?.id;
+
+  // Guardado parcial: solo los campos modificados viajan al servidor (upsert por tenant+paciente).
+  const handleAutosave = useCallback(
+    async (changes: Partial<typeof emptyForm>) => {
+      if (!activePatient?.id || !tenantId || !user?.id) {
+        throw new Error('Falta paciente activo o sesión de profesional.');
+      }
+      const patientId = activePatient.id;
+      const saved = await patchHistoriaClinica(tenantId, patientId, user.id, changes as HistoriaClinicaFields);
+      if (activePatientIdRef.current === patientId) setRecordId(saved.id);
+    },
+    [activePatient?.id, tenantId, user?.id]
+  );
+
+  const autosave = useAutosave({
+    value: form,
+    onSave: handleAutosave,
+    scopeKey: activePatient?.id ?? null,
+  });
 
   useEffect(() => {
     if (!activePatient?.id || !tenantId) {
@@ -122,8 +150,7 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
         const row = await getHistoriaClinicaByPatient(tenantId, activePatient.id);
         if (cancelled) return;
         if (row) {
-          setRecordId(row.id);
-          setForm({
+          const loaded: typeof emptyForm = {
             ocupacion: row.ocupacion || '',
             motivo_consulta: row.motivo_consulta || '',
             deporte_practica: row.deporte_practica || '',
@@ -131,10 +158,14 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
             frecuencia_semanal: row.frecuencia_semanal || '',
             lesiones_anteriores: row.lesiones_anteriores || '',
             habitos_estilo_vida: row.habitos_estilo_vida || '',
-          });
+          };
+          setRecordId(row.id);
+          setForm(loaded);
+          autosave.reset(loaded);
         } else {
           setRecordId(undefined);
           setForm(emptyForm);
+          autosave.reset(emptyForm);
         }
       } catch (err) {
         console.error(err);
@@ -163,38 +194,6 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
 
   const handleChange = (field: keyof typeof emptyForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activePatient?.id || !tenantId || !user?.id) {
-      addToast('error', 'No se puede guardar', 'Falta paciente activo o sesión de profesional.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const saved: HistoriaClinica = await saveHistoriaClinica({
-        id: recordId,
-        tenant_id: tenantId,
-        patient_id: activePatient.id,
-        professional_id: user.id,
-        ocupacion: form.ocupacion,
-        motivo_consulta: form.motivo_consulta,
-        deporte_practica: form.deporte_practica,
-        nivel_deporte: form.nivel_deporte || undefined,
-        frecuencia_semanal: form.frecuencia_semanal,
-        lesiones_anteriores: form.lesiones_anteriores,
-        habitos_estilo_vida: form.habitos_estilo_vida,
-      });
-      setRecordId(saved.id);
-      addToast('success', 'Historia clínica guardada', 'Los antecedentes se almacenaron correctamente.');
-    } catch (err) {
-      console.error(err);
-      addToast('error', 'Error al guardar', 'No se pudo persistir la historia clínica.');
-    } finally {
-      setSaving(false);
-    }
   };
 
   const historiaForPdf: HistoriaClinica = {
@@ -312,7 +311,11 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
               </div>
             </div>
           ) : (
-            <form onSubmit={handleSave} className="max-w-5xl mx-auto space-y-6 animate-fadeIn">
+            <form
+              onSubmit={(e) => e.preventDefault()}
+              onBlur={() => void autosave.flush()}
+              className="max-w-5xl mx-auto space-y-6 animate-fadeIn"
+            >
               {loading && (
                 <p className="text-xs text-on-surface-variant flex items-center gap-2">
                   <span className="material-symbols-outlined animate-spin text-primary text-sm">sync</span>
@@ -441,14 +444,12 @@ export function HistoriaClinicaPage({ onNavigate }: HistoriaClinicaPageProps) {
               </section>
 
               <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={saving || loading}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-primary text-on-primary px-6 py-3 text-sm font-bold shadow-sm disabled:opacity-60"
-                >
-                  <span className="material-symbols-outlined text-lg">save</span>
-                  {saving ? 'Guardando...' : 'Guardar Historia Clínica'}
-                </button>
+                <AutosaveIndicator
+                  status={autosave.status}
+                  lastSavedAt={autosave.lastSavedAt}
+                  error={autosave.error}
+                  onRetry={() => void autosave.flush()}
+                />
               </div>
             </form>
           )}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Patient,
   AnthropometryAssessment,
@@ -8,8 +8,12 @@ import {
   PerimeterMeasurements,
   BoneDiameterMeasurements,
   SomatotypeCategory,
+  AnthropometryDraftForm,
 } from '../../types/coreBodyNutrition';
 import { useAnthropometryCalculations } from '../../hooks/useAnthropometryCalculations';
+import { useAutosave } from '../../hooks/useAutosave';
+import type { AutosaveSaveFn } from '../../hooks/autosaveEngine';
+import { AutosaveIndicator } from '../common/AutosaveIndicator';
 import { AnatomyAnthropometryModel } from './AnatomyAnthropometryModel';
 import {
   Ruler,
@@ -28,65 +32,138 @@ import {
 interface AnthropometryModuleProps {
   patient: Patient;
   assessment?: AnthropometryAssessment;
-  onSave: (assessment: AnthropometryAssessment) => void;
+  /** Borrador persistido con el que se hidrata el formulario al montar. */
+  draft?: Partial<AnthropometryDraftForm> | null;
+  /** Persiste solo los campos modificados del borrador (autoguardado). */
+  onAutosaveDraft?: AutosaveSaveFn<AnthropometryDraftForm>;
+  /** Persiste la estatura editada en el registro del paciente (autoguardado). */
+  onAutosaveHeight?: (patientId: string, heightCm: number) => Promise<void>;
+  /** Finaliza la evaluación: el borrador pasa a evaluación definitiva. */
+  onSave: (assessment: AnthropometryAssessment) => void | Promise<void>;
 }
+
+const MIN_HEIGHT_CM = 30;
+const MAX_HEIGHT_CM = 300;
+
+const isValidHeight = (value: number): boolean => value >= MIN_HEIGHT_CM && value <= MAX_HEIGHT_CM;
+
+const DEFAULT_SKINFOLDS: SkinfoldMeasurements = {
+  triceps: 0,
+  subescapular: 0,
+  biceps: 0,
+  crestaIliaca: 0,
+  supraespinal: 0,
+  abdominal: 0,
+  muslo: 0,
+  pierna: 0,
+};
+
+const DEFAULT_PERIMETERS: PerimeterMeasurements = {
+  brazoRelajado: 0,
+  brazoContraido: 0,
+  cintura: 0,
+  cadera: 0,
+  muslo: 0,
+  pierna: 0,
+};
+
+const DEFAULT_DIAMETERS: BoneDiameterMeasurements = {
+  biacromial: 0,
+  humero: 0,
+  femur: 0,
+};
+
+/** Un autoguardado de formulario nunca usa el onSave global: cada paciente trae el suyo. */
+const unscopedDraftSave: AutosaveSaveFn<AnthropometryDraftForm> = async () => {
+  throw new Error('No hay un borrador activo para autoguardar.');
+};
 
 export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
   patient,
   assessment,
+  draft,
+  onAutosaveDraft,
+  onAutosaveHeight,
   onSave,
 }) => {
   const [activeTab, setActiveTab] = useState<AnthropometryTab>('skinfolds');
   const [activePointKey, setActivePointKey] = useState<string>('triceps');
   const [isSaved, setIsSaved] = useState(false);
 
-  // State: solo datos reales del assessment previo; si no hay, vacío (0 = sin medir)
-  const [skinfolds, setSkinfolds] = useState<SkinfoldMeasurements>(
-    assessment?.skinfolds || {
-      triceps: 0,
-      subescapular: 0,
-      biceps: 0,
-      crestaIliaca: 0,
-      supraespinal: 0,
-      abdominal: 0,
-      muslo: 0,
-      pierna: 0,
-    }
-  );
+  // State: borrador persistido > assessment previo > vacío (0 = sin medir)
+  const [skinfolds, setSkinfolds] = useState<SkinfoldMeasurements>({
+    ...DEFAULT_SKINFOLDS,
+    ...(draft?.skinfolds ?? assessment?.skinfolds),
+  });
 
   const [equation, setEquation] = useState<EstimationEquationId>(
-    assessment?.activeEquation || 'faulkner_4'
+    draft?.equation || assessment?.activeEquation || 'faulkner_4'
   );
 
-  const [perimeters, setPerimeters] = useState<PerimeterMeasurements>(
-    assessment?.perimeters || {
-      brazoRelajado: 0,
-      brazoContraido: 0,
-      cintura: 0,
-      cadera: 0,
-      muslo: 0,
-      pierna: 0,
-    }
-  );
+  const [perimeters, setPerimeters] = useState<PerimeterMeasurements>({
+    ...DEFAULT_PERIMETERS,
+    ...(draft?.perimeters ?? assessment?.perimeters),
+  });
 
-  const [diameters, setDiameters] = useState<BoneDiameterMeasurements>(
-    assessment?.diameters || {
-      biacromial: 0,
-      humero: 0,
-      femur: 0,
-    }
-  );
+  const [diameters, setDiameters] = useState<BoneDiameterMeasurements>({
+    ...DEFAULT_DIAMETERS,
+    ...(draft?.diameters ?? assessment?.diameters),
+  });
 
   const [selectedSomatotype, setSelectedSomatotype] = useState<SomatotypeCategory>(
-    assessment?.somatotype?.category || 'Mesomorfo'
+    draft?.somatotypeCategory || assessment?.somatotype?.category || 'Mesomorfo'
   );
 
   const [generalNotes, setGeneralNotes] = useState<string>(
-    assessment?.generalObservations || ''
+    draft?.generalNotes ?? assessment?.generalObservations ?? ''
   );
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Estatura: la registrada del paciente es la base; editarla la actualiza en su ficha.
+  const registeredHeight = patient.height_cm && patient.height_cm > 0 ? patient.height_cm : 0;
+  const [heightInput, setHeightInput] = useState<number>(registeredHeight);
+  const heightEditedRef = useRef(false);
+  const effectiveHeight = isValidHeight(heightInput) ? heightInput : registeredHeight;
+
+  const heightValue = useMemo(() => ({ height_cm: effectiveHeight }), [effectiveHeight]);
+  const heightAutosave = useAutosave({
+    value: heightValue,
+    onSave: async (changes) => {
+      if (changes.height_cm && isValidHeight(changes.height_cm)) {
+        await onAutosaveHeight?.(patient.id, changes.height_cm);
+      }
+    },
+    scopeKey: patient.id,
+    enabled: Boolean(onAutosaveHeight),
+  });
+
+  // La estatura del paciente puede llegar después del montaje (se refresca desde la base).
+  useEffect(() => {
+    if (heightEditedRef.current) return;
+    setHeightInput(registeredHeight);
+    heightAutosave.reset({ height_cm: registeredHeight });
+  }, [patient.id, registeredHeight]);
+
+  const draftForm = useMemo<AnthropometryDraftForm>(
+    () => ({ skinfolds, perimeters, diameters, equation, somatotypeCategory: selectedSomatotype, generalNotes }),
+    [skinfolds, perimeters, diameters, equation, selectedSomatotype, generalNotes]
+  );
+  const draftAutosave = useAutosave({
+    value: draftForm,
+    onSave: unscopedDraftSave,
+    scopeKey: patient.id,
+    enabled: Boolean(onAutosaveDraft),
+  });
+
+  // El contexto de guardado (paciente y borrador) queda ligado al scope desde el montaje.
+  useEffect(() => {
+    if (onAutosaveDraft) draftAutosave.reset(draftForm, onAutosaveDraft);
+  }, [patient.id, onAutosaveDraft]);
+
   const activeWeight = assessment?.weight_kg || patient.weight_kg || 60;
-  const activeHeight = assessment?.height_cm || patient.height_cm || 160;
+  // Sin estatura registrada no se inventa un valor: 0 = pendiente de ingresar.
+  const activeHeight = effectiveHeight || assessment?.height_cm || 0;
 
   const { somatotype, composition, isLoading, error } = useAnthropometryCalculations({
     gender: patient.gender === 'F' ? 'female' : 'male',
@@ -147,7 +224,10 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     setIsSaved(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // Garantiza que el borrador y la estatura estén en la base antes de finalizar.
+    await Promise.all([draftAutosave.flush(), heightAutosave.flush()]);
+
     const assessmentToSave: AnthropometryAssessment = {
       id: assessment?.id || `anthro-${patient.id}-${Date.now()}`,
       patientId: patient.id,
@@ -184,15 +264,31 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
             : 'Predominio de adiposidad relativa y formas redondeadas.',
       },
       generalObservations: generalNotes,
+      height_cm: activeHeight > 0 ? activeHeight : undefined,
     };
 
-    onSave(assessmentToSave);
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 3000);
+    try {
+      setSaveError(null);
+      await onSave(assessmentToSave);
+      // La evaluación quedó definitiva: lo pendiente del borrador ya no debe enviarse.
+      draftAutosave.markSaved(draftForm);
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 3000);
+    } catch (error) {
+      console.error('No se pudo finalizar la evaluación antropométrica:', error);
+      setSaveError('No se pudo finalizar la evaluación. Los datos siguen guardados como borrador.');
+    }
   };
 
   return (
-    <div id="anthropometry-module" className="space-y-6">
+    <div
+      id="anthropometry-module"
+      className="space-y-6"
+      onBlur={() => {
+        void draftAutosave.flush();
+        void heightAutosave.flush();
+      }}
+    >
       {/* Top Clinical Header & Patient Ribbon (Matching Mockup) */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -217,9 +313,15 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
 
           {/* Action buttons */}
           <div className="flex items-center gap-2.5">
+            <AutosaveIndicator
+              status={draftAutosave.status}
+              lastSavedAt={draftAutosave.lastSavedAt}
+              error={draftAutosave.error}
+              onRetry={() => void draftAutosave.flush()}
+            />
             <button
               id="btn-save-anthropometry"
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold shadow-xs transition-all ${
                 isSaved
                   ? 'bg-emerald-600 text-white'
@@ -227,7 +329,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
               }`}
             >
               {isSaved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-              {isSaved ? 'Guardado con éxito' : 'Guardar Evaluación'}
+              {isSaved ? 'Evaluación finalizada' : 'Finalizar Evaluación'}
             </button>
           </div>
         </div>
@@ -253,10 +355,35 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
             <span className="font-semibold text-slate-700">{patient.sport_or_activity}</span>
           </div>
           <div>
-            <span className="text-2xs text-slate-400 block font-medium">Estatura / Peso</span>
-            <span className="font-bold text-slate-800">
-              {heightCm > 0 ? heightCm : '—'} cm • {patient.weight_kg || '—'} kg
-            </span>
+            <label htmlFor="anthropometry-height" className="text-2xs text-slate-400 block font-medium">
+              Estatura / Peso
+            </label>
+            <div className="flex items-center gap-1.5 font-bold text-slate-800">
+              <input
+                id="anthropometry-height"
+                type="number"
+                inputMode="decimal"
+                min={MIN_HEIGHT_CM}
+                max={MAX_HEIGHT_CM}
+                step={0.1}
+                placeholder="—"
+                value={heightInput > 0 ? heightInput : ''}
+                onChange={(e) => {
+                  heightEditedRef.current = true;
+                  setHeightInput(e.target.value === '' ? 0 : Number(e.target.value));
+                }}
+                className="w-16 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-bold text-slate-800"
+              />
+              <span>cm • {patient.weight_kg || '—'} kg</span>
+            </div>
+            {heightInput === 0 && (
+              <span className="text-2xs text-amber-700 block">Sin estatura registrada</span>
+            )}
+            {heightInput > 0 && !isValidHeight(heightInput) && (
+              <span className="text-2xs text-red-600 block">
+                Ingresa entre {MIN_HEIGHT_CM} y {MAX_HEIGHT_CM} cm
+              </span>
+            )}
           </div>
           <div>
             <span className="text-2xs text-slate-400 block font-medium">Evaluador Responsable</span>
@@ -272,6 +399,12 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
           </div>
         </div>
       </div>
+
+      {saveError && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+          {saveError}
+        </p>
+      )}
 
       {/* Specialty Sub-Navigation Tabs (Pliegues cutáneos | Perímetros | Diámetros óseos) */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2">

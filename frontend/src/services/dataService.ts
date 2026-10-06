@@ -15,6 +15,7 @@ import { supabaseDataClient, isSupabaseConfigured, clinicalFrom, CLINICAL_SCHEMA
 import { getNativeAuth } from './supabaseAuth';
 import { assertSupabaseOk } from '../utils/supabaseErrors';
 import type { AnthropometryDraftForm } from '../types/coreBodyNutrition';
+import type { AnthropometryDraftApi } from './nutrition/AnthropometryDraftService';
 import {
   User,
   UserRole,
@@ -589,6 +590,15 @@ export async function completeAnthropometryDraft(id: string, payload: Record<str
   if (error) throw error;
 }
 
+
+/** Capa de datos del borrador de antropometría, inyectada en AnthropometryDraftService. */
+export const anthropometryDraftApi: AnthropometryDraftApi = {
+  getDraft: getAnthropometryDraft,
+  createDraft: createAnthropometryDraft,
+  patchDraft: patchAnthropometryDraft,
+  completeDraft: completeAnthropometryDraft,
+  isUniqueViolation,
+};
 
 export async function getExerciseLibrary(tenantId: string): Promise<LibraryExercise[]> {
   const { data, error } = await supabase

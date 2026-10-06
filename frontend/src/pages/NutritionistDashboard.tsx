@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useI18n } from '../app/providers/I18nProvider';
 import { supabase } from '../services/supabaseClient';
@@ -36,6 +36,16 @@ import { PatientSearchCombobox } from '../components/common/PatientSearchCombobo
 import { EcoExportActions } from '../components/common/EcoExportActions';
 import { MedicalHistoryModal } from '../components/patients/MedicalHistoryModal';
 import { api } from '../services/apiClient';
+import {
+  anthropometryDraftApi,
+  getAnthropometryDraft,
+  getPatientById,
+  updatePatient,
+} from '../services/dataService';
+import {
+  createAnthropometryDraftSaver,
+  type AnthropometryDraftSaver,
+} from '../services/nutrition/AnthropometryDraftService';
 
 interface NutritionistDashboardProps {
   onNavigate: (path: string) => void;
@@ -62,6 +72,7 @@ function mapActiveToPacienteClinico(active: ActivePatient, tenantId: string): Pa
     telecom_email: active.email || 'paciente@ejemplo.com',
     known_allergies: active.allergies || [],
     chronic_conditions: active.medical_conditions || [],
+    height_cm: active.height_cm && active.height_cm > 0 ? active.height_cm : undefined,
     active: true,
     created_at: active.created_at || new Date().toISOString(),
   };
@@ -86,6 +97,11 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   const [availablePatients, setAvailablePatients] = useState<PacienteClinico[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+  // Borrador de antropometría del paciente activo (autoguardado en base de datos).
+  const [draftSession, setDraftSession] = useState<{
+    patientId: string;
+    saver: AnthropometryDraftSaver;
+  } | null>(null);
 
   // View modal states
   const [viewingEvaluation, setViewingEvaluation] = useState<EvaluacionAntropometrica | null>(null);
@@ -176,6 +192,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
         .select('*')
         .eq('tenant_id', tenantId)
         .eq('patient_id', patientId)
+        .eq('status', 'completed')
         .order('evaluation_date', { ascending: false });
 
       if (antError) {
@@ -214,6 +231,54 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       setIsLoading(false);
     }
   };
+
+  // Al abrir un paciente: carga su borrador de antropometría y refresca su estatura
+  // registrada desde la base (el store persistido puede traerla vieja o vacía).
+  useEffect(() => {
+    const patientId = activePatient?.id;
+    setDraftSession(null);
+    if (!patientId) return;
+
+    let cancelled = false;
+    void (async () => {
+      const [draft, freshPatient] = await Promise.all([
+        getAnthropometryDraft(tenantId, patientId, nutritionistId).catch((err) => {
+          logSupabaseError('evaluaciones_antropometricas.draft', err);
+          return null;
+        }),
+        getPatientById(patientId).catch((err) => {
+          logSupabaseError('pacientes_clinicos.height', err);
+          return null;
+        }),
+      ]);
+      if (cancelled) return;
+
+      setDraftSession({
+        patientId,
+        saver: createAnthropometryDraftSaver(
+          { tenantId, patientId, nutritionistId, initialDraft: draft },
+          anthropometryDraftApi,
+        ),
+      });
+
+      const freshHeight = freshPatient?.height_cm;
+      const current = useAppStore.getState().activePatient;
+      if (freshHeight && freshHeight > 0 && current?.id === patientId && current.height_cm !== freshHeight) {
+        useAppStore.getState().setActivePatient({ ...current, height_cm: freshHeight });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePatient?.id, tenantId, nutritionistId]);
+
+  // La estatura corregida en Nutrición se guarda en la ficha del paciente.
+  const handleHeightAutosave = useCallback(async (patientId: string, heightCm: number) => {
+    await updatePatient(patientId, { height_cm: heightCm });
+    const { activePatient: current, setActivePatient: setStorePatient } = useAppStore.getState();
+    if (current?.id === patientId) setStorePatient({ ...current, height_cm: heightCm });
+  }, []);
 
   // Sync data whenever activePatient changes
   useEffect(() => {
@@ -401,11 +466,18 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       nutritionist_id: nutritionistId,
     };
     const payload = toAnthropometryInsert(scopedRecord);
-    const { error } = await supabase.from('evaluaciones_antropometricas').insert(payload);
-    if (error) {
-      console.error('Supabase Error:', error);
-      logSupabaseError('evaluaciones_antropometricas.insert', error);
-      throw error;
+
+    // Si hay un borrador persistido, la misma fila pasa a definitiva (sin duplicarla).
+    const completedFromDraft =
+      draftSession?.patientId === activePatient.id ? await draftSession.saver.complete(payload) : false;
+
+    if (!completedFromDraft) {
+      const { error } = await supabase.from('evaluaciones_antropometricas').insert(payload);
+      if (error) {
+        console.error('Supabase Error:', error);
+        logSupabaseError('evaluaciones_antropometricas.insert', error);
+        throw error;
+      }
     }
     await loadPatientNutritionData(activePatient.id);
   };
@@ -449,6 +521,11 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
 
   // Find latest evaluation for the active patient
   const latestEvaluation = evaluations.length > 0 ? evaluations[0] : null;
+
+  // La estatura registrada del paciente es la base de los cálculos; una evaluación previa
+  // solo se usa si el paciente no tiene estatura registrada.
+  const baseHeightCm =
+    currentClinico?.height_cm && currentClinico.height_cm > 0 ? currentClinico.height_cm : latestEvaluation?.height_cm;
 
   // Derive BIA snapshot for BodyCompositionModule from latest evaluation (Withings or manual)
   const latestBiaData = useMemo<BodyCompositionBIA | undefined>(() => {
@@ -867,13 +944,23 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
             </div>
 
             {/* Tab 1: Antropometría ISAK Manual */}
-            {activeTab === 'antropometria' && (
+            {activeTab === 'antropometria' &&
+              (draftSession?.patientId !== activePatient?.id ? (
+                <p className="flex items-center gap-2 text-xs text-on-surface-variant">
+                  <span className="material-symbols-outlined animate-spin text-primary text-sm">sync</span>
+                  Cargando borrador de la evaluación...
+                </p>
+              ) : (
               <AnthropometryModule
+                key={draftSession.patientId}
+                draft={draftSession.saver.getData()}
+                onAutosaveDraft={draftSession.saver.save}
+                onAutosaveHeight={handleHeightAutosave}
                 patient={toCoreBodyPatient(currentClinico, {
                   nutritionistName,
                   nutritionistId,
                   weightKg: latestEvaluation?.weight_kg,
-                  heightCm: latestEvaluation?.height_cm,
+                  heightCm: baseHeightCm,
                 })}
                 onSave={async (assessment) => {
                   const gender =
@@ -886,7 +973,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                     nutritionistName,
                     nutritionistId,
                     weightKg: latestEvaluation?.weight_kg,
-                    heightCm: latestEvaluation?.height_cm,
+                    heightCm: baseHeightCm,
                   });
                   await handleSaveEvaluation(
                     coreBodyAnthroToKinesys(assessment, {
@@ -895,13 +982,13 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                       age: corePatient.age,
                       gender,
                       weightKg: corePatient.weight_kg || 0,
-                      heightCm: corePatient.height_cm || 0,
+                      heightCm: assessment.height_cm ?? corePatient.height_cm ?? 0,
                     }),
                   );
                   setActiveTab('planificador');
                 }}
               />
-            )}
+              ))}
 
             {/* Tab 1b: Informe BIA Withings */}
             {activeTab === 'bia' && (
@@ -910,7 +997,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                   nutritionistName,
                   nutritionistId,
                   weightKg: latestEvaluation?.weight_kg,
-                  heightCm: latestEvaluation?.height_cm,
+                  heightCm: baseHeightCm,
                 })}
                 data={liveWithingsBia || latestBiaData}
                 onSave={async (bia) => {
@@ -931,7 +1018,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                   nutritionistName,
                   nutritionistId,
                   weightKg: latestEvaluation?.weight_kg,
-                  heightCm: latestEvaluation?.height_cm,
+                  heightCm: baseHeightCm,
                 })}
                 clinicalPatient={currentClinico}
                 tenantId={tenantId}

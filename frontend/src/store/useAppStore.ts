@@ -11,6 +11,8 @@ export interface ActivePatient {
   avatar_url?: string;
   birth_date?: string;
   gender?: string;
+  /** Estatura registrada del paciente (cm); base de los cálculos de Nutrición. */
+  height_cm?: number;
   medical_conditions?: string[];
   allergies?: string[];
   emergency_contact?: {

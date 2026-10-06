@@ -29,3 +29,10 @@ En KineSys Clinical Platform, el backend implementa Clean Architecture para aseg
 - **Inyección de Dependencias:** Todos los servicios y repositorios deben instanciarse y pasarse como dependencias al inicializar la aplicación.
 - **Manejo de Errores:** Retornar errores descriptivos y manejarlos centralizadamente en la capa más externa (handlers).
 - **Testing:** Escribir tests unitarios principalmente para `domain` y `services` usando mocks para `ports`.
+
+## Actualizaciones parciales (PATCH)
+
+- El dominio define un tipo de parche validado (p. ej. `domain.PatientPatch`) construido solo mediante un constructor que aplica una **lista blanca** de campos, tipos y rangos. Un valor `null` limpia la columna.
+- El repositorio arma un `UPDATE` **parametrizado** únicamente con las columnas del parche y siempre filtra por `tenant_id`; los nombres de columna nunca provienen del cliente.
+- Los handlers traducen `domain.ErrInvalid...` a `400` y `domain.Err...NotFound` a `404`; los errores inesperados se registran y devuelven un mensaje genérico.
+- `updated_at` lo gestiona un trigger de base de datos, no la aplicación.

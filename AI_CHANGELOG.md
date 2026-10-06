@@ -205,3 +205,30 @@ Este archivo documenta todas las intervenciones, decisiones arquitectónicas y r
   - GET /api/v1/patients/{patientId}/hardware/withings/status: Consulta el estado de la sesi�n y retorna la data si se complet�.
   - POST /api/v1/withings/webhook (P�blica): Endpoint de webhook (Webhook Notification API de Withings) que intercepta la alerta de pesaje, enlaza con la sesi�n pendiente, extrae los datos de Withings, y marca la sesi�n como "completed".
 - **Frontend (React):** BodyCompositionModule.tsx refactorizado para usar polling as�ncrono (cada 3s) a checkWithingsSession tras llamar a startWithingsSession en el bot�n "Iniciar Pesaje".
+
+## [2026-10-06] - Autoguardado parcial (Fisioterapia y Nutrición) y estatura base
+**Fase:** Fase 3 - Persistencia continua y consistencia de datos clínicos
+**Autor:** Claude (Claude Code)
+**Decisión:** `docs/adr/0001-autoguardado-parcial.md`
+
+### Base de datos
+- `backend/migrations/021_autosave_partial_updates.sql` (NUEVO): `status` y `updated_at` en `kinesys.evaluaciones_antropometricas`, índice único parcial de un borrador por paciente/nutricionista, RPC `kinesys.patch_antropometria_draft`, trigger `updated_at` en las tablas `kinesys` de formularios, `CHECK` de estatura `<= 300` (`NOT VALID`) e índices de FK. Verificada contra PostgreSQL 16 (idempotencia, unicidad del borrador, fusión JSONB, RLS entre tenants y permisos de `anon`).
+
+### Backend Go
+- `domain/patient.go`: `PatientPatch` (lista blanca, tipos y rangos) y errores `ErrPatientNotFound` / `ErrInvalidPatientPatch`.
+- `ports/*`, `services/patient_service.go`, `repository/postgres/patient_repository.go`, `handlers/patient_handler.go`: `PATCH /api/v1/patients/{id}` con `UPDATE` parametrizado solo con las columnas enviadas.
+- `cmd/api/main.go`: ruta nueva y `PATCH` en CORS.
+- Tests de dominio, constructor SQL y handler.
+
+### Frontend
+- `hooks/autosaveEngine.ts` (NUEVO), `hooks/useAutosave.ts` (NUEVO), `components/common/AutosaveIndicator.tsx` (NUEVO): autoguardado con debounce de 500 ms, blur, serialización y reintentos.
+- `services/nutrition/AnthropometryDraftService.ts` (NUEVO): ciclo de vida del borrador ISAK (crear, fusionar, completar).
+- `services/dataService.ts`: `patchHistoriaClinica`, `createKinesiologyEvaluation`, `patchKinesiologyEvaluation`, `getPatientById` y funciones del borrador.
+- `pages/HistoriaClinicaPage.tsx`, `pages/EvaluacionKinesicaPage.tsx`: sin botón Guardar; autoguardado por campo.
+- `components/nutrition/AnthropometryModule.tsx`, `pages/NutritionistDashboard.tsx`: borrador persistido en BD, estatura editable y guardada en la ficha del paciente, sin el fallback de 160 cm.
+- `components/common/PatientSearchCombobox.tsx`, `store/useAppStore.ts`: la estatura viaja con el paciente activo.
+- `package.json`: script `npm test` (`tsx --test`); 21 tests del motor y del servicio de borrador.
+
+### Notas
+- Aplicar la migración `021` antes de desplegar el frontend.
+- Pendientes detectados y no tocados: `AnthropometryEvaluationModule.tsx` no se importa en ningún sitio (código muerto); `AnthropometryModule` aún usa `|| 60` como peso por defecto; `patient_service.go` conserva `TODO` de validación de RUT; `backend/api.exe` está versionado; las políticas RLS llaman a `kinesys.current_tenant_id()` sin envolver en `(select ...)` (ver skill `security-rls-performance`).

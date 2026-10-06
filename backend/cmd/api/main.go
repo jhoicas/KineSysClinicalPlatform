@@ -102,7 +102,7 @@ func main() {
 			"https://clinicalplatform.ludoia.com",
 			"http://localhost:*",
 		}, strings.Split(cfg.CorsOrigins, ",")...),
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PATCH", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
@@ -152,6 +152,7 @@ func main() {
 		r.Get("/api/v1/patients", patientHandler.List)
 		r.Post("/api/v1/patients", patientHandler.Create)
 		r.Get("/api/v1/patients/{id}", patientHandler.Get)
+		r.Patch("/api/v1/patients/{id}", patientHandler.Patch)
 
 		// Encounters (SOAP)
 		r.Get("/api/v1/patients/{patientId}/encounters", encounterHandler.ListByPatient)

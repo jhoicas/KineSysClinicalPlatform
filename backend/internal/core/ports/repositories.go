@@ -13,6 +13,9 @@ type PatientRepository interface {
 	FindByIDAndTenant(ctx context.Context, id, tenantID uuid.UUID) (*domain.Patient, error)
 	Create(ctx context.Context, patient *domain.Patient) error
 	Update(ctx context.Context, patient *domain.Patient) error
+	// Patch actualiza solo las columnas del parche y devuelve el paciente resultante.
+	// Retorna domain.ErrPatientNotFound si no existe en el tenant.
+	Patch(ctx context.Context, id, tenantID uuid.UUID, patch domain.PatientPatch) (*domain.Patient, error)
 }
 
 type EncounterRepository interface {

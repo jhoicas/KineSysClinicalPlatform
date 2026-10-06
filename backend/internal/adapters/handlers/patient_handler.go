@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -77,4 +79,48 @@ func (h *PatientHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(p)
+}
+
+// maxPatchBodyBytes limita el cuerpo de un PATCH; un autoguardado envía pocos campos.
+const maxPatchBodyBytes = 64 << 10
+
+// Patch aplica una actualización parcial (PATCH /api/v1/patients/{id}). Solo se
+// modifican los campos presentes en el cuerpo; un valor null limpia la columna.
+func (h *PatientHandler) Patch(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr, _ := r.Context().Value(middleware.TenantIDKey).(string)
+	tenantID, err := uuid.Parse(tenantIDStr)
+	if err != nil {
+		http.Error(w, "Invalid tenant context", http.StatusUnauthorized)
+		return
+	}
+
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, "Invalid patient ID", http.StatusBadRequest)
+		return
+	}
+
+	var fields map[string]any
+	r.Body = http.MaxBytesReader(w, r.Body, maxPatchBodyBytes)
+	if err := json.NewDecoder(r.Body).Decode(&fields); err != nil {
+		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	patient, err := h.service.PatchPatient(r.Context(), id, tenantID, fields)
+	switch {
+	case errors.Is(err, domain.ErrInvalidPatientPatch):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	case errors.Is(err, domain.ErrPatientNotFound):
+		http.Error(w, "Patient not found", http.StatusNotFound)
+		return
+	case err != nil:
+		log.Printf("patient patch failed (patient=%s tenant=%s): %v", id, tenantID, err)
+		http.Error(w, "Could not update patient", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(patient)
 }

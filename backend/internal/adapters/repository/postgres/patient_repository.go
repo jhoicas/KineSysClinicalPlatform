@@ -2,8 +2,12 @@ package postgres
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kinesys/clinical-platform-backend/internal/core/domain"
 	"github.com/kinesys/clinical-platform-backend/internal/core/ports"
@@ -82,4 +86,50 @@ func (r *patientRepository) Update(ctx context.Context, p *domain.Patient) error
 		p.EmergencyContactName, p.EmergencyContactPhone,
 		p.ID, p.TenantID,
 	).Scan(&p.UpdatedAt)
+}
+
+const patientColumns = `id, tenant_id, rut_or_dni, full_name, email, phone, birth_date, height_cm, gender, blood_type, medical_conditions, allergies, emergency_contact_name, emergency_contact_phone, created_at, updated_at`
+
+// buildPatientPatchQuery arma un UPDATE parametrizado solo con las columnas del
+// parche. Los nombres de columna provienen de domain.PatientPatch, que solo
+// puede construirse con campos de la lista blanca; los valores viajan como
+// parámetros. updated_at lo actualiza el trigger set_patients_updated_at.
+func buildPatientPatchQuery(id, tenantID uuid.UUID, patch domain.PatientPatch) (string, []any) {
+	columns := patch.Columns()
+	assignments := make([]string, 0, len(columns))
+	args := make([]any, 0, len(columns)+2)
+	for i, column := range columns {
+		assignments = append(assignments, fmt.Sprintf("%s = $%d", column, i+1))
+		args = append(args, patch.Value(column))
+	}
+	args = append(args, id, tenantID)
+
+	query := fmt.Sprintf(
+		"UPDATE patients SET %s WHERE id = $%d AND tenant_id = $%d RETURNING %s",
+		strings.Join(assignments, ", "), len(columns)+1, len(columns)+2, patientColumns,
+	)
+	return query, args
+}
+
+func (r *patientRepository) Patch(ctx context.Context, id, tenantID uuid.UUID, patch domain.PatientPatch) (*domain.Patient, error) {
+	if len(patch.Columns()) == 0 {
+		return nil, domain.ErrInvalidPatientPatch
+	}
+
+	query, args := buildPatientPatchQuery(id, tenantID, patch)
+
+	var p domain.Patient
+	err := r.db.QueryRow(ctx, query, args...).Scan(
+		&p.ID, &p.TenantID, &p.RutOrDni, &p.FullName, &p.Email, &p.Phone,
+		&p.BirthDate, &p.HeightCm, &p.Gender, &p.BloodType, &p.MedicalConditions,
+		&p.Allergies, &p.EmergencyContactName, &p.EmergencyContactPhone,
+		&p.CreatedAt, &p.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrPatientNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }

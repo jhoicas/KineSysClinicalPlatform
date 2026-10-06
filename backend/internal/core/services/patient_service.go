@@ -33,3 +33,11 @@ func (s *patientService) UpdatePatient(ctx context.Context, patient *domain.Pati
 	// TODO: Add RUT/DNI format validation here
 	return s.repo.Update(ctx, patient)
 }
+
+func (s *patientService) PatchPatient(ctx context.Context, id, tenantID uuid.UUID, fields map[string]any) (*domain.Patient, error) {
+	patch, err := domain.NewPatientPatch(fields)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.Patch(ctx, id, tenantID, patch)
+}

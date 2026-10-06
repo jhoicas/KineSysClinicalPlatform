@@ -12,6 +12,9 @@ type PatientService interface {
 	GetPatient(ctx context.Context, id, tenantID uuid.UUID) (*domain.Patient, error)
 	CreatePatient(ctx context.Context, patient *domain.Patient) error
 	UpdatePatient(ctx context.Context, patient *domain.Patient) error
+	// PatchPatient valida y aplica una actualización parcial. Retorna
+	// domain.ErrInvalidPatientPatch o domain.ErrPatientNotFound según el caso.
+	PatchPatient(ctx context.Context, id, tenantID uuid.UUID, fields map[string]any) (*domain.Patient, error)
 }
 
 type EncounterService interface {

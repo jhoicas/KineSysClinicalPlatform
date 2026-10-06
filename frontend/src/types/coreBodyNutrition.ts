@@ -70,6 +70,16 @@ export type SomatotypeCategory =
   | 'Meso-Endomorfo'
   | 'Ecto-Mesomorfo';
 
+/** Estado editable de la evaluación antropométrica ISAK; es lo que se autoguarda como borrador. */
+export interface AnthropometryDraftForm {
+  skinfolds: SkinfoldMeasurements;
+  perimeters: PerimeterMeasurements;
+  diameters: BoneDiameterMeasurements;
+  equation: EstimationEquationId;
+  somatotypeCategory: SomatotypeCategory;
+  generalNotes: string;
+}
+
 export interface SomatotypeResult {
   category: SomatotypeCategory;
   endomorfia: number;

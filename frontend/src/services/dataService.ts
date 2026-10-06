@@ -11,9 +11,10 @@ import {
   onAuthStateChange as authOnAuthStateChange,
   isAuthConfigured,
 } from './supabaseAuth';
-import { supabaseDataClient, isSupabaseConfigured, clinicalFrom } from './supabaseDataClient';
+import { supabaseDataClient, isSupabaseConfigured, clinicalFrom, CLINICAL_SCHEMA } from './supabaseDataClient';
 import { getNativeAuth } from './supabaseAuth';
 import { assertSupabaseOk } from '../utils/supabaseErrors';
+import type { AnthropometryDraftForm } from '../types/coreBodyNutrition';
 import {
   User,
   UserRole,
@@ -403,6 +404,191 @@ function mapLibraryRow(row: ExerciseLibraryRow): LibraryExercise {
     createdAt: row.created_at || undefined,
   };
 }
+
+// ─── Guardado parcial (autoguardado) ───────────────────────────────────────────
+
+/** Código SQLSTATE de violación de unicidad (p. ej. ya existe un borrador). */
+const PG_UNIQUE_VIOLATION = '23505';
+
+export function isUniqueViolation(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as { code?: string }).code === PG_UNIQUE_VIOLATION);
+}
+
+/** Convierte strings vacíos en null para columnas de texto con CHECK o semántica "sin dato". */
+function emptyToNull<T>(value: T): T | null {
+  return typeof value === 'string' && value.trim() === '' ? null : value;
+}
+
+export async function getPatientById(id: string): Promise<PacienteClinico | null> {
+  const { data, error } = await supabase
+    .from('pacientes_clinicos')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as PacienteClinico) || null;
+}
+
+export type HistoriaClinicaFields = Partial<
+  Pick<
+    HistoriaClinica,
+    | 'ocupacion'
+    | 'motivo_consulta'
+    | 'deporte_practica'
+    | 'nivel_deporte'
+    | 'frecuencia_semanal'
+    | 'lesiones_anteriores'
+    | 'habitos_estilo_vida'
+  >
+>;
+
+/**
+ * Upsert parcial de la historia clínica: `ON CONFLICT (tenant_id, patient_id) DO UPDATE`
+ * solo sobre las columnas enviadas, de modo que un campo no pisa a los demás.
+ */
+export async function patchHistoriaClinica(
+  tenantId: string,
+  patientId: string,
+  professionalId: string,
+  fields: HistoriaClinicaFields
+): Promise<HistoriaClinica> {
+  const columns = Object.fromEntries(
+    Object.entries(fields).map(([key, value]) => [key, emptyToNull(value)])
+  );
+
+  const { data: row, error } = await supabase
+    .from('historias_clinicas')
+    .upsert(
+      { tenant_id: tenantId, patient_id: patientId, professional_id: professionalId, ...columns },
+      { onConflict: 'tenant_id,patient_id' }
+    )
+    .select()
+    .single();
+  return assertSupabaseOk({ data: row, error }) as HistoriaClinica;
+}
+
+export type KinesiologyEvaluationFields = Partial<
+  Pick<
+    KinesiologyEvaluation,
+    | 'postura'
+    | 'movilidad'
+    | 'fuerza'
+    | 'gestos_movimiento'
+    | 'diagnostico_kinesico'
+    | 'plan_tratamiento'
+    | 'observaciones_generales'
+  >
+>;
+
+function toKinesiologyColumns(fields: KinesiologyEvaluationFields): Record<string, unknown> {
+  const columns: Record<string, unknown> = { ...fields };
+  if ('diagnostico_kinesico' in fields) columns.diagnostico_kinesico = emptyToNull(fields.diagnostico_kinesico);
+  if ('observaciones_generales' in fields) columns.observaciones_generales = emptyToNull(fields.observaciones_generales);
+  return columns;
+}
+
+export async function createKinesiologyEvaluation(
+  tenantId: string,
+  patientId: string,
+  professionalId: string,
+  fields: KinesiologyEvaluationFields
+): Promise<KinesiologyEvaluation> {
+  const { data: row, error } = await supabase
+    .from('evaluaciones_kinesicas')
+    .insert([
+      {
+        tenant_id: tenantId,
+        patient_id: patientId,
+        professional_id: professionalId,
+        ...toKinesiologyColumns(fields),
+      },
+    ])
+    .select()
+    .single();
+  return assertSupabaseOk({ data: row, error }) as KinesiologyEvaluation;
+}
+
+/** UPDATE parcial por id: solo las columnas enviadas; `updated_at` lo gestiona el trigger. */
+export async function patchKinesiologyEvaluation(
+  id: string,
+  fields: KinesiologyEvaluationFields
+): Promise<KinesiologyEvaluation> {
+  const { data: row, error } = await supabase
+    .from('evaluaciones_kinesicas')
+    .update(toKinesiologyColumns(fields))
+    .eq('id', id)
+    .select()
+    .single();
+  return assertSupabaseOk({ data: row, error }) as KinesiologyEvaluation;
+}
+
+export interface AnthropometryDraftRecord {
+  id: string;
+  data: Partial<AnthropometryDraftForm>;
+}
+
+function toDraftRecord(row: { id: string; data?: unknown }): AnthropometryDraftRecord {
+  const data = row.data && typeof row.data === 'object' && !Array.isArray(row.data) ? row.data : {};
+  return { id: row.id, data: data as Partial<AnthropometryDraftForm> };
+}
+
+/** Borrador de evaluación antropométrica en curso del nutricionista (a lo sumo uno por paciente). */
+export async function getAnthropometryDraft(
+  tenantId: string,
+  patientId: string,
+  nutritionistId: string
+): Promise<AnthropometryDraftRecord | null> {
+  const { data, error } = await supabase
+    .from('evaluaciones_antropometricas')
+    .select('id, data')
+    .eq('tenant_id', tenantId)
+    .eq('patient_id', patientId)
+    .eq('nutritionist_id', nutritionistId)
+    .eq('status', 'draft')
+    .maybeSingle();
+  if (error) throw error;
+  return data ? toDraftRecord(data) : null;
+}
+
+export async function createAnthropometryDraft(
+  tenantId: string,
+  patientId: string,
+  nutritionistId: string,
+  form: AnthropometryDraftForm
+): Promise<AnthropometryDraftRecord> {
+  const { data, error } = await supabase
+    .from('evaluaciones_antropometricas')
+    .insert([
+      { tenant_id: tenantId, patient_id: patientId, nutritionist_id: nutritionistId, status: 'draft', data: form },
+    ])
+    .select('id, data')
+    .single();
+  if (error || !data) throw error ?? new Error('No se pudo crear el borrador de antropometría.');
+  return toDraftRecord(data);
+}
+
+/** Fusiona solo las claves enviadas en `data` del borrador (RPC `kinesys.patch_antropometria_draft`). */
+export async function patchAnthropometryDraft(
+  id: string,
+  changes: Partial<AnthropometryDraftForm>
+): Promise<void> {
+  const { error } = await supabaseDataClient
+    .schema(CLINICAL_SCHEMA)
+    .rpc('patch_antropometria_draft', { p_id: id, p_patch: changes });
+  if (error) throw error;
+}
+
+/** Convierte el borrador en evaluación definitiva con el payload completo. */
+export async function completeAnthropometryDraft(id: string, payload: Record<string, unknown>): Promise<void> {
+  const { tenant_id: _tenant, patient_id: _patient, nutritionist_id: _nutritionist, id: _id, ...columns } = payload;
+  const { error } = await supabase
+    .from('evaluaciones_antropometricas')
+    .update({ ...columns, status: 'completed' })
+    .eq('id', id)
+    .eq('status', 'draft');
+  if (error) throw error;
+}
+
 
 export async function getExerciseLibrary(tenantId: string): Promise<LibraryExercise[]> {
   const { data, error } = await supabase

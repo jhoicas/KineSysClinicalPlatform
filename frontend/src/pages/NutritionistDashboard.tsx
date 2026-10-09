@@ -21,6 +21,7 @@ import {
   coreBodyPlanToKinesys,
   biaToKinesys,
   hasIsakMeasurements,
+  isakStoreToDraftForm,
   isakDraftToKinesys,
 } from '../utils/coreBodyAdapters';
 import { selectNutritionSnapshot } from '../utils/nutritionReportSnapshot';
@@ -660,10 +661,18 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       created_at: stampIso,
     };
   }, [nutritionDraft, currentClinico, tenantId, nutritionistId]);
+  // Espejo ISAK del store (medidas por subsección): segunda fuente de la evaluación en curso, que
+  // sobrevive a remontajes/recargas y no depende de que el borrador en memoria siga vivo.
+  const storeIsak = useMemo<EvaluacionAntropometrica | null>(() => {
+    if (!currentClinico || nutritionDraft?.patientId !== currentClinico.id) return null;
+    const form = isakStoreToDraftForm(nutritionDraft);
+    return form ? buildDraftIsak(form, nutritionDraft.updatedAt ?? new Date().toISOString()) : null;
+  }, [nutritionDraft, currentClinico, buildDraftIsak]);
   const snapshot = useMemo(
     () =>
       selectNutritionSnapshot(evaluations, plans, draftIsak, {
         draftWithings,
+        storeIsak,
         profile: {
           heightCm: currentClinico?.height_cm,
           weightKg: nutritionDraft?.patientId === currentClinico?.id ? nutritionDraft?.weightKg : undefined,
@@ -671,7 +680,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
           gender: currentClinico?.gender,
         },
       }),
-    [evaluations, plans, draftIsak, draftWithings, currentClinico, nutritionDraft],
+    [evaluations, plans, draftIsak, storeIsak, draftWithings, currentClinico, nutritionDraft],
   );
   const latestIsak = snapshot.isak;
   const latestWithings = snapshot.withings;
@@ -1196,7 +1205,16 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                       heightCm: assessment.height_cm ?? corePatient.height_cm ?? 0,
                     }),
                   );
+                  // La evaluación quedó persistida como definitiva: se cierra la "en curso" (borrador y
+                  // espejo del store) para que el informe tome la fila guardada.
                   setDraftIsakForm(null);
+                  useAppStore.getState().patchNutritionDraft({
+                    patientId: currentClinico.id,
+                    isakSkinfolds: undefined,
+                    isakPerimeters: undefined,
+                    isakDiameters: undefined,
+                    isakSomatotype: undefined,
+                  });
                   setActiveTab('bia');
                 }}
                 onGenerateReport={handleGenerateReportFromIsak}

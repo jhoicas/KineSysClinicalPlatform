@@ -110,3 +110,111 @@ test('peso/estatura/IMC/TMB se recalculan en ISAK con datos del perfil y la BIA'
   assert.equal(s.isak?.body_fat_percentage, 20);
   assert.equal(s.isak?.bmr_kcal, Math.round(10 * 60 + 6.25 * 165 - 5 * 28 - 161));
 });
+
+// ─── Coexistencia ISAK + BIA en el snapshot ───────────────────────────────────
+
+const isakCtx = { id: 'd', tenantId: 't', nutritionistId: 'n', patientId: 'p', age: 30, gender: 'male' as const, weightKg: 75, heightCm: 178 };
+const biaRecord = (o: Partial<EvaluacionAntropometrica> = {}) =>
+  ev({ id: 'bia-draft', source: 'withings_manual', weight_kg: 80, body_fat_percentage: 20, muscle_mass_kg: 35, created_at: '2026-03-01T00:00:00Z', ...o });
+
+test('hasIsakMeasurements: borrador anidado, registro plano y registro solo-BIA', async () => {
+  const { hasIsakMeasurements, isakDraftToKinesys } = await import('./coreBodyAdapters');
+  assert.equal(hasIsakMeasurements(null), false);
+  assert.equal(hasIsakMeasurements({ perimeters: { cintura: 80 } as never }), true);
+  assert.equal(hasIsakMeasurements({ skinfolds: { triceps: 0 } as never, diameters: {} as never }), false);
+
+  const flatIsak = isakDraftToKinesys({ diameters: { biacromial: 38, humero: 0, femur: 0 } }, isakCtx);
+  assert.equal(hasIsakMeasurements(flatIsak), true, 'registro plano ISAK con un diámetro');
+  assert.equal(hasIsakMeasurements(biaRecord()), false, 'una medición BIA no cuenta como ISAK');
+  assert.equal(hasIsakMeasurements(ev({ source: 'isak_manual', skinfold_chest_mm: 7 })), true);
+});
+
+test('guardar/actualizar la BIA no oculta ni vacía el ISAK del snapshot', async () => {
+  const { isakDraftToKinesys } = await import('./coreBodyAdapters');
+  const draftIsak = isakDraftToKinesys(
+    { skinfolds: { triceps: 10, subescapular: 11 } as never, perimeters: { cintura: 80, cadera: 100 } as never, diameters: { femur: 9.5 } as never,
+      somatotype: { category: 'Mesomorfo', endomorfia: 3, mesomorfia: 5, ectomorfia: 2, interpretation: 'x' } },
+    isakCtx,
+  );
+
+  const before = selectNutritionSnapshot([], [], draftIsak, { draftWithings: null });
+  const afterBia = selectNutritionSnapshot([], [], draftIsak, { draftWithings: biaRecord() });
+  const afterNewerBia = selectNutritionSnapshot([], [], draftIsak, { draftWithings: biaRecord({ id: 'bia-2', weight_kg: 81, created_at: '2026-12-01T00:00:00Z' }) });
+
+  for (const s of [afterBia, afterNewerBia]) {
+    assert.ok(s.isak, 'el ISAK sigue presente');
+    assert.equal(s.isak?.skinfold_triceps_mm, 10);
+    assert.equal(s.isak?.waist_cm, 80);
+    assert.equal(s.isak?.diameter_femur_cm, 9.5);
+    assert.equal(s.isak?.somatotype_category, 'Mesomorfo');
+    assert.ok(s.withings, 'la BIA también');
+  }
+  assert.equal(afterBia.isak?.skinfold_triceps_mm, before.isak?.skinfold_triceps_mm);
+  assert.equal(afterNewerBia.withings?.weight_kg, 81);
+});
+
+test('el espejo ISAK del store alimenta el informe cuando el borrador en memoria se perdió', async () => {
+  const { isakStoreToDraftForm, isakDraftToKinesys } = await import('./coreBodyAdapters');
+  const form = isakStoreToDraftForm({
+    isakSkinfolds: { triceps: 12, subescapular: 13 },
+    isakPerimeters: { cintura: 82, cadera: 99 },
+    isakDiameters: { biacromial: 39 },
+    isakSomatotype: { category: 'Ecto-Mesomorfo', endomorfia: 2, mesomorfia: 4, ectomorfia: 3, interpretation: 'y' },
+    equation: 'faulkner_4',
+  });
+  assert.ok(form);
+  const storeIsak = isakDraftToKinesys(form!, isakCtx);
+
+  const s = selectNutritionSnapshot([], [], null, { storeIsak, draftWithings: biaRecord() });
+  assert.equal(s.isak?.skinfold_triceps_mm, 12);
+  assert.equal(s.isak?.waist_cm, 82);
+  assert.equal(s.isak?.diameter_biacromial_cm, 39);
+  assert.equal(s.isak?.somatotype_category, 'Ecto-Mesomorfo');
+  assert.equal(s.withings?.weight_kg, 80);
+});
+
+test('isakStoreToDraftForm: devuelve null si el store no tiene medidas', async () => {
+  const { isakStoreToDraftForm } = await import('./coreBodyAdapters');
+  assert.equal(isakStoreToDraftForm(null), null);
+  assert.equal(isakStoreToDraftForm({ isakSkinfolds: { triceps: 0 }, isakPerimeters: {}, isakDiameters: undefined }), null);
+});
+
+test('borrador en memoria + espejo del store se fusionan campo a campo (el borrador gana en solapes)', async () => {
+  const { isakDraftToKinesys } = await import('./coreBodyAdapters');
+  const draft = isakDraftToKinesys({ perimeters: { cintura: 80 } as never, skinfolds: { triceps: 10 } as never }, isakCtx);
+  const store = isakDraftToKinesys(
+    { skinfolds: { triceps: 99, subescapular: 14 } as never, diameters: { femur: 9.4 } as never, somatotype: { category: 'Mesomorfo', endomorfia: 3, mesomorfia: 5, ectomorfia: 2, interpretation: 'z' } },
+    isakCtx,
+  );
+  const s = selectNutritionSnapshot([], [], draft, { storeIsak: store });
+  assert.equal(s.isak?.waist_cm, 80, 'solo en el borrador');
+  assert.equal(s.isak?.skinfold_triceps_mm, 10, 'el borrador gana en solapes');
+  assert.equal(s.isak?.skinfold_subscapular_mm, 14, 'completado desde el store');
+  assert.equal(s.isak?.diameter_femur_cm, 9.4, 'completado desde el store');
+  assert.equal(s.isak?.somatotype_category, 'Mesomorfo');
+});
+
+test('un borrador/espejo vacío no oculta el ISAK persistido y uno vacío persistido no tapa a uno real', async () => {
+  const { isakDraftToKinesys } = await import('./coreBodyAdapters');
+  const emptyDraft = isakDraftToKinesys({}, isakCtx);
+  const realOld = ev({ id: 'real', source: 'isak_manual', skinfold_triceps_mm: 9, waist_cm: 78, created_at: '2026-01-01T00:00:00Z' });
+  const emptyNewer = ev({ id: 'empty', source: 'isak_manual', created_at: '2026-02-01T00:00:00Z' });
+
+  const s = selectNutritionSnapshot([emptyNewer, realOld], [], emptyDraft, { storeIsak: emptyDraft });
+  assert.equal(s.isak?.id, 'real');
+});
+
+test('sin ninguna medida ISAK en ninguna fuente, el bloque ISAK queda vacío (null)', () => {
+  const s = selectNutritionSnapshot([ev({ id: 'w', source: 'withings_scale', weight_kg: 70 })], [], null, { draftWithings: biaRecord() });
+  assert.equal(s.isak, null);
+  assert.ok(s.withings);
+});
+
+test('la evaluación en curso gana a la persistida; sin evaluación en curso rige la persistida', async () => {
+  const { isakDraftToKinesys } = await import('./coreBodyAdapters');
+  const persisted = ev({ id: 'done', source: 'isak_manual', skinfold_triceps_mm: 8, waist_cm: 70 });
+  const draft = isakDraftToKinesys({ perimeters: { cintura: 85 } as never }, isakCtx);
+
+  assert.equal(selectNutritionSnapshot([persisted], [], draft).isak?.waist_cm, 85);
+  assert.equal(selectNutritionSnapshot([persisted], [], null).isak?.waist_cm, 70);
+});

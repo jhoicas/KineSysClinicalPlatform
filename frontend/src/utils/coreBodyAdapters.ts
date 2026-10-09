@@ -166,12 +166,70 @@ const positive = (v: unknown): number | undefined => {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 };
 
-/** true si el borrador ISAK ya trae al menos una medida capturada. */
-export function hasIsakMeasurements(form?: Partial<AnthropometryDraftForm> | null): boolean {
-  if (!form) return false;
-  return [form.skinfolds, form.perimeters, form.diameters].some((group) =>
-    Object.values(group ?? {}).some((v) => Number(v) > 0),
+/** Campos planos del registro de evaluación que guardan medidas ISAK (pliegues, perímetros, diámetros). */
+export const ISAK_MEASUREMENT_KEYS = [
+  'skinfold_triceps_mm',
+  'skinfold_subscapular_mm',
+  'skinfold_suprailiac_mm',
+  'skinfold_abdominal_mm',
+  'skinfold_biceps_mm',
+  'skinfold_iliac_crest_mm',
+  'skinfold_chest_mm',
+  'skinfold_thigh_mm',
+  'skinfold_calf_mm',
+  'waist_cm',
+  'hip_cm',
+  'relaxed_arm_cm',
+  'contracted_arm_cm',
+  'thigh_cm',
+  'calf_cm',
+  'neck_cm',
+  'diameter_biacromial_cm',
+  'diameter_humerus_cm',
+  'diameter_femur_cm',
+] as const satisfies readonly (keyof EvaluacionAntropometrica)[];
+
+/**
+ * true si hay al menos un pliegue, perímetro o diámetro capturado (> 0). Acepta tanto el borrador
+ * anidado del formulario (`skinfolds`/`perimeters`/`diameters`) como el registro plano
+ * (completado en base de datos, borrador aplanado o espejo del store).
+ */
+export function hasIsakMeasurements(
+  source?: Partial<AnthropometryDraftForm> | EvaluacionAntropometrica | null,
+): boolean {
+  if (!source) return false;
+
+  const nested = source as Partial<AnthropometryDraftForm>;
+  const nestedHit = [nested.skinfolds, nested.perimeters, nested.diameters].some(
+    (group) => group && typeof group === 'object' && Object.values(group).some((v) => Number(v) > 0),
   );
+  if (nestedHit) return true;
+
+  const flat = source as unknown as Record<string, unknown>;
+  return ISAK_MEASUREMENT_KEYS.some((key) => Number(flat[key]) > 0);
+}
+
+/**
+ * Reconstruye el borrador ISAK a partir del espejo guardado en el store global
+ * (`isakSkinfolds`, `isakPerimeters`, `isakDiameters`, `isakSomatotype`, `equation`).
+ * Devuelve null si el store no tiene ninguna medida capturada.
+ */
+export function isakStoreToDraftForm(store?: {
+  isakSkinfolds?: Record<string, number>;
+  isakPerimeters?: Record<string, number>;
+  isakDiameters?: Record<string, number>;
+  isakSomatotype?: Record<string, unknown> | null;
+  equation?: string;
+} | null): Partial<AnthropometryDraftForm> | null {
+  if (!store) return null;
+  const form: Partial<AnthropometryDraftForm> = {
+    skinfolds: store.isakSkinfolds as AnthropometryDraftForm['skinfolds'] | undefined,
+    perimeters: store.isakPerimeters as AnthropometryDraftForm['perimeters'] | undefined,
+    diameters: store.isakDiameters as AnthropometryDraftForm['diameters'] | undefined,
+    equation: store.equation as AnthropometryDraftForm['equation'] | undefined,
+    somatotype: (store.isakSomatotype ?? undefined) as AnthropometryDraftForm['somatotype'],
+  };
+  return hasIsakMeasurements(form) ? form : null;
 }
 
 /**

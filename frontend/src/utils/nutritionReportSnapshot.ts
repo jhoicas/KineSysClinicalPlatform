@@ -1,5 +1,5 @@
 import type { EvaluacionAntropometrica, PlanNutricional } from '../types';
-import { mifflinStJeorBmr } from './coreBodyAdapters';
+import { ISAK_MEASUREMENT_KEYS, hasIsakMeasurements, mifflinStJeorBmr } from './coreBodyAdapters';
 
 /**
  * Selección del dato vigente de cada bloque del informe nutricional.
@@ -23,6 +23,11 @@ export interface SnapshotProfile {
 export interface SnapshotOptions {
   /** Evaluación ISAK en curso (guardado progresivo) ya aplanada al formato del informe. */
   draftIsak?: EvaluacionAntropometrica | null;
+  /**
+   * Espejo ISAK del store global (medidas guardadas por subsección) aplanado al formato del informe.
+   * Sobrevive a remontajes y recargas: cubre el caso de que `draftIsak` (estado en memoria) se pierda.
+   */
+  storeIsak?: EvaluacionAntropometrica | null;
   /** Captura BIA/Withings vigente en el store (manual guardada o báscula) aplanada al formato del informe. */
   draftWithings?: EvaluacionAntropometrica | null;
   profile?: SnapshotProfile;
@@ -83,6 +88,53 @@ export function hasWithingsValues(e: EvaluacionAntropometrica | null | undefined
   ].some((v) => pos(v) > 0);
 }
 
+/** Campos derivados/clasificatorios del ISAK que también se completan desde la otra fuente. */
+const ISAK_DERIVED_NUMERIC_KEYS = [
+  'body_fat_percentage',
+  'fat_mass_kg',
+  'waist_height_ratio',
+  'waist_hip_ratio',
+  'arm_ratio',
+  'somatotype_endomorphy',
+  'somatotype_mesomorphy',
+  'somatotype_ectomorphy',
+] as const;
+const ISAK_TEXT_KEYS = [
+  'somatotype_category',
+  'somatotype_interpretation',
+  'isak_equation',
+  'fat_status',
+  'waist_hip_status',
+  'evaluator_name',
+  'evaluator_certification',
+  'clinical_notes',
+] as const;
+
+/**
+ * Fusiona dos registros de la MISMA evaluación ISAK en curso (borrador en memoria y espejo del store),
+ * campo por campo: gana `primary` donde tenga un valor capturado (> 0 / no vacío) y `fallback` completa
+ * lo que falte. Así una fuente incompleta nunca oculta lo capturado en la otra.
+ */
+export function mergeIsakRecords(
+  primary: EvaluacionAntropometrica | null,
+  fallback: EvaluacionAntropometrica | null,
+): EvaluacionAntropometrica | null {
+  if (!primary) return fallback;
+  if (!fallback) return primary;
+
+  const p = primary as unknown as Record<string, unknown>;
+  const f = fallback as unknown as Record<string, unknown>;
+  const merged: Record<string, unknown> = { ...f, ...p };
+  for (const key of [...ISAK_MEASUREMENT_KEYS, ...ISAK_DERIVED_NUMERIC_KEYS]) {
+    if (!(pos(p[key]) > 0)) merged[key] = pos(f[key]) > 0 ? f[key] : p[key];
+  }
+  for (const key of ISAK_TEXT_KEYS) {
+    const value = p[key];
+    if (value === undefined || value === null || value === '') merged[key] = f[key] ?? value;
+  }
+  return merged as unknown as EvaluacionAntropometrica;
+}
+
 /**
  * Completa y recalcula de forma garantizada peso, estatura, IMC, % grasa, masas y TMB:
  *  - peso/estatura: el valor propio del registro; si falta, el del perfil/otra medición;
@@ -137,7 +189,7 @@ export function selectNutritionSnapshot(
   draftIsak: EvaluacionAntropometrica | null = null,
   options: Omit<SnapshotOptions, 'draftIsak'> = {},
 ): NutritionReportSnapshot {
-  const { draftWithings = null, profile = {} } = options;
+  const { draftWithings = null, storeIsak = null, profile = {} } = options;
 
   const persistedWithings = latest(evaluations.filter(isWithingsRecord));
   const usableDraftWithings = hasWithingsValues(draftWithings) ? draftWithings : null;
@@ -145,7 +197,19 @@ export function selectNutritionSnapshot(
     usableDraftWithings && (!persistedWithings || stamp(usableDraftWithings) >= stamp(persistedWithings))
       ? usableDraftWithings
       : persistedWithings;
-  const rawIsak = draftIsak ?? latest(evaluations.filter(isIsakRecord));
+
+  // ISAK y BIA se resuelven por separado y nunca se pisan entre sí:
+  //  1) evaluación en curso = borrador en memoria + espejo del store, fusionados campo a campo
+  //     (solo cuentan si traen medidas; un borrador vacío no oculta nada);
+  //  2) si no hay evaluación en curso, la última ISAK persistida; entre las persistidas se prefiere
+  //     la que realmente trae medidas (un registro vacío no tapa a uno real).
+  const inProgressIsak = mergeIsakRecords(
+    hasIsakMeasurements(draftIsak) ? draftIsak : null,
+    hasIsakMeasurements(storeIsak) ? storeIsak : null,
+  );
+  const persistedIsakRows = evaluations.filter(isIsakRecord);
+  const persistedIsak = latest(persistedIsakRows.filter(hasIsakMeasurements)) ?? latest(persistedIsakRows);
+  const rawIsak = inProgressIsak ?? persistedIsak;
 
   // Peso/estatura de referencia: perfil → medición Withings → ISAK → última evaluación guardada.
   const anyEval = latest(evaluations);

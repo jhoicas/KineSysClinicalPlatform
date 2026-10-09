@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Patient,
   AnthropometryAssessment,
@@ -46,8 +46,15 @@ interface AnthropometryModuleProps {
    * Acceso directo "Generar y Descargar PDF": recibe el borrador ya guardado para que el informe
    * incluya las últimas medidas sin esperar a finalizar la evaluación.
    */
-  onGenerateReport?: (form: AnthropometryDraftForm) => void | Promise<void>;
+  onGenerateReport?: () => void | Promise<void>;
   isGeneratingReport?: boolean;
+  /**
+   * Publica el formulario completo (con somatotipo y % de grasa calculados) en CADA cambio, de forma
+   * síncrona, para que cualquier botón del informe lea el estado vivo al momento del clic.
+   */
+  onLiveChange?: (form: AnthropometryDraftForm) => void;
+  /** Registra el flush de este módulo para que el informe guarde lo pendiente antes de generarse. */
+  registerFlush?: (flush: () => Promise<void>) => () => void;
   /** Notifica al estado global las medidas capturadas al guardar cada subsección. */
   onSectionSaved?: (measures: {
     skinfolds: SkinfoldMeasurements;
@@ -120,6 +127,8 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
   onSave,
   onGenerateReport,
   isGeneratingReport = false,
+  onLiveChange,
+  registerFlush,
   onSectionSaved,
 }) => {
   const [activeTab, setActiveTab] = useState<AnthropometryTab>('perimeters');
@@ -257,6 +266,35 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     enabled: Boolean(onAutosaveDraft),
   });
 
+  // Estado vivo: se publica en el mismo commit en que cambia (efecto de layout, antes de cualquier clic
+  // posterior), incluidos los derivados que llegan después de forma asíncrona. Solo tras la primera
+  // edición del usuario, para no pisar con el formulario vacío un borrador ya guardado.
+  const initialInputsRef = useRef({ skinfolds, perimeters, diameters, equation, selectedSomatotype, generalNotes });
+  const userEditedRef = useRef(false);
+  useLayoutEffect(() => {
+    const initial = initialInputsRef.current;
+    if (
+      skinfolds !== initial.skinfolds ||
+      perimeters !== initial.perimeters ||
+      diameters !== initial.diameters ||
+      equation !== initial.equation ||
+      selectedSomatotype !== initial.selectedSomatotype ||
+      generalNotes !== initial.generalNotes
+    ) {
+      userEditedRef.current = true;
+    }
+    if (userEditedRef.current) onLiveChange?.(draftForm);
+  }, [draftForm]);
+
+  // Flush para el informe: persiste el borrador y la estatura pendientes.
+  useEffect(
+    () =>
+      registerFlush?.(async () => {
+        await Promise.all([draftAutosave.flush(), heightAutosave.flush()]);
+      }),
+    [registerFlush],
+  );
+
   // El contexto de guardado (paciente y borrador) queda ligado al scope desde el montaje.
   useEffect(() => {
     if (onAutosaveDraft) draftAutosave.reset(draftForm, onAutosaveDraft);
@@ -280,21 +318,22 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
   const armRatio = perimeters.brazoRelajado > 0 ? Number((perimeters.brazoContraido / perimeters.brazoRelajado).toFixed(2)) : 0;
 
   // Handlers for updates
-  const handleUpdateSkinfold = (key: keyof SkinfoldMeasurements, val: number) => {
+  // `live` = tecla a tecla: el guardado a la base lo hace el autoguardado con debounce, no cada tecla.
+  const handleUpdateSkinfold = (key: keyof SkinfoldMeasurements, val: number, live = false) => {
     setSkinfolds((prev) => ({ ...prev, [key]: val }));
-    setCommitTick((t) => t + 1);
+    if (!live) setCommitTick((t) => t + 1);
     setIsSaved(false);
   };
 
-  const handleUpdatePerimeter = (key: keyof PerimeterMeasurements, val: number) => {
+  const handleUpdatePerimeter = (key: keyof PerimeterMeasurements, val: number, live = false) => {
     setPerimeters((prev) => ({ ...prev, [key]: val }));
-    setCommitTick((t) => t + 1);
+    if (!live) setCommitTick((t) => t + 1);
     setIsSaved(false);
   };
 
-  const handleUpdateDiameter = (key: keyof BoneDiameterMeasurements, val: number) => {
+  const handleUpdateDiameter = (key: keyof BoneDiameterMeasurements, val: number, live = false) => {
     setDiameters((prev) => ({ ...prev, [key]: val }));
-    setCommitTick((t) => t + 1);
+    if (!live) setCommitTick((t) => t + 1);
     setIsSaved(false);
   };
 
@@ -327,14 +366,12 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     }
   };
 
-  /** Guarda lo capturado y descarga el informe PDF con esos datos. */
+  /** Descarga el informe PDF: la recolección en vivo (flush + snapshot) la hace el consumidor. */
   const handleGenerateReport = async () => {
     if (!onGenerateReport) return;
     try {
       setSaveError(null);
-      await Promise.all([draftAutosave.flush(), heightAutosave.flush()]);
-      onSectionSaved?.({ skinfolds, perimeters, diameters, equation, form: draftForm });
-      await onGenerateReport(draftForm);
+      await onGenerateReport();
     } catch (err) {
       console.error('No se pudo generar el informe PDF desde ISAK:', err);
       setSaveError('No se pudo guardar la evaluación antes de generar el PDF. Intenta de nuevo.');

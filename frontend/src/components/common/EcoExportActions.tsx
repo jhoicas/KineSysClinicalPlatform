@@ -22,6 +22,7 @@ import {
 } from '../../utils/nutritionReportPdf';
 import { buildNutritionReportSummary } from '../../utils/nutritionReportSummary';
 import { buildNutritionReportPdfOptions, getClinicPdfBranding } from '../../utils/nutritionReportExport';
+import type { NutritionReportExport } from '../../hooks/useNutritionReportExport';
 import { PdfViewer } from './PdfViewer';
 
 export interface EcoExportActionsProps {
@@ -43,6 +44,12 @@ export interface EcoExportActionsProps {
    * pensadas para una barra fija. `default`: botones compactos de tarjeta.
    */
   variant?: 'default' | 'toolbar';
+  /**
+   * Informe integral: instancia compartida de `useNutritionReportExport`. Si se entrega, la descarga, la
+   * vista previa y el correo recolectan los datos con ESA misma lógica (flush de los módulos + snapshot
+   * leído al clic) en vez de usar las props del último render.
+   */
+  reportExport?: NutritionReportExport;
   showPreviewOption?: boolean;
   onSuccess?: (result: any) => void;
   onError?: (error: string) => void;
@@ -62,6 +69,7 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
   className = '',
   size = 'md',
   variant = 'default',
+  reportExport,
   showPreviewOption = true,
   onSuccess,
   onError,
@@ -85,7 +93,10 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
     } actualizado con las pautas e indicaciones clínicas.`
   );
   const [isSendingEmail, setIsSendingEmail] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
+  // Con `reportExport` el informe integral se arma siempre desde la recolección en vivo compartida.
+  const liveReport = documentType === 'informe_nutricional' ? reportExport : undefined;
+  const [ownDownloading, setIsDownloading] = useState(false);
+  const isDownloading = Boolean(liveReport?.isDownloading) || ownDownloading;
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string; impact?: any } | null>(
     null
   );
@@ -112,7 +123,7 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
   });
 
   const reportIsak = isakEvaluation ?? evaluation ?? null;
-  const hasReportData = Boolean(reportIsak || withingsEvaluation || plan);
+  const hasReportData = liveReport ? liveReport.hasReportData : Boolean(reportIsak || withingsEvaluation || plan);
 
   const getReportPdfOptions = () =>
     buildNutritionReportPdfOptions({
@@ -124,6 +135,12 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
 
   // 1. Download handler
   const handleDownloadPdf = async () => {
+    if (liveReport) {
+      // Misma función que los accesos directos de ISAK/BIA: recolección en vivo, aviso y estado de carga.
+      setStatusMessage(null);
+      await liveReport.download();
+      return;
+    }
     try {
       setIsDownloading(true);
       setStatusMessage(null);
@@ -191,7 +208,14 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
       const dateStr = new Date().toISOString().split('T')[0];
       const filename = `${docTypeName.replace(/\s+/g, '_')}_${lastName}_${dateStr}.pdf`;
 
-      if (documentType === 'informe_nutricional' && hasReportData) {
+      // Informe integral: UN solo snapshot recolectado al enviar alimenta el PDF adjunto y el resumen.
+      const liveData = liveReport ? await liveReport.collect() : null;
+      if (liveReport && liveData) {
+        if (!(liveData.isak || liveData.withings || liveData.plan)) {
+          throw new Error('Aún no hay datos (ISAK, BIA o plan) para generar el informe.');
+        }
+        pdfBase64 = await getNutritionReportPdfBase64(liveReport.buildOptions(liveData));
+      } else if (documentType === 'informe_nutricional' && hasReportData) {
         pdfBase64 = await getNutritionReportPdfBase64(getReportPdfOptions());
       } else if (documentType === 'plan_nutricional' && plan) {
         pdfBase64 = await getNutritionPlanPdfBase64({
@@ -225,9 +249,9 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
           documentType === 'informe_nutricional'
             ? buildNutritionReportSummary({
                 patient,
-                isak: reportIsak,
-                withings: withingsEvaluation ?? null,
-                plan: plan ?? null,
+                isak: liveData ? liveData.isak ?? null : reportIsak,
+                withings: liveData ? liveData.withings ?? null : withingsEvaluation ?? null,
+                plan: liveData ? liveData.plan ?? null : plan ?? null,
               })
             : undefined,
         custom_message: customMessage,
@@ -467,7 +491,10 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
             {/* PDF Viewer */}
             <div className="flex-1 w-full h-full min-h-[500px] overflow-hidden">
               <PdfViewer
-                generatePdf={() => {
+                generatePdf={async () => {
+                  if (liveReport) {
+                    return getNutritionReportPdfBlob(liveReport.buildOptions(await liveReport.collect()));
+                  }
                   if (documentType === 'informe_nutricional' && hasReportData) {
                     return getNutritionReportPdfBlob(getReportPdfOptions());
                   }

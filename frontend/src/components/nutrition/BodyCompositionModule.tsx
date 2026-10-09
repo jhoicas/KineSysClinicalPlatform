@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Patient, BodyCompositionBIA, RangeIndicator } from '../../types/coreBodyNutrition';
 import {
   Activity,
@@ -29,8 +29,15 @@ interface BodyCompositionModuleProps {
    * Acceso directo "Generar y Descargar PDF": recibe la composición actual para guardarla y
    * descargar el informe nutricional con esos valores.
    */
-  onGenerateReport?: (data: BodyCompositionBIA) => void | Promise<void>;
+  onGenerateReport?: () => void | Promise<void>;
   isGeneratingReport?: boolean;
+  /**
+   * Publica la composición en CADA edición del usuario, de forma síncrona (sin esperar al debounce de
+   * guardado), para que cualquier botón del informe lea el estado vivo al momento del clic.
+   */
+  onLiveChange?: (data: BodyCompositionBIA) => void;
+  /** Registra el flush de este módulo para que el informe guarde lo pendiente antes de generarse. */
+  registerFlush?: (flush: () => Promise<void>) => () => void;
 }
 
 const AUTOSAVE_DEBOUNCE_MS = 1500;
@@ -42,6 +49,8 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
   onAutosave,
   onGenerateReport,
   isGeneratingReport = false,
+  onLiveChange,
+  registerFlush,
 }) => {
   const emptyRange = (
     unit: string,
@@ -121,6 +130,23 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
   const onAutosaveRef = useRef(onAutosave);
   onAutosaveRef.current = onAutosave;
   const [autosaveTick, setAutosaveTick] = useState(0);
+
+  // Estado vivo: cada edición del usuario (dirtyRef) se publica en el mismo commit. Las actualizaciones
+  // que vienen de `data` no se republican, así no hay ciclo con el store.
+  useLayoutEffect(() => {
+    if (dirtyRef.current) onLiveChange?.(composition);
+  }, [composition]);
+
+  // Flush para el informe: guarda de inmediato la edición pendiente (sin esperar al debounce).
+  useEffect(
+    () =>
+      registerFlush?.(async () => {
+        if (!dirtyRef.current || !onAutosaveRef.current) return;
+        await onAutosaveRef.current(compositionRef.current);
+        dirtyRef.current = false;
+      }),
+    [registerFlush],
+  );
 
   useEffect(() => {
     if (data && !dirtyRef.current) {
@@ -338,13 +364,12 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
     }
   };
 
-  /** Guarda la composición actual y descarga el informe PDF con esos valores. */
+  /** Descarga el informe PDF: la recolección en vivo (flush + snapshot) la hace el consumidor. */
   const handleGenerateReport = async () => {
     if (!onGenerateReport) return;
     try {
       setSaveError(null);
-      await onGenerateReport(compositionRef.current ?? composition);
-      dirtyRef.current = false;
+      await onGenerateReport();
     } catch (err) {
       console.error('No se pudo generar el informe PDF desde BIA:', err);
       setSaveError('No se pudo guardar la composición corporal antes de generar el PDF. Intenta de nuevo.');

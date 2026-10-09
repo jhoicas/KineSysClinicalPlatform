@@ -232,3 +232,22 @@ Este archivo documenta todas las intervenciones, decisiones arquitectónicas y r
 ### Notas
 - Aplicar la migración `021` antes de desplegar el frontend.
 - Pendientes detectados y no tocados: `AnthropometryEvaluationModule.tsx` no se importa en ningún sitio (código muerto); `AnthropometryModule` aún usa `|| 60` como peso por defecto; `patient_service.go` conserva `TODO` de validación de RUT; `backend/api.exe` está versionado; las políticas RLS llaman a `kinesys.current_tenant_id()` sin envolver en `(select ...)` (ver skill `security-rls-performance`).
+
+## [2026-10-09] - Informe PDF: recolección en vivo unificada (barra, vista previa, correo y accesos directos)
+**Fase:** Fase 3 - Consistencia del informe nutricional
+**Autor:** Claude (Claude Code)
+
+### Causa
+El acceso directo de ISAK armaba el PDF con el formulario leído al momento del clic (con el somatotipo y el % de grasa que llegan de forma asíncrona del cálculo); la barra fija usaba el formulario publicado al teclear (sin derivados), y la BIA solo llegaba tras el debounce de 1,5 s. Además el campo de medida ISAK solo entregaba el valor al confirmar.
+
+### Cambios (frontend)
+- `utils/nutritionReportLive.ts` (NUEVO): `buildLiveReportSnapshot`, única fuente del snapshot ISAK + BIA + plan para la UI y para todos los botones.
+- `hooks/useNutritionReportExport.ts`: `collect()` (flush de los módulos + snapshot leído del store al clic), `buildOptions()` y `download()` comunes.
+- `components/common/EcoExportActions.tsx`: prop `reportExport`; descarga, vista previa y correo usan el mismo `collect()` y el mismo snapshot (el resumen del correo también).
+- `store/useAppStore.ts`: `nutritionDraft.isakDraft` (formulario ISAK completo en vivo).
+- `components/nutrition/AnthropometryModule.tsx`, `BodyCompositionModule.tsx`: publican su estado en cada cambio (`onLiveChange`, efecto de layout) y registran su flush (`registerFlush`).
+- `components/nutrition/AnatomyAnthropometryModel.tsx`: el campo de medida entrega cada tecla (`live`) sin disparar un guardado por tecla.
+- `pages/NutritionistDashboard.tsx`: colector con registro de flushers, publicadores en vivo y limpieza al finalizar.
+
+### Verificación
+`tsc --noEmit`, `vite build`, 50 tests; prueba en Chromium con el dashboard real (teclear sin confirmar y pulsar barra, vista previa, correo y accesos directos de ISAK/BIA).

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { AppModule } from '../types';
+import type { AnthropometryDraftForm } from '../types/coreBodyNutrition';
 
 export interface ActivePatient {
   id: string;
@@ -37,6 +38,11 @@ export interface NutritionSessionDraft {
   equation?: string;
   /** Tipo de cuerpo / somatotipo calculado en la última subsección ISAK guardada. */
   isakSomatotype?: Record<string, unknown> | null;
+  /**
+   * Formulario ISAK completo en vivo (incluye somatotipo, % grasa y notas). Lo escribe el módulo en cada
+   * cambio, de forma síncrona; los botones del informe lo leen al momento del clic.
+   */
+  isakDraft?: Partial<AnthropometryDraftForm> | null;
   biaSavedAt?: string;
   biaSource?: 'WITHINGS';
   biaSnapshot?: Record<string, unknown> | null;

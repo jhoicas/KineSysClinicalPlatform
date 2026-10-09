@@ -21,10 +21,8 @@ import {
   coreBodyPlanToKinesys,
   biaToKinesys,
   hasIsakMeasurements,
-  isakStoreToDraftForm,
-  isakDraftToKinesys,
 } from '../utils/coreBodyAdapters';
-import { selectNutritionSnapshot } from '../utils/nutritionReportSnapshot';
+import { buildLiveReportSnapshot, hasBiaValues } from '../utils/nutritionReportLive';
 import { useAppStore, ActivePatient } from '../store/useAppStore';
 import { logSupabaseError } from '../utils/supabaseErrors';
 import {
@@ -539,18 +537,6 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   // Una sola fila Withings manual por sesión: el autoguardado la actualiza en vez de duplicarla.
   const biaRowRef = useRef<{ patientId: string; id: string } | null>(null);
 
-  const hasBiaValues = (bia: BodyCompositionBIA) =>
-    [
-      bia.pesoKg,
-      bia.masaMuscularEsqueleticaKg,
-      bia.masaGrasaKg,
-      bia.porcentajeGrasaCorporal,
-      bia.otherIndicators.aguaCorporalTotalL,
-      bia.otherIndicators.proteinaKg,
-      bia.otherIndicators.mineralesKg,
-      bia.otherIndicators.grasaVisceralNivel,
-    ].some((i) => i.value > 0);
-
   /** Devuelve la medición persistida (null si no hay nada que guardar o la lectura es automática). */
   const handleSaveBia = async (
     bia: BodyCompositionBIA,
@@ -616,77 +602,64 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   // Find latest evaluation for the active patient
   const latestEvaluation = evaluations.length > 0 ? evaluations[0] : null;
 
-  // Informe consolidado: último ISAK, última medición Withings y plan activo (por separado).
-  const buildDraftIsak = useCallback(
-    (form: Partial<AnthropometryDraftForm>, updatedAt: string): EvaluacionAntropometrica | null => {
-      if (!currentClinico) return null;
-      const corePatient = toCoreBodyPatient(currentClinico);
-      return isakDraftToKinesys(form, {
-        id: `isak-draft-${currentClinico.id}`,
-        tenantId,
-        nutritionistId,
-        patientId: currentClinico.id,
-        age: corePatient.age,
-        gender: currentClinico.gender === 'female' ? 'female' : currentClinico.gender === 'other' ? 'other' : 'male',
-        weightKg: latestEvaluation?.weight_kg ?? 0,
-        heightCm: currentClinico.height_cm && currentClinico.height_cm > 0 ? currentClinico.height_cm : latestEvaluation?.height_cm ?? 0,
-        evaluatorName: nutritionistName,
-        updatedAt,
-      });
-    },
-    [currentClinico, latestEvaluation, tenantId, nutritionistId, nutritionistName],
-  );
-  const draftIsak = useMemo<EvaluacionAntropometrica | null>(() => {
-    if (!draftIsakForm || !currentClinico || draftIsakForm.patientId !== currentClinico.id) return null;
-    return buildDraftIsak(draftIsakForm.form, draftIsakForm.updatedAt);
-  }, [draftIsakForm, currentClinico, buildDraftIsak]);
-  // Captura BIA vigente en el store (manual guardada o báscula) aplanada al formato del informe:
-  // garantiza que la Sección 2 refleje lo ingresado aunque la recarga desde la base no devuelva la fila.
-  const draftWithings = useMemo<EvaluacionAntropometrica | null>(() => {
-    if (!currentClinico || nutritionDraft?.patientId !== currentClinico.id) return null;
-    const bia = nutritionDraft.biaSnapshot as unknown as BodyCompositionBIA | null | undefined;
-    if (!bia?.pesoKg || !bia.otherIndicators || !hasBiaValues(bia)) return null;
-    const stampIso = nutritionDraft.updatedAt ?? nutritionDraft.biaSavedAt ?? new Date().toISOString();
-    return {
-      ...biaToKinesys(bia, {
-        tenantId,
-        nutritionistId,
-        patientId: currentClinico.id,
-        age: toCoreBodyPatient(currentClinico).age,
-        gender: currentClinico.gender === 'female' ? 'female' : currentClinico.gender === 'other' ? 'other' : 'male',
-        heightCm: currentClinico.height_cm ?? 0,
-      }),
-      id: `bia-draft-${currentClinico.id}`,
-      evaluation_date: stampIso,
-      created_at: stampIso,
-    };
-  }, [nutritionDraft, currentClinico, tenantId, nutritionistId]);
-  // Espejo ISAK del store (medidas por subsección): segunda fuente de la evaluación en curso, que
-  // sobrevive a remontajes/recargas y no depende de que el borrador en memoria siga vivo.
-  const storeIsak = useMemo<EvaluacionAntropometrica | null>(() => {
-    if (!currentClinico || nutritionDraft?.patientId !== currentClinico.id) return null;
-    const form = isakStoreToDraftForm(nutritionDraft);
-    return form ? buildDraftIsak(form, nutritionDraft.updatedAt ?? new Date().toISOString()) : null;
-  }, [nutritionDraft, currentClinico, buildDraftIsak]);
+  // ── Informe consolidado (ISAK + BIA + plan): UNA sola fuente para la UI y para todos los botones ──
+  // La UI lo calcula con el estado de React; los botones lo recalculan al clic con una lectura fresca
+  // del store (ver `collectReportData`). Ambos pasan por `buildLiveReportSnapshot`.
   const snapshot = useMemo(
     () =>
-      selectNutritionSnapshot(evaluations, plans, draftIsak, {
-        draftWithings,
-        storeIsak,
-        profile: {
-          heightCm: currentClinico?.height_cm,
-          weightKg: nutritionDraft?.patientId === currentClinico?.id ? nutritionDraft?.weightKg : undefined,
-          age: currentClinico ? toCoreBodyPatient(currentClinico).age : undefined,
-          gender: currentClinico?.gender,
-        },
+      buildLiveReportSnapshot({
+        evaluations,
+        plans,
+        patient: currentClinico,
+        tenantId,
+        nutritionistId,
+        nutritionistName,
+        isakForm: draftIsakForm,
+        nutritionDraft,
       }),
-    [evaluations, plans, draftIsak, storeIsak, draftWithings, currentClinico, nutritionDraft],
+    [evaluations, plans, currentClinico, tenantId, nutritionistId, nutritionistName, draftIsakForm, nutritionDraft],
   );
   const latestIsak = snapshot.isak;
   const latestWithings = snapshot.withings;
   const activePlan = snapshot.plan;
 
-  // Informe PDF integral: lo comparten la barra fija y los accesos directos de los módulos.
+  // Último render disponible para la recolección al clic (evaluaciones, planes, borrador cargado, etc.).
+  const reportInputsRef = useRef({ evaluations, plans, currentClinico, tenantId, nutritionistId, nutritionistName, draftIsakForm });
+  reportInputsRef.current = { evaluations, plans, currentClinico, tenantId, nutritionistId, nutritionistName, draftIsakForm };
+
+  // Los módulos ISAK/BIA registran aquí su flush: guardan lo pendiente antes de generar cualquier informe.
+  const reportFlushersRef = useRef(new Set<() => Promise<void>>());
+  const registerReportFlush = useCallback((flush: () => Promise<void>) => {
+    reportFlushersRef.current.add(flush);
+    return () => {
+      reportFlushersRef.current.delete(flush);
+    };
+  }, []);
+
+  /**
+   * Recolección en vivo del informe, idéntica para "Descargar Reporte PDF", "Enviar Informe por Correo",
+   * la vista previa (ojo) y los accesos directos de ISAK/BIA: 1) flush de los módulos montados; 2) snapshot
+   * consolidado leído del store AL MOMENTO DEL CLIC (los módulos lo escriben de forma síncrona en cada cambio).
+   */
+  const collectReportData = useCallback(async () => {
+    const results = await Promise.allSettled([...reportFlushersRef.current].map((flush) => flush()));
+    results.forEach((r) => {
+      if (r.status === 'rejected') console.error('No se pudo guardar un módulo antes del informe:', r.reason);
+    });
+    const live = reportInputsRef.current;
+    return buildLiveReportSnapshot({
+      evaluations: live.evaluations,
+      plans: live.plans,
+      patient: live.currentClinico,
+      tenantId: live.tenantId,
+      nutritionistId: live.nutritionistId,
+      nutritionistName: live.nutritionistName,
+      isakForm: live.draftIsakForm,
+      nutritionDraft: useAppStore.getState().nutritionDraft,
+    });
+  }, []);
+
+  // Informe PDF integral: lo comparten la barra fija, la vista previa, el correo y los accesos directos.
   const reportExport = useNutritionReportExport({
     patient: currentClinico,
     nutritionistName,
@@ -694,19 +667,35 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
     isak: latestIsak,
     withings: latestWithings,
     plan: activePlan,
+    collect: collectReportData,
   });
 
-  /** ISAK: descarga el PDF con el borrador recién guardado (antes de que el estado se re-renderice). */
-  const handleGenerateReportFromIsak = async (form: AnthropometryDraftForm) => {
-    const fresh = hasIsakMeasurements(form) ? buildDraftIsak(form, new Date().toISOString()) : null;
-    await reportExport.download(fresh ? { isak: fresh } : {});
-  };
+  /** ISAK/BIA publican su estado completo en cada cambio: queda en el store al instante (síncrono). */
+  const handleLiveIsak = useCallback((form: AnthropometryDraftForm) => {
+    const patientId = useAppStore.getState().activePatient?.id;
+    if (!patientId) return;
+    useAppStore.getState().patchNutritionDraft({
+      patientId,
+      isakDraft: form,
+      equation: form.equation,
+      isakSkinfolds: { ...form.skinfolds },
+      isakPerimeters: { ...form.perimeters },
+      isakDiameters: { ...form.diameters },
+      isakSomatotype: form.somatotype ? { ...form.somatotype } : null,
+    });
+    setDraftIsakForm(hasIsakMeasurements(form) ? { patientId, form, updatedAt: new Date().toISOString() } : null);
+  }, []);
 
-  /** BIA: guarda la medición actual y descarga el PDF con ella. */
-  const handleGenerateReportFromBia = async (bia: BodyCompositionBIA) => {
-    const saved = await handleSaveBia(bia, { silent: true });
-    await reportExport.download(saved ? { withings: saved } : {});
-  };
+  const handleLiveBia = useCallback((bia: BodyCompositionBIA) => {
+    const patientId = useAppStore.getState().activePatient?.id;
+    if (!patientId) return;
+    useAppStore.getState().patchNutritionDraft({
+      patientId,
+      biaSource: 'WITHINGS',
+      biaSnapshot: bia as unknown as Record<string, unknown>,
+      weightKg: bia.pesoKg.value || undefined,
+    });
+  }, []);
 
   // La estatura registrada del paciente es la base de los cálculos; una evaluación previa
   // solo se usa si el paciente no tiene estatura registrada.
@@ -949,6 +938,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
 
                 <EcoExportActions
                   variant="toolbar"
+                  reportExport={reportExport}
                   patient={currentClinico}
                   documentType="informe_nutricional"
                   plan={activePlan}
@@ -1214,11 +1204,16 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                     isakPerimeters: undefined,
                     isakDiameters: undefined,
                     isakSomatotype: undefined,
+                    isakDraft: undefined,
                   });
                   setActiveTab('bia');
                 }}
-                onGenerateReport={handleGenerateReportFromIsak}
+                onGenerateReport={async () => {
+                  await reportExport.download();
+                }}
                 isGeneratingReport={reportExport.isDownloading}
+                onLiveChange={handleLiveIsak}
+                registerFlush={registerReportFlush}
                 onSectionSaved={({ skinfolds, perimeters, diameters, equation, form }) => {
                   useAppStore.getState().patchNutritionDraft({
                     patientId: currentClinico.id,
@@ -1251,8 +1246,12 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                 onAutosave={async (bia) => {
                   await handleSaveBia(bia, { silent: true });
                 }}
-                onGenerateReport={handleGenerateReportFromBia}
+                onGenerateReport={async () => {
+                  await reportExport.download();
+                }}
                 isGeneratingReport={reportExport.isDownloading}
+                onLiveChange={handleLiveBia}
+                registerFlush={registerReportFlush}
               />
             )}
 

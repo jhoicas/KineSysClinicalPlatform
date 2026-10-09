@@ -252,9 +252,10 @@ interface AnatomyAnthropometryModelProps {
   skinfolds: SkinfoldMeasurements;
   perimeters: PerimeterMeasurements;
   diameters: BoneDiameterMeasurements;
-  onUpdateSkinfold: (key: keyof SkinfoldMeasurements, val: number) => void;
-  onUpdatePerimeter: (key: keyof PerimeterMeasurements, val: number) => void;
-  onUpdateDiameter: (key: keyof BoneDiameterMeasurements, val: number) => void;
+  /** `live` = valor entregado mientras se teclea (cada cambio), no una confirmación explícita. */
+  onUpdateSkinfold: (key: keyof SkinfoldMeasurements, val: number, live?: boolean) => void;
+  onUpdatePerimeter: (key: keyof PerimeterMeasurements, val: number, live?: boolean) => void;
+  onUpdateDiameter: (key: keyof BoneDiameterMeasurements, val: number, live?: boolean) => void;
   /** Se invoca al guardar/avanzar desde el último punto de la subsección. */
   onFinishSection?: () => void | Promise<void>;
   activePointKey?: string;
@@ -313,26 +314,30 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
     setInputVal(v != null ? v.toFixed(1) : '');
   }, [currentPoint?.key, activeTab]);
 
-  /** Valor tecleado en el input; null si está vacío o no es un número válido. */
-  const parseInput = (): number | null => {
-    const num = parseFloat(inputVal.replace(',', '.'));
+  const parseValue = (raw: string): number | null => {
+    const num = parseFloat(raw.replace(',', '.'));
     return Number.isNaN(num) || num <= 0 ? null : num;
   };
 
-  /** Guarda el valor tecleado en el estado/borrador (solo si cambió respecto al guardado). */
-  const commitCurrentValue = (): void => {
+  /** Valor tecleado en el input; null si está vacío o no es un número válido. */
+  const parseInput = (): number | null => parseValue(inputVal);
+
+  /** Entrega `num` al estado del módulo (solo si cambió respecto al valor vigente). */
+  const pushValue = (num: number | null, live: boolean): void => {
     if (!currentPoint) return;
-    const num = parseInput();
     if (num == null || num === getCurrentValue(currentPoint)) return;
 
     if (currentPoint.category === 'skinfolds') {
-      onUpdateSkinfold(currentPoint.key as keyof SkinfoldMeasurements, num);
+      onUpdateSkinfold(currentPoint.key as keyof SkinfoldMeasurements, num, live);
     } else if (currentPoint.category === 'perimeters') {
-      onUpdatePerimeter(currentPoint.key as keyof PerimeterMeasurements, num);
+      onUpdatePerimeter(currentPoint.key as keyof PerimeterMeasurements, num, live);
     } else {
-      onUpdateDiameter(currentPoint.key as keyof BoneDiameterMeasurements, num);
+      onUpdateDiameter(currentPoint.key as keyof BoneDiameterMeasurements, num, live);
     }
   };
+
+  /** Confirma el valor tecleado (Enter / Guardar y Siguiente). */
+  const commitCurrentValue = (): void => pushValue(parseInput(), false);
 
   const selectPoint = (pointKey: string) => {
     setInternalSelectedKey(pointKey);
@@ -697,7 +702,11 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
                   step="0.1"
                   id={`input-measure-${currentPoint.key}`}
                   value={inputVal}
-                  onChange={(e) => setInputVal(e.target.value)}
+                  onChange={(e) => {
+                    setInputVal(e.target.value);
+                    // Cada tecla llega al estado del módulo (y de ahí al informe) sin esperar a confirmar.
+                    pushValue(parseValue(e.target.value), true);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleNext();
                   }}

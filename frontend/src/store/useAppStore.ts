@@ -35,6 +35,9 @@ export interface NutritionSessionDraft {
   isakSkinfolds?: Record<string, number>;
   isakDiameters?: Record<string, number>;
   equation?: string;
+  /** Tipo de cuerpo / somatotipo calculado en la última subsección ISAK guardada. */
+  isakSomatotype?: Record<string, unknown> | null;
+  biaSavedAt?: string;
   biaSource?: 'WITHINGS';
   biaSnapshot?: Record<string, unknown> | null;
   dietCaloricTarget?: number;

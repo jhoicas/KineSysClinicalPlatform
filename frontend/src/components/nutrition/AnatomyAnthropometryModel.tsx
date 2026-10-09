@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AnthropometryTab,
   SkinfoldMeasurements,
@@ -87,6 +87,17 @@ export const ANTHROPOMETRY_POINTS: AnatomicalPointDef[] = [
     anteriorCoords: { x: 44, y: 43 },
     techniqueGuide: 'Pliegue vertical a 5 cm a la derecha de la cicatriz umbilical.',
     normalRangeText: 'Referencia mujer activa: 15.0 - 24.0 mm',
+    illustrationType: 'caliper_fold',
+  },
+  {
+    key: 'pecho',
+    name: 'Pecho',
+    category: 'skinfolds',
+    unit: 'mm',
+    view: 'anterior',
+    anteriorCoords: { x: 43, y: 34 },
+    techniqueGuide: 'Pliegue diagonal entre la línea axilar anterior y el pezón (hombres: mitad; mujeres: un tercio).',
+    normalRangeText: 'Referencia: 8.0 - 18.0 mm',
     illustrationType: 'caliper_fold',
   },
   {
@@ -186,6 +197,19 @@ export const ANTHROPOMETRY_POINTS: AnatomicalPointDef[] = [
     illustrationType: 'tape_perimeter',
   },
 
+  {
+    key: 'cuello',
+    name: 'Cuello',
+    category: 'perimeters',
+    unit: 'cm',
+    view: 'both',
+    anteriorCoords: { x: 50, y: 17 },
+    posteriorCoords: { x: 50, y: 17 },
+    techniqueGuide: 'Perímetro inmediatamente por encima del cartílago tiroides, perpendicular al eje del cuello.',
+    normalRangeText: 'Referencia: 31.0 - 40.0 cm',
+    illustrationType: 'tape_perimeter',
+  },
+
   // 3. DIÁMETROS ÓSEOS (cm)
   {
     key: 'biacromial',
@@ -231,6 +255,8 @@ interface AnatomyAnthropometryModelProps {
   onUpdateSkinfold: (key: keyof SkinfoldMeasurements, val: number) => void;
   onUpdatePerimeter: (key: keyof PerimeterMeasurements, val: number) => void;
   onUpdateDiameter: (key: keyof BoneDiameterMeasurements, val: number) => void;
+  /** Se invoca al guardar/avanzar desde el último punto de la subsección. */
+  onFinishSection?: () => void | Promise<void>;
   activePointKey?: string;
   onSelectPointKey?: (key: string) => void;
 }
@@ -246,6 +272,7 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
   onUpdateDiameter,
   activePointKey,
   onSelectPointKey,
+  onFinishSection,
 }) => {
   const isFemale = gender === 'F';
   // Filter points for active tab
@@ -279,7 +306,35 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
       : ''
   );
 
-  const handleSelectPoint = (pointKey: string) => {
+  // El punto o la pestaña pueden cambiar desde fuera (flujo secuencial): el input sigue al punto activo.
+  useEffect(() => {
+    if (!currentPoint) return;
+    const v = getCurrentValue(currentPoint);
+    setInputVal(v != null ? v.toFixed(1) : '');
+  }, [currentPoint?.key, activeTab]);
+
+  /** Valor tecleado en el input; null si está vacío o no es un número válido. */
+  const parseInput = (): number | null => {
+    const num = parseFloat(inputVal.replace(',', '.'));
+    return Number.isNaN(num) || num <= 0 ? null : num;
+  };
+
+  /** Guarda el valor tecleado en el estado/borrador (solo si cambió respecto al guardado). */
+  const commitCurrentValue = (): void => {
+    if (!currentPoint) return;
+    const num = parseInput();
+    if (num == null || num === getCurrentValue(currentPoint)) return;
+
+    if (currentPoint.category === 'skinfolds') {
+      onUpdateSkinfold(currentPoint.key as keyof SkinfoldMeasurements, num);
+    } else if (currentPoint.category === 'perimeters') {
+      onUpdatePerimeter(currentPoint.key as keyof PerimeterMeasurements, num);
+    } else {
+      onUpdateDiameter(currentPoint.key as keyof BoneDiameterMeasurements, num);
+    }
+  };
+
+  const selectPoint = (pointKey: string) => {
     setInternalSelectedKey(pointKey);
     if (onSelectPointKey) {
       onSelectPointKey(pointKey);
@@ -291,18 +346,10 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
     }
   };
 
-  const handleSaveCurrentVal = () => {
-    if (!currentPoint) return;
-    const num = parseFloat(inputVal.replace(',', '.'));
-    if (isNaN(num)) return;
-
-    if (currentPoint.category === 'skinfolds') {
-      onUpdateSkinfold(currentPoint.key as keyof SkinfoldMeasurements, num);
-    } else if (currentPoint.category === 'perimeters') {
-      onUpdatePerimeter(currentPoint.key as keyof PerimeterMeasurements, num);
-    } else {
-      onUpdateDiameter(currentPoint.key as keyof BoneDiameterMeasurements, num);
-    }
+  // Navegar entre campos guarda siempre lo capturado antes de moverse.
+  const handleSelectPoint = (pointKey: string) => {
+    if (pointKey !== currentPoint?.key) commitCurrentValue();
+    selectPoint(pointKey);
   };
 
   const handleRepeatMeasurement = () => {
@@ -311,14 +358,21 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
 
   // Navigation: Next / Prev
   const currentIndex = tabPoints.findIndex((p) => p.key === selectedKey);
+  const isLastPoint = currentIndex >= tabPoints.length - 1;
+
   const handlePrev = () => {
     if (currentIndex > 0) {
       handleSelectPoint(tabPoints[currentIndex - 1].key);
     }
   };
+
+  /** Guarda el valor y pasa al siguiente campo; en el último, cierra la subsección y avanza a la siguiente. */
   const handleNext = () => {
-    if (currentIndex < tabPoints.length - 1) {
-      handleSelectPoint(tabPoints[currentIndex + 1].key);
+    commitCurrentValue();
+    if (!isLastPoint) {
+      selectPoint(tabPoints[currentIndex + 1].key);
+    } else {
+      void onFinishSection?.();
     }
   };
 
@@ -645,7 +699,7 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
                   value={inputVal}
                   onChange={(e) => setInputVal(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveCurrentVal();
+                    if (e.key === 'Enter') handleNext();
                   }}
                   className="w-full text-base font-bold text-slate-900 bg-white border-2 border-slate-300 rounded-lg px-3 py-2 focus:border-blue-600 focus:outline-hidden text-right pr-10 transition-all"
                   placeholder="—"
@@ -657,11 +711,11 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
               <button
                 id="btn-save-measure"
                 type="button"
-                onClick={handleSaveCurrentVal}
+                onClick={handleNext}
                 className={`inline-flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg text-xs font-semibold transition-all shadow-sm ${themeColor.btnPrimary}`}
               >
                 <Check className="w-3.5 h-3.5" />
-                Guardar
+                {isLastPoint ? 'Guardar sección' : 'Guardar y Siguiente'}
               </button>
               <button
                 id="btn-repeat-measure"
@@ -711,10 +765,9 @@ export const AnatomyAnthropometryModel: React.FC<AnatomyAnthropometryModelProps>
         <button
           id="btn-step-next"
           onClick={handleNext}
-          disabled={currentIndex >= tabPoints.length - 1}
           className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none px-2.5 py-1.5 rounded-md hover:bg-slate-100 transition-colors"
         >
-          Siguiente
+          {isLastPoint ? 'Guardar sección' : 'Siguiente'}
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

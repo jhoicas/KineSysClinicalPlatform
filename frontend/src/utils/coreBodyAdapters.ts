@@ -1,5 +1,6 @@
 import type { PacienteClinico, EvaluacionAntropometrica, PlanNutricional, AlimentoItem } from '../types';
 import type {
+  AnthropometryDraftForm,
   Patient,
   AnthropometryAssessment,
   NutritionPlan,
@@ -120,6 +121,7 @@ export function coreBodyAnthroToKinesys(
     contracted_arm_cm: a.perimeters.brazoContraido,
     thigh_cm: a.perimeters.muslo,
     calf_cm: a.perimeters.pierna,
+    neck_cm: a.perimeters.cuello,
     diameter_biacromial_cm: a.diameters.biacromial,
     diameter_humerus_cm: a.diameters.humero,
     diameter_femur_cm: a.diameters.femur,
@@ -156,6 +158,109 @@ export function coreBodyAnthroToKinesys(
       .filter(Boolean)
       .join(' · '),
     created_at: new Date().toISOString(),
+  };
+}
+
+const positive = (v: unknown): number | undefined => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+};
+
+/** true si el borrador ISAK ya trae al menos una medida capturada. */
+export function hasIsakMeasurements(form?: Partial<AnthropometryDraftForm> | null): boolean {
+  if (!form) return false;
+  return [form.skinfolds, form.perimeters, form.diameters].some((group) =>
+    Object.values(group ?? {}).some((v) => Number(v) > 0),
+  );
+}
+
+/**
+ * Aplana el borrador ISAK (formato anidado del formulario) al registro plano que lee el informe/PDF.
+ * Así lo capturado paso a paso aparece en el informe sin esperar a finalizar la evaluación.
+ */
+export function isakDraftToKinesys(
+  form: Partial<AnthropometryDraftForm>,
+  ctx: {
+    id: string;
+    tenantId: string;
+    nutritionistId: string;
+    patientId: string;
+    age: number;
+    gender: 'male' | 'female' | 'other';
+    weightKg: number;
+    heightCm: number;
+    evaluatorName?: string;
+    evaluatorCertification?: string;
+    updatedAt?: string;
+  },
+): EvaluacionAntropometrica {
+  const sf = form.skinfolds;
+  const pm = form.perimeters;
+  const dm = form.diameters;
+  const soma = form.somatotype;
+  const fatPct = positive(form.estimatedBodyFatPct) ?? 0;
+  const fatMass = Math.round((fatPct / 100) * ctx.weightKg * 10) / 10;
+  const bmi = ctx.heightCm > 0 && ctx.weightKg > 0 ? Math.round((ctx.weightKg / (ctx.heightCm / 100) ** 2) * 10) / 10 : 0;
+  const bmr = mifflinStJeorBmr(ctx.weightKg, ctx.heightCm, ctx.age, ctx.gender);
+  const whr = pm?.cadera && pm.cintura ? Number((pm.cintura / pm.cadera).toFixed(2)) : 0;
+  const whtr = ctx.heightCm > 0 && pm?.cintura ? Number((pm.cintura / ctx.heightCm).toFixed(2)) : 0;
+  const armRatio = pm?.brazoRelajado && pm.brazoContraido ? Number((pm.brazoContraido / pm.brazoRelajado).toFixed(2)) : 0;
+  const stamp = ctx.updatedAt ?? new Date().toISOString();
+
+  return {
+    id: ctx.id,
+    tenant_id: ctx.tenantId,
+    patient_id: ctx.patientId,
+    nutritionist_id: ctx.nutritionistId,
+    evaluation_date: stamp,
+    age: ctx.age,
+    gender: ctx.gender,
+    weight_kg: ctx.weightKg,
+    height_cm: ctx.heightCm,
+    activity_factor: 1.375,
+    skinfold_triceps_mm: sf?.triceps ?? 0,
+    skinfold_subscapular_mm: sf?.subescapular ?? 0,
+    skinfold_suprailiac_mm: sf?.supraespinal ?? 0,
+    skinfold_abdominal_mm: sf?.abdominal ?? 0,
+    skinfold_biceps_mm: sf?.biceps,
+    skinfold_iliac_crest_mm: sf?.crestaIliaca,
+    skinfold_chest_mm: sf?.pecho,
+    skinfold_thigh_mm: sf?.muslo,
+    skinfold_calf_mm: sf?.pierna,
+    waist_cm: pm?.cintura ?? 0,
+    hip_cm: pm?.cadera ?? 0,
+    relaxed_arm_cm: pm?.brazoRelajado,
+    contracted_arm_cm: pm?.brazoContraido,
+    thigh_cm: pm?.muslo,
+    calf_cm: pm?.pierna,
+    neck_cm: pm?.cuello,
+    diameter_biacromial_cm: dm?.biacromial,
+    diameter_humerus_cm: dm?.humero,
+    diameter_femur_cm: dm?.femur,
+    isak_equation: form.equation,
+    fat_status: form.fatStatus,
+    somatotype_category: soma?.category ?? form.somatotypeCategory,
+    somatotype_endomorphy: soma?.endomorfia,
+    somatotype_mesomorphy: soma?.mesomorfia,
+    somatotype_ectomorphy: soma?.ectomorfia,
+    somatotype_interpretation: soma?.interpretation,
+    waist_height_ratio: whtr,
+    waist_hip_ratio: whr,
+    waist_hip_status: whr === 0 ? undefined : whr <= 0.8 ? 'Normal' : 'Riesgo Moderado',
+    arm_ratio: armRatio,
+    evaluator_name: ctx.evaluatorName,
+    evaluator_certification: ctx.evaluatorCertification,
+    evaluation_number: 'Borrador',
+    source: 'isak_manual',
+    bmi,
+    bmr_kcal: bmr,
+    tdee_kcal: Math.round(bmr * 1.375),
+    body_fat_percentage: fatPct,
+    fat_mass_kg: fatMass,
+    fat_free_mass_kg: Math.round((ctx.weightKg - fatMass) * 10) / 10,
+    cardiovascular_risk_level: whr === 0 || whr <= 0.8 ? 'bajo' : 'moderado',
+    clinical_notes: form.generalNotes ?? '',
+    created_at: stamp,
   };
 }
 
@@ -214,6 +319,7 @@ export function biaToKinesys(
       brazoIzq: seg.brazoIzq,
       brazoDer: seg.brazoDer,
       tronco: seg.tronco,
+      ...(seg.troncoEspalda ? { troncoEspalda: seg.troncoEspalda } : {}),
       piernaIzq: seg.piernaIzq,
       piernaDer: seg.piernaDer,
     },

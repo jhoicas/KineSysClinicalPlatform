@@ -8,6 +8,7 @@ import {
   PerimeterMeasurements,
   BoneDiameterMeasurements,
   SomatotypeCategory,
+  SomatotypeResult,
   AnthropometryDraftForm,
 } from '../../types/coreBodyNutrition';
 import { useAnthropometryCalculations } from '../../hooks/useAnthropometryCalculations';
@@ -46,6 +47,8 @@ interface AnthropometryModuleProps {
     perimeters: PerimeterMeasurements;
     diameters: BoneDiameterMeasurements;
     equation: EstimationEquationId;
+    /** Borrador completo (incluye tipo de cuerpo / somatotipo calculado). */
+    form: AnthropometryDraftForm;
   }) => void;
 }
 
@@ -68,6 +71,7 @@ const DEFAULT_SKINFOLDS: SkinfoldMeasurements = {
   crestaIliaca: 0,
   supraespinal: 0,
   abdominal: 0,
+  pecho: 0,
   muslo: 0,
   pierna: 0,
 };
@@ -79,6 +83,7 @@ const DEFAULT_PERIMETERS: PerimeterMeasurements = {
   cadera: 0,
   muslo: 0,
   pierna: 0,
+  cuello: 0,
 };
 
 const DEFAULT_DIAMETERS: BoneDiameterMeasurements = {
@@ -86,6 +91,13 @@ const DEFAULT_DIAMETERS: BoneDiameterMeasurements = {
   humero: 0,
   femur: 0,
 };
+
+const SOMATOTYPE_INTERPRETATION: Record<string, string> = {
+  Mesomorfo: 'Predominio de desarrollo musculoesquelético, con adecuado balance entre linealidad y robustez ósea.',
+  Ectomorfo: 'Linealidad relativa dominante y bajo componente de adiposidad subcutánea.',
+};
+const interpretSomatotype = (category: string): string =>
+  SOMATOTYPE_INTERPRETATION[category] ?? 'Predominio de adiposidad relativa y formas redondeadas.';
 
 /** Un autoguardado de formulario nunca usa el onSave global: cada paciente trae el suyo. */
 const unscopedDraftSave: AutosaveSaveFn<AnthropometryDraftForm> = async () => {
@@ -160,22 +172,6 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     heightAutosave.reset({ height_cm: registeredHeight });
   }, [patient.id, registeredHeight]);
 
-  const draftForm = useMemo<AnthropometryDraftForm>(
-    () => ({ skinfolds, perimeters, diameters, equation, somatotypeCategory: selectedSomatotype, generalNotes }),
-    [skinfolds, perimeters, diameters, equation, selectedSomatotype, generalNotes]
-  );
-  const draftAutosave = useAutosave({
-    value: draftForm,
-    onSave: unscopedDraftSave,
-    scopeKey: patient.id,
-    enabled: Boolean(onAutosaveDraft),
-  });
-
-  // El contexto de guardado (paciente y borrador) queda ligado al scope desde el montaje.
-  useEffect(() => {
-    if (onAutosaveDraft) draftAutosave.reset(draftForm, onAutosaveDraft);
-  }, [patient.id, onAutosaveDraft]);
-
   const activeWeight = assessment?.weight_kg || patient.weight_kg || 60;
   // Sin estatura registrada no se inventa un valor: 0 = pendiente de ingresar.
   const activeHeight = effectiveHeight || assessment?.height_cm || 0;
@@ -217,6 +213,57 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     return 'Elevado';
   })();
 
+  // Tipo de cuerpo / somatotipo: se guarda explícitamente en el borrador una vez hay datos para calcularlo.
+  const hasSomatotypeInputs =
+    Object.values(skinfolds).some((v) => Number(v) > 0) || Object.values(diameters).some((v) => Number(v) > 0);
+  const somatotypeResult = useMemo<SomatotypeResult | undefined>(() => {
+    if (!somatotype || !hasSomatotypeInputs) return undefined;
+    const category = (somatotype.category as SomatotypeCategory) || selectedSomatotype;
+    return {
+      category,
+      endomorfia: somatotype.endomorphy,
+      mesomorfia: somatotype.mesomorphy,
+      ectomorfia: somatotype.ectomorphy,
+      interpretation: interpretSomatotype(category),
+    };
+  }, [somatotype, hasSomatotypeInputs, selectedSomatotype]);
+
+  const draftForm = useMemo<AnthropometryDraftForm>(
+    () => ({
+      skinfolds,
+      perimeters,
+      diameters,
+      equation,
+      somatotypeCategory: somatotypeResult?.category ?? selectedSomatotype,
+      generalNotes,
+      ...(somatotypeResult ? { somatotype: somatotypeResult } : {}),
+      ...(calculatedFatPct > 0 ? { estimatedBodyFatPct: calculatedFatPct, fatStatus } : {}),
+    }),
+    [skinfolds, perimeters, diameters, equation, selectedSomatotype, generalNotes, somatotypeResult, calculatedFatPct, fatStatus]
+  );
+  const draftAutosave = useAutosave({
+    value: draftForm,
+    onSave: unscopedDraftSave,
+    scopeKey: patient.id,
+    enabled: Boolean(onAutosaveDraft),
+  });
+
+  // El contexto de guardado (paciente y borrador) queda ligado al scope desde el montaje.
+  useEffect(() => {
+    if (onAutosaveDraft) draftAutosave.reset(draftForm, onAutosaveDraft);
+  }, [patient.id, onAutosaveDraft]);
+
+  // Cada medida confirmada (Guardar / Siguiente) se persiste de inmediato y se publica al estado global.
+  const [commitTick, setCommitTick] = useState(0);
+  useEffect(() => {
+    if (commitTick === 0) return;
+    onSectionSaved?.({ skinfolds, perimeters, diameters, equation, form: draftForm });
+    void draftAutosave.flush().catch((err) => {
+      console.error('No se pudo guardar la medida antropométrica:', err);
+      setSaveError('No se pudo guardar la medida. Intenta de nuevo.');
+    });
+  }, [commitTick]);
+
   // 2. Perimeters Derived Indices:
   const whr = perimeters.cadera > 0 ? Number((perimeters.cintura / perimeters.cadera).toFixed(2)) : 0;
   const heightCm = activeHeight;
@@ -226,18 +273,26 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
   // Handlers for updates
   const handleUpdateSkinfold = (key: keyof SkinfoldMeasurements, val: number) => {
     setSkinfolds((prev) => ({ ...prev, [key]: val }));
+    setCommitTick((t) => t + 1);
     setIsSaved(false);
   };
 
   const handleUpdatePerimeter = (key: keyof PerimeterMeasurements, val: number) => {
     setPerimeters((prev) => ({ ...prev, [key]: val }));
+    setCommitTick((t) => t + 1);
     setIsSaved(false);
   };
 
   const handleUpdateDiameter = (key: keyof BoneDiameterMeasurements, val: number) => {
     setDiameters((prev) => ({ ...prev, [key]: val }));
+    setCommitTick((t) => t + 1);
     setIsSaved(false);
   };
+
+  const [finishTick, setFinishTick] = useState(0);
+  useEffect(() => {
+    if (finishTick > 0) void handleSaveSection();
+  }, [finishTick]);
 
   const [sectionSavedTab, setSectionSavedTab] = useState<AnthropometryTab | null>(null);
 
@@ -246,7 +301,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     try {
       setSaveError(null);
       await Promise.all([draftAutosave.flush(), heightAutosave.flush()]);
-      onSectionSaved?.({ skinfolds, perimeters, diameters, equation });
+      onSectionSaved?.({ skinfolds, perimeters, diameters, equation, form: draftForm });
       setSectionSavedTab(activeTab);
       const idx = SECTION_FLOW.findIndex((s) => s.tab === activeTab);
       const next = SECTION_FLOW[idx + 1];
@@ -291,16 +346,11 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
         'Los perímetros se encuentran en rangos esperados para la edad, sexo y nivel de actividad física.',
       diameters,
       somatotype: {
-        category: somatotype?.category as SomatotypeCategory || selectedSomatotype,
-        endomorfia: somatotype?.endomorphy || 3.2,
-        mesomorfia: somatotype?.mesomorphy || 4.8,
-        ectomorfia: somatotype?.ectomorphy || 2.5,
-        interpretation:
-          (somatotype?.category || selectedSomatotype) === 'Mesomorfo'
-            ? 'Predominio de desarrollo musculoesquelético, con adecuado balance entre linealidad y robustez ósea.'
-            : (somatotype?.category || selectedSomatotype) === 'Ectomorfo'
-            ? 'Linealidad relativa dominante y bajo componente de adiposidad subcutánea.'
-            : 'Predominio de adiposidad relativa y formas redondeadas.',
+        category: somatotypeResult?.category ?? selectedSomatotype,
+        endomorfia: somatotypeResult?.endomorfia ?? 0,
+        mesomorfia: somatotypeResult?.mesomorfia ?? 0,
+        ectomorfia: somatotypeResult?.ectomorfia ?? 0,
+        interpretation: interpretSomatotype(somatotypeResult?.category ?? selectedSomatotype),
       },
       generalObservations: generalNotes,
       height_cm: activeHeight > 0 ? activeHeight : undefined,
@@ -308,7 +358,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
 
     try {
       setSaveError(null);
-      onSectionSaved?.({ skinfolds, perimeters, diameters, equation });
+      onSectionSaved?.({ skinfolds, perimeters, diameters, equation, form: draftForm });
       await onSave(assessmentToSave);
       // La evaluación quedó definitiva: lo pendiente del borrador ya no debe enviarse.
       draftAutosave.markSaved(draftForm);
@@ -523,6 +573,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
             onUpdateDiameter={handleUpdateDiameter}
             activePointKey={activePointKey}
             onSelectPointKey={setActivePointKey}
+            onFinishSection={() => setFinishTick((t) => t + 1)}
           />
         </div>
 

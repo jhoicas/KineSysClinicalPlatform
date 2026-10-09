@@ -56,3 +56,30 @@ test('ISAK se persiste completo: cresta ilíaca, diámetros, somatotipo y ecuaci
   assert.equal(r.source, 'isak_manual');
   assert.ok(r.bmr_kcal > 0);
 });
+
+test('borrador ISAK en curso: el informe toma pliegues, perímetros, diámetros y somatotipo guardados', async () => {
+  const { isakDraftToKinesys, hasIsakMeasurements } = await import('./coreBodyAdapters');
+  const form = {
+    skinfolds: { triceps: 10, subescapular: 11, biceps: 5, crestaIliaca: 12, supraespinal: 8, abdominal: 14, pecho: 7, muslo: 15, pierna: 9 },
+    perimeters: { brazoRelajado: 30, brazoContraido: 32, cintura: 80, cadera: 100, muslo: 55, pierna: 36, cuello: 38 },
+    diameters: { biacromial: 40, humero: 7, femur: 9.5 },
+    equation: 'faulkner_4' as const,
+    somatotypeCategory: 'Mesomorfo' as const,
+    generalNotes: '',
+    somatotype: { category: 'Meso-Endomorfo' as const, endomorfia: 3, mesomorfia: 5, ectomorfia: 2, interpretation: 'x' },
+  };
+  assert.equal(hasIsakMeasurements(form), true);
+  assert.equal(hasIsakMeasurements({ ...form, skinfolds: {} as never, perimeters: {} as never, diameters: {} as never }), false);
+
+  const d = isakDraftToKinesys(form, { id: 'd', tenantId: 't', nutritionistId: 'n', patientId: 'p', age: 30, gender: 'male', weightKg: 75, heightCm: 178 });
+  assert.equal(d.skinfold_chest_mm, 7);
+  assert.equal(d.skinfold_calf_mm, 9);
+  assert.equal(d.neck_cm, 38);
+  assert.equal(d.relaxed_arm_cm, 30);
+  assert.equal(d.diameter_femur_cm, 9.5);
+  assert.equal(d.somatotype_category, 'Meso-Endomorfo');
+  assert.equal(d.somatotype_mesomorphy, 5);
+
+  const s = selectNutritionSnapshot([ev({ id: 'old', source: 'isak_manual' })], [], d);
+  assert.equal(s.isak?.id, 'd');
+});

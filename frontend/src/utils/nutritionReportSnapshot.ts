@@ -38,12 +38,18 @@ export function selectActivePlan(plans: PlanNutricional[]): PlanNutricional | nu
   return latest(active.length > 0 ? active : plans.filter((p) => p.status !== 'archived'));
 }
 
+/**
+ * `draftIsak`: evaluación ISAK en curso (guardado progresivo) ya aplanada al formato del informe.
+ * Mientras tenga medidas capturadas, es el dato vigente del bloque ISAK: así el PDF refleja lo guardado
+ * paso a paso sin esperar a finalizar la evaluación.
+ */
 export function selectNutritionSnapshot(
   evaluations: EvaluacionAntropometrica[],
   plans: PlanNutricional[],
+  draftIsak: EvaluacionAntropometrica | null = null,
 ): NutritionReportSnapshot {
   return {
-    isak: latest(evaluations.filter(isIsakRecord)),
+    isak: draftIsak ?? latest(evaluations.filter(isIsakRecord)),
     withings: latest(evaluations.filter(isWithingsRecord)),
     plan: selectActivePlan(plans),
   };

@@ -82,6 +82,7 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const [manualMode, setManualMode] = useState<boolean>(composition.sourceMode === 'manual_entry');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const isFemale = patient.gender === 'F';
 
   // Rangos ACSM de % grasa: mujeres 18–28 %, hombres 10–20 %
@@ -316,12 +317,15 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
 
   const handleSaveAll = async () => {
     try {
-      await onSave(composition);
+      setSaveError(null);
+      // Se empaqueta la última versión del estado (composición + otros indicadores), no un cierre viejo.
+      await onSave(compositionRef.current ?? composition);
       dirtyRef.current = false;
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
       console.error('No se pudo guardar la composición corporal:', err);
+      setSaveError('No se pudo guardar la composición corporal en la historia clínica. Intenta de nuevo.');
     }
   };
 
@@ -867,7 +871,12 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
       </div>
 
       {/* Bottom Save Action Bar */}
-      <div className="flex justify-end gap-3 print:hidden">
+      <div className="flex items-center justify-end gap-3 print:hidden">
+        {saveError && (
+          <span role="alert" className="text-xs font-medium text-red-600">
+            {saveError}
+          </span>
+        )}
         <button
           id="btn-save-composition"
           onClick={handleSaveAll}

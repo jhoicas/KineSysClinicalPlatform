@@ -11,7 +11,7 @@ import {
 } from '../types';
 import { AnthropometryModule } from '../components/nutrition/AnthropometryModule';
 import { BodyCompositionModule } from '../components/nutrition/BodyCompositionModule';
-import type { BodyCompositionBIA } from '../types/coreBodyNutrition';
+import type { AnthropometryDraftForm, BodyCompositionBIA } from '../types/coreBodyNutrition';
 import { NutritionPlanningModule } from '../components/nutrition/NutritionPlanningModule';
 import { FhirNutritionOrderModule } from '../components/nutrition/FhirNutritionOrderModule';
 import { AnthropometryPdfModal } from '../components/nutrition/AnthropometryPdfModal';
@@ -20,6 +20,8 @@ import {
   coreBodyAnthroToKinesys,
   coreBodyPlanToKinesys,
   biaToKinesys,
+  hasIsakMeasurements,
+  isakDraftToKinesys,
 } from '../utils/coreBodyAdapters';
 import { selectNutritionSnapshot } from '../utils/nutritionReportSnapshot';
 import { useAppStore, ActivePatient } from '../store/useAppStore';
@@ -103,6 +105,13 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   const [draftSession, setDraftSession] = useState<{
     patientId: string;
     saver: AnthropometryDraftSaver;
+  } | null>(null);
+
+  // Última captura ISAK en curso (guardado progresivo): alimenta el informe/PDF sin esperar a finalizar.
+  const [draftIsakForm, setDraftIsakForm] = useState<{
+    patientId: string;
+    form: Partial<AnthropometryDraftForm>;
+    updatedAt: string;
   } | null>(null);
 
   // View modal states
@@ -239,6 +248,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   useEffect(() => {
     const patientId = activePatient?.id;
     setDraftSession(null);
+    setDraftIsakForm(null);
     if (!patientId) return;
 
     let cancelled = false;
@@ -255,6 +265,9 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       ]);
       if (cancelled) return;
 
+      if (hasIsakMeasurements(draft?.data)) {
+        setDraftIsakForm({ patientId, form: draft!.data, updatedAt: new Date().toISOString() });
+      }
       setDraftSession({
         patientId,
         saver: createAnthropometryDraftSaver(
@@ -544,7 +557,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       biaSnapshot: bia as unknown as Record<string, unknown>,
       weightKg: bia.pesoKg.value || undefined,
     });
-    if (bia.sourceMode !== 'manual_entry') return;
+    if (bia.sourceMode !== 'manual_entry') return; // las lecturas automáticas ya las persiste el backend
     if (!hasBiaValues(bia)) return;
     const record = biaToKinesys(bia, {
       tenantId,
@@ -565,12 +578,14 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       throw error;
     }
     biaRowRef.current = { patientId: activePatient.id, id: record.id };
-    if (opts.silent) {
-      // Sin recarga: se refleja en el estado local para que el informe consolidado lo incluya.
-      setEvaluations((prev) => [record, ...prev.filter((e) => e.id !== record.id)]);
-    } else {
-      await loadPatientNutritionData(activePatient.id);
-    }
+    // El snapshot global del informe se actualiza al instante (también en el guardado explícito),
+    // sin depender de que la recarga desde la base termine o devuelva la fila.
+    setEvaluations((prev) => [record, ...prev.filter((e) => e.id !== record.id)]);
+    useAppStore.getState().patchNutritionDraft({
+      patientId: activePatient.id,
+      biaSavedAt: new Date().toISOString(),
+    });
+    if (!opts.silent) await loadPatientNutritionData(activePatient.id);
   };
 
   const handleCreateTestFhirOrder = async (order: OrdenNutricionFHIR) => {
@@ -595,7 +610,26 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   const latestEvaluation = evaluations.length > 0 ? evaluations[0] : null;
 
   // Informe consolidado: último ISAK, última medición Withings y plan activo (por separado).
-  const snapshot = useMemo(() => selectNutritionSnapshot(evaluations, plans), [evaluations, plans]);
+  const draftIsak = useMemo<EvaluacionAntropometrica | null>(() => {
+    if (!draftIsakForm || !currentClinico || draftIsakForm.patientId !== currentClinico.id) return null;
+    const corePatient = toCoreBodyPatient(currentClinico);
+    return isakDraftToKinesys(draftIsakForm.form, {
+      id: `isak-draft-${currentClinico.id}`,
+      tenantId,
+      nutritionistId,
+      patientId: currentClinico.id,
+      age: corePatient.age,
+      gender: currentClinico.gender === 'female' ? 'female' : currentClinico.gender === 'other' ? 'other' : 'male',
+      weightKg: latestEvaluation?.weight_kg ?? 0,
+      heightCm: currentClinico.height_cm && currentClinico.height_cm > 0 ? currentClinico.height_cm : latestEvaluation?.height_cm ?? 0,
+      evaluatorName: nutritionistName,
+      updatedAt: draftIsakForm.updatedAt,
+    });
+  }, [draftIsakForm, currentClinico, latestEvaluation, tenantId, nutritionistId, nutritionistName]);
+  const snapshot = useMemo(
+    () => selectNutritionSnapshot(evaluations, plans, draftIsak),
+    [evaluations, plans, draftIsak],
+  );
   const latestIsak = snapshot.isak;
   const latestWithings = snapshot.withings;
   const activePlan = snapshot.plan;
@@ -1056,17 +1090,22 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                       heightCm: assessment.height_cm ?? corePatient.height_cm ?? 0,
                     }),
                   );
+                  setDraftIsakForm(null);
                   setActiveTab('bia');
                 }}
-                onSectionSaved={({ skinfolds, perimeters, diameters, equation }) =>
+                onSectionSaved={({ skinfolds, perimeters, diameters, equation, form }) => {
                   useAppStore.getState().patchNutritionDraft({
                     patientId: currentClinico.id,
                     equation,
                     isakSkinfolds: { ...skinfolds },
                     isakPerimeters: { ...perimeters },
                     isakDiameters: { ...diameters },
-                  })
-                }
+                    isakSomatotype: form.somatotype ? { ...form.somatotype } : null,
+                  });
+                  if (hasIsakMeasurements(form)) {
+                    setDraftIsakForm({ patientId: currentClinico.id, form, updatedAt: new Date().toISOString() });
+                  }
+                }}
               />
               ))}
 

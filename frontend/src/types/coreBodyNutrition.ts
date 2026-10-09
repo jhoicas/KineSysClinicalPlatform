@@ -55,6 +55,7 @@ export interface PerimeterMeasurements {
   cadera: number; // cm
   muslo: number; // cm
   pierna: number; // cm
+  cuello?: number; // cm
 }
 
 export interface BoneDiameterMeasurements {
@@ -78,6 +79,10 @@ export interface AnthropometryDraftForm {
   equation: EstimationEquationId;
   somatotypeCategory: SomatotypeCategory;
   generalNotes: string;
+  /** Somatotipo / tipo de cuerpo calculado, guardado explícitamente junto a los diámetros. */
+  somatotype?: SomatotypeResult;
+  estimatedBodyFatPct?: number;
+  fatStatus?: string;
 }
 
 export interface SomatotypeResult {

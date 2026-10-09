@@ -577,7 +577,7 @@ export interface EvaluacionAntropometrica {
   fat_ratio_percent?: number;
   heart_rate_bpm?: number;
   /** Composición segmental (kg) cuando la báscula/entrada manual la provee. */
-  segmental?: Partial<Record<'brazoIzq' | 'brazoDer' | 'tronco' | 'piernaIzq' | 'piernaDer', {
+  segmental?: Partial<Record<'brazoIzq' | 'brazoDer' | 'tronco' | 'troncoEspalda' | 'piernaIzq' | 'piernaDer', {
     muscleKg: number;
     fatKg: number;
     fatPct?: number;

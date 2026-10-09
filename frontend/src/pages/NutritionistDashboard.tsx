@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../app/providers/AuthProvider';
 import { useI18n } from '../app/providers/I18nProvider';
 import { supabase } from '../services/supabaseClient';
@@ -521,10 +521,31 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
 
   // Captura/edición manual de Withings Body Scan → fila persistida. Las lecturas automáticas
   // de la báscula ya las guarda el backend (webhook), por eso solo se persiste la entrada manual.
-  const handleSaveBia = async (bia: BodyCompositionBIA) => {
+  // Una sola fila Withings manual por sesión: el autoguardado la actualiza en vez de duplicarla.
+  const biaRowRef = useRef<{ patientId: string; id: string } | null>(null);
+
+  const hasBiaValues = (bia: BodyCompositionBIA) =>
+    [
+      bia.pesoKg,
+      bia.masaMuscularEsqueleticaKg,
+      bia.masaGrasaKg,
+      bia.porcentajeGrasaCorporal,
+      bia.otherIndicators.aguaCorporalTotalL,
+      bia.otherIndicators.proteinaKg,
+      bia.otherIndicators.mineralesKg,
+      bia.otherIndicators.grasaVisceralNivel,
+    ].some((i) => i.value > 0);
+
+  const handleSaveBia = async (bia: BodyCompositionBIA, opts: { silent?: boolean } = {}) => {
     if (!activePatient || !currentClinico) return;
+    useAppStore.getState().patchNutritionDraft({
+      patientId: currentClinico.id,
+      biaSource: 'WITHINGS',
+      biaSnapshot: bia as unknown as Record<string, unknown>,
+      weightKg: bia.pesoKg.value || undefined,
+    });
     if (bia.sourceMode !== 'manual_entry') return;
-    if (!(bia.pesoKg.value > 0) && !(bia.porcentajeGrasaCorporal.value > 0)) return;
+    if (!hasBiaValues(bia)) return;
     const record = biaToKinesys(bia, {
       tenantId,
       nutritionistId,
@@ -533,12 +554,23 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       gender: currentClinico.gender === 'female' ? 'female' : currentClinico.gender === 'other' ? 'other' : 'male',
       heightCm: baseHeightCm ?? 0,
     });
-    const { error } = await supabase.from('evaluaciones_antropometricas').insert(toAnthropometryInsert(record));
+    const existing = biaRowRef.current?.patientId === activePatient.id ? biaRowRef.current : null;
+    if (existing) record.id = existing.id;
+    const payload = toAnthropometryInsert(record);
+    const { error } = existing
+      ? await supabase.from('evaluaciones_antropometricas').update(payload).eq('id', existing.id)
+      : await supabase.from('evaluaciones_antropometricas').insert(payload);
     if (error) {
-      logSupabaseError('evaluaciones_antropometricas.insert(bia)', error);
+      logSupabaseError('evaluaciones_antropometricas.save(bia)', error);
       throw error;
     }
-    await loadPatientNutritionData(activePatient.id);
+    biaRowRef.current = { patientId: activePatient.id, id: record.id };
+    if (opts.silent) {
+      // Sin recarga: se refleja en el estado local para que el informe consolidado lo incluya.
+      setEvaluations((prev) => [record, ...prev.filter((e) => e.id !== record.id)]);
+    } else {
+      await loadPatientNutritionData(activePatient.id);
+    }
   };
 
   const handleCreateTestFhirOrder = async (order: OrdenNutricionFHIR) => {
@@ -1024,8 +1056,17 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                       heightCm: assessment.height_cm ?? corePatient.height_cm ?? 0,
                     }),
                   );
-                  setActiveTab('planificador');
+                  setActiveTab('bia');
                 }}
+                onSectionSaved={({ skinfolds, perimeters, diameters, equation }) =>
+                  useAppStore.getState().patchNutritionDraft({
+                    patientId: currentClinico.id,
+                    equation,
+                    isakSkinfolds: { ...skinfolds },
+                    isakPerimeters: { ...perimeters },
+                    isakDiameters: { ...diameters },
+                  })
+                }
               />
               ))}
 
@@ -1039,15 +1080,8 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                   heightCm: baseHeightCm,
                 })}
                 data={liveWithingsBia || latestBiaData}
-                onSave={async (bia) => {
-                  useAppStore.getState().patchNutritionDraft({
-                    patientId: currentClinico.id,
-                    biaSource: 'WITHINGS',
-                    biaSnapshot: bia as unknown as Record<string, unknown>,
-                    weightKg: bia.pesoKg.value || undefined,
-                  });
-                  await handleSaveBia(bia);
-                }}
+                onSave={(bia) => handleSaveBia(bia)}
+                onAutosave={(bia) => handleSaveBia(bia, { silent: true })}
               />
             )}
 

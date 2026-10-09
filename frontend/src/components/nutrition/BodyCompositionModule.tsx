@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Patient, BodyCompositionBIA, RangeIndicator } from '../../types/coreBodyNutrition';
 import {
   Activity,
@@ -20,13 +20,19 @@ import { api } from '../../services/apiClient';
 interface BodyCompositionModuleProps {
   patient: Patient;
   data?: BodyCompositionBIA;
-  onSave: (data: BodyCompositionBIA) => void;
+  /** Guardado explícito (botón): persiste y refresca la historia. */
+  onSave: (data: BodyCompositionBIA) => void | Promise<void>;
+  /** Guardado silencioso mientras se llenan los campos. */
+  onAutosave?: (data: BodyCompositionBIA) => void | Promise<void>;
 }
+
+const AUTOSAVE_DEBOUNCE_MS = 1500;
 
 export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
   patient,
   data,
   onSave,
+  onAutosave,
 }) => {
   const emptyRange = (
     unit: string,
@@ -98,8 +104,16 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
     });
   }, [isFemale]);
 
+  // Ediciones locales sin persistir: un refresco de `data` no debe pisarlas.
+  const dirtyRef = useRef(false);
+  const compositionRef = useRef(composition);
+  compositionRef.current = composition;
+  const onAutosaveRef = useRef(onAutosave);
+  onAutosaveRef.current = onAutosave;
+  const [autosaveTick, setAutosaveTick] = useState(0);
+
   useEffect(() => {
-    if (data) {
+    if (data && !dirtyRef.current) {
       setComposition(data);
       if (data.sourceMode === 'hardware_auto') {
         setManualMode(false);
@@ -255,6 +269,8 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
     field: 'pesoKg' | 'masaMuscularEsqueleticaKg' | 'masaGrasaKg' | 'porcentajeGrasaCorporal',
     val: number
   ) => {
+    dirtyRef.current = true;
+    setAutosaveTick((t) => t + 1);
     setComposition((prev) => ({
       ...prev,
       sourceMode: 'manual_entry',
@@ -269,6 +285,8 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
     field: keyof BodyCompositionBIA['otherIndicators'],
     val: number
   ) => {
+    dirtyRef.current = true;
+    setAutosaveTick((t) => t + 1);
     setComposition((prev) => ({
       ...prev,
       sourceMode: 'manual_entry',
@@ -282,10 +300,29 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
     }));
   };
 
-  const handleSaveAll = () => {
-    onSave(composition);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+  // Autoguardado con debounce al llenar los campos.
+  useEffect(() => {
+    if (autosaveTick === 0 || !onAutosaveRef.current) return;
+    const timer = setTimeout(async () => {
+      try {
+        await onAutosaveRef.current?.(compositionRef.current);
+        dirtyRef.current = false;
+      } catch (err) {
+        console.error('Autoguardado BIA falló:', err);
+      }
+    }, AUTOSAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [autosaveTick]);
+
+  const handleSaveAll = async () => {
+    try {
+      await onSave(composition);
+      dirtyRef.current = false;
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (err) {
+      console.error('No se pudo guardar la composición corporal:', err);
+    }
   };
 
   // Helper renderer for Horizontal Range Bar (Matching Image 3)

@@ -40,7 +40,21 @@ interface AnthropometryModuleProps {
   onAutosaveHeight?: (patientId: string, heightCm: number) => Promise<void>;
   /** Finaliza la evaluación: el borrador pasa a evaluación definitiva. */
   onSave: (assessment: AnthropometryAssessment) => void | Promise<void>;
+  /** Notifica al estado global las medidas capturadas al guardar cada subsección. */
+  onSectionSaved?: (measures: {
+    skinfolds: SkinfoldMeasurements;
+    perimeters: PerimeterMeasurements;
+    diameters: BoneDiameterMeasurements;
+    equation: EstimationEquationId;
+  }) => void;
 }
+
+/** Orden secuencial del flujo ISAK. */
+const SECTION_FLOW: { tab: AnthropometryTab; pointKey: string }[] = [
+  { tab: 'perimeters', pointKey: 'cintura' },
+  { tab: 'skinfolds', pointKey: 'triceps' },
+  { tab: 'diameters', pointKey: 'biacromial' },
+];
 
 const MIN_HEIGHT_CM = 30;
 const MAX_HEIGHT_CM = 300;
@@ -85,9 +99,10 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
   onAutosaveDraft,
   onAutosaveHeight,
   onSave,
+  onSectionSaved,
 }) => {
-  const [activeTab, setActiveTab] = useState<AnthropometryTab>('skinfolds');
-  const [activePointKey, setActivePointKey] = useState<string>('triceps');
+  const [activeTab, setActiveTab] = useState<AnthropometryTab>('perimeters');
+  const [activePointKey, setActivePointKey] = useState<string>('cintura');
   const [isSaved, setIsSaved] = useState(false);
 
   // State: borrador persistido > assessment previo > vacío (0 = sin medir)
@@ -224,6 +239,30 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     setIsSaved(false);
   };
 
+  const [sectionSavedTab, setSectionSavedTab] = useState<AnthropometryTab | null>(null);
+
+  /** Guarda lo capturado (borrador) y avanza a la siguiente subsección del flujo. */
+  const handleSaveSection = async () => {
+    try {
+      setSaveError(null);
+      await Promise.all([draftAutosave.flush(), heightAutosave.flush()]);
+      onSectionSaved?.({ skinfolds, perimeters, diameters, equation });
+      setSectionSavedTab(activeTab);
+      const idx = SECTION_FLOW.findIndex((s) => s.tab === activeTab);
+      const next = SECTION_FLOW[idx + 1];
+      if (next) {
+        setActiveTab(next.tab);
+        setActivePointKey(next.pointKey);
+        setSectionSavedTab(null);
+      } else {
+        setTimeout(() => setSectionSavedTab(null), 2500);
+      }
+    } catch (err) {
+      console.error('No se pudo guardar la subsección antropométrica:', err);
+      setSaveError('No se pudo guardar la sección. Intenta de nuevo.');
+    }
+  };
+
   const handleSave = async () => {
     // Garantiza que el borrador y la estatura estén en la base antes de finalizar.
     await Promise.all([draftAutosave.flush(), heightAutosave.flush()]);
@@ -269,6 +308,7 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
 
     try {
       setSaveError(null);
+      onSectionSaved?.({ skinfolds, perimeters, diameters, equation });
       await onSave(assessmentToSave);
       // La evaluación quedó definitiva: lo pendiente del borrador ya no debe enviarse.
       draftAutosave.markSaved(draftForm);
@@ -409,6 +449,26 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
       {/* Specialty Sub-Navigation Tabs (Pliegues cutáneos | Perímetros | Diámetros óseos) */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
         <button
+          id="tab-anthro-perimeters"
+          onClick={() => {
+            setActiveTab('perimeters');
+            setActivePointKey('cintura');
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${
+            activeTab === 'perimeters'
+              ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-600/30'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Compass className="w-4 h-4" />
+          Perímetros
+          <span className={`ml-1 text-2xs px-2 py-0.5 rounded-full ${activeTab === 'perimeters' ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
+            6 medidas
+          </span>
+        </button>
+
+
+        <button
           id="tab-anthro-skinfolds"
           onClick={() => {
             setActiveTab('skinfolds');
@@ -427,24 +487,6 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
           </span>
         </button>
 
-        <button
-          id="tab-anthro-perimeters"
-          onClick={() => {
-            setActiveTab('perimeters');
-            setActivePointKey('cintura');
-          }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all ${
-            activeTab === 'perimeters'
-              ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-600/30'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <Compass className="w-4 h-4" />
-          Perímetros
-          <span className={`ml-1 text-2xs px-2 py-0.5 rounded-full ${activeTab === 'perimeters' ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-600'}`}>
-            6 medidas
-          </span>
-        </button>
 
         <button
           id="tab-anthro-diameters"
@@ -821,6 +863,28 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
               </div>
             </>
           )}
+
+          {/* Guardar / Siguiente (flujo secuencial) */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-2xs text-slate-500">
+              Paso {SECTION_FLOW.findIndex((s) => s.tab === activeTab) + 1} de {SECTION_FLOW.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                id="btn-anthro-section-save"
+                type="button"
+                onClick={() => void handleSaveSection()}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-all"
+              >
+                {sectionSavedTab === activeTab ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                {activeTab === 'diameters'
+                  ? sectionSavedTab === activeTab
+                    ? 'Guardado'
+                    : 'Guardar'
+                  : 'Guardar y Siguiente'}
+              </button>
+            </div>
+          </div>
 
           {/* General Notes Card */}
           <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">

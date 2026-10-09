@@ -31,6 +31,9 @@ export interface NutritionSessionDraft {
   weightKg?: number;
   heightCm?: number;
   isakMeasures?: Record<string, number>;
+  isakPerimeters?: Record<string, number>;
+  isakSkinfolds?: Record<string, number>;
+  isakDiameters?: Record<string, number>;
   equation?: string;
   biaSource?: 'WITHINGS';
   biaSnapshot?: Record<string, unknown> | null;

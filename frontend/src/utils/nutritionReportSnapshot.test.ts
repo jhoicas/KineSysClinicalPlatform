@@ -83,3 +83,30 @@ test('borrador ISAK en curso: el informe toma pliegues, perímetros, diámetros 
   const s = selectNutritionSnapshot([ev({ id: 'old', source: 'isak_manual' })], [], d);
   assert.equal(s.isak?.id, 'd');
 });
+
+test('la captura BIA del store llega a la Sección 2 aunque no haya fila persistida', () => {
+  const draftWithings = ev({
+    id: 'bia-draft',
+    source: 'withings_manual',
+    weight_kg: 80,
+    body_fat_percentage: 20,
+    muscle_mass_kg: 35,
+    created_at: '2026-03-01T00:00:00Z',
+  });
+  const s = selectNutritionSnapshot([], [], null, { draftWithings, profile: { heightCm: 180, age: 30, gender: 'male' } });
+  assert.equal(s.withings?.weight_kg, 80);
+  assert.equal(s.withings?.height_cm, 180);
+  assert.equal(s.withings?.bmi, 24.7);
+  assert.equal(s.withings?.fat_mass_kg, 16);
+  assert.equal(s.withings?.bmr_kcal, 1780);
+});
+
+test('peso/estatura/IMC/TMB se recalculan en ISAK con datos del perfil y la BIA', () => {
+  const isak = ev({ id: 'isak', source: 'isak_manual', weight_kg: 1, height_cm: 0, bmi: 0, body_fat_percentage: 0, fat_mass_kg: 12 });
+  const withings = ev({ id: 'w', source: 'withings_scale', weight_kg: 60, created_at: '2026-03-01T00:00:00Z' });
+  const s = selectNutritionSnapshot([isak, withings], [], null, { profile: { heightCm: 165, age: 28, gender: 'female' } });
+  assert.equal(s.isak?.weight_kg, 60);
+  assert.equal(s.isak?.bmi, 22);
+  assert.equal(s.isak?.body_fat_percentage, 20);
+  assert.equal(s.isak?.bmr_kcal, Math.round(10 * 60 + 6.25 * 165 - 5 * 28 - 161));
+});

@@ -88,7 +88,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   const { t } = useI18n();
 
   // Global Active Patient Store
-  const { activePatient, setActivePatient, clearActivePatient } = useAppStore();
+  const { activePatient, setActivePatient, clearActivePatient, nutritionDraft } = useAppStore();
 
   // Active Navigation Tab
   const [activeTab, setActiveTab] = useState<
@@ -639,9 +639,39 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
     if (!draftIsakForm || !currentClinico || draftIsakForm.patientId !== currentClinico.id) return null;
     return buildDraftIsak(draftIsakForm.form, draftIsakForm.updatedAt);
   }, [draftIsakForm, currentClinico, buildDraftIsak]);
+  // Captura BIA vigente en el store (manual guardada o báscula) aplanada al formato del informe:
+  // garantiza que la Sección 2 refleje lo ingresado aunque la recarga desde la base no devuelva la fila.
+  const draftWithings = useMemo<EvaluacionAntropometrica | null>(() => {
+    if (!currentClinico || nutritionDraft?.patientId !== currentClinico.id) return null;
+    const bia = nutritionDraft.biaSnapshot as unknown as BodyCompositionBIA | null | undefined;
+    if (!bia?.pesoKg || !bia.otherIndicators || !hasBiaValues(bia)) return null;
+    const stampIso = nutritionDraft.updatedAt ?? nutritionDraft.biaSavedAt ?? new Date().toISOString();
+    return {
+      ...biaToKinesys(bia, {
+        tenantId,
+        nutritionistId,
+        patientId: currentClinico.id,
+        age: toCoreBodyPatient(currentClinico).age,
+        gender: currentClinico.gender === 'female' ? 'female' : currentClinico.gender === 'other' ? 'other' : 'male',
+        heightCm: currentClinico.height_cm ?? 0,
+      }),
+      id: `bia-draft-${currentClinico.id}`,
+      evaluation_date: stampIso,
+      created_at: stampIso,
+    };
+  }, [nutritionDraft, currentClinico, tenantId, nutritionistId]);
   const snapshot = useMemo(
-    () => selectNutritionSnapshot(evaluations, plans, draftIsak),
-    [evaluations, plans, draftIsak],
+    () =>
+      selectNutritionSnapshot(evaluations, plans, draftIsak, {
+        draftWithings,
+        profile: {
+          heightCm: currentClinico?.height_cm,
+          weightKg: nutritionDraft?.patientId === currentClinico?.id ? nutritionDraft?.weightKg : undefined,
+          age: currentClinico ? toCoreBodyPatient(currentClinico).age : undefined,
+          gender: currentClinico?.gender,
+        },
+      }),
+    [evaluations, plans, draftIsak, draftWithings, currentClinico, nutritionDraft],
   );
   const latestIsak = snapshot.isak;
   const latestWithings = snapshot.withings;
@@ -709,7 +739,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       patientId: currentClinico.id,
       date: biaSource.evaluation_date ? String(biaSource.evaluation_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
       deviceModel: 'Withings Body Scan',
-      sourceMode: isWithings ? 'hardware_auto' : 'manual_entry',
+      sourceMode: evAny.source === 'withings_manual' || !isWithings ? 'manual_entry' : 'hardware_auto',
       lastSyncTimestamp: String(biaSource.evaluation_date || ''),
       pesoKg: { value: weight, minNormal: 45, maxNormal: 100, unit: 'kg', status: 'Normal' },
       masaMuscularEsqueleticaKg: { value: muscle, minNormal: 18, maxNormal: 40, unit: 'kg', status: 'Normal' },

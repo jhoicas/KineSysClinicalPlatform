@@ -312,10 +312,14 @@ export async function generateNutritionReportPdf(options: GenerateNutritionRepor
   // resumen ejecutivo
   const totals = plan ? planTotals(plan) : null;
   const wRef = withings ?? isak;
-  const bmi = Number(wRef?.bmi) || 0;
-  const fatPct = Number(withings?.body_fat_percentage) || Number(isak?.body_fat_percentage) || 0;
+  const bmi = Number(wRef?.bmi) || Number(isak?.bmi) || 0;
+  const fatPct =
+    Number(withings?.body_fat_percentage) ||
+    Number(withings?.fat_ratio_percent) ||
+    Number(isak?.body_fat_percentage) ||
+    0;
   tiles([
-    { label: 'Peso', value: num(wRef?.weight_kg), unit: 'kg' },
+    { label: 'Peso', value: num(Number(wRef?.weight_kg) || Number(isak?.weight_kg) || 0), unit: 'kg' },
     { label: 'IMC', value: num(bmi), badge: bmiBadge(bmi) },
     { label: '% Grasa corporal', value: num(fatPct), unit: '%', badge: fatPctBadge(fatPct, female) },
     {

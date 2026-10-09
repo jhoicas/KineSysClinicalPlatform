@@ -9,7 +9,7 @@ import type { FoodItem } from '../../types';
 import type { PacienteClinico } from '../../types';
 import { FoodSearchCombobox } from './FoodSearchCombobox';
 import { scaleNutrientPer100g, roundNutrient } from '../../utils/nutritionCalculations';
-import { coreBodyPlanToKinesys } from '../../utils/coreBodyAdapters';
+import { coreBodyPlanToKinesys, mifflinStJeorBmr } from '../../utils/coreBodyAdapters';
 import { EcoExportActions } from '../common/EcoExportActions';
 import {
   Apple,
@@ -135,12 +135,34 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
     setIsSaved(false);
   };
 
-  const handleSavePlan = () => {
-    onSave({
+  /** Plan listo para persistir: requerimientos y macros derivados de lo realmente planificado. */
+  const buildPlanToPersist = (): NutritionPlan => {
+    const gender = patient.gender === 'F' ? 'female' : patient.gender === 'M' ? 'male' : 'other';
+    const bmr = mifflinStJeorBmr(patient.weight_kg ?? 0, patient.height_cm ?? 0, patient.age, gender);
+    const tdee = Math.round(bmr * 1.375);
+    const macroKcal = totalProteinG * 4 + totalCarbsG * 4 + totalLipidsG * 9;
+    const pct = (g: number, k: number) => (macroKcal > 0 ? Math.round(((g * k) / macroKcal) * 100) : 0);
+    const dailyCost = allEntries.reduce((acc, e) => acc + (e.estimatedCostCOP || 0), 0);
+    return {
       ...currentPlan,
-      dailyBasketEstimatedCostCOP: 0,
-      monthlyBasketEstimatedCostCOP: 0,
-    });
+      basalMetabolicRateKcal: bmr,
+      totalDailyEnergyExpenditureKcal: tdee,
+      targetCaloriesKcal: currentPlan.targetCaloriesKcal || totalCalories,
+      macroTargets: {
+        proteinGrams: Math.round(totalProteinG),
+        carbsGrams: Math.round(totalCarbsG),
+        lipidsGrams: Math.round(totalLipidsG),
+        proteinPct: pct(totalProteinG, 4),
+        carbsPct: pct(totalCarbsG, 4),
+        lipidsPct: pct(totalLipidsG, 9),
+      },
+      dailyBasketEstimatedCostCOP: dailyCost,
+      monthlyBasketEstimatedCostCOP: dailyCost * 30,
+    };
+  };
+
+  const handleSavePlan = () => {
+    onSave(buildPlanToPersist());
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
@@ -191,7 +213,7 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
               <EcoExportActions
                 patient={clinicalPatient}
                 documentType="plan_nutricional"
-                plan={coreBodyPlanToKinesys(currentPlan, { tenantId })}
+                plan={coreBodyPlanToKinesys(buildPlanToPersist(), { tenantId })}
                 nutritionistName={patient.nutritionist}
                 size="sm"
                 showPreviewOption={true}
@@ -238,6 +260,66 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
         </div>
       </div>
 
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+        <label className="block">
+          <span className="text-2xs font-semibold text-slate-500 uppercase tracking-wider">Objetivo</span>
+          <select
+            value={currentPlan.targetObjective}
+            onChange={(e) => {
+              setCurrentPlan((p) => ({ ...p, targetObjective: e.target.value as NutritionPlan['targetObjective'] }));
+              setIsSaved(false);
+            }}
+            className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 font-semibold text-slate-800"
+          >
+            <option>Definición / Descenso de Grasa</option>
+            <option>Hipertrofia Muscular</option>
+            <option>Mantenimiento y Rendimiento</option>
+            <option>Recomposición Corporal</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-2xs font-semibold text-slate-500 uppercase tracking-wider">Meta calórica (kcal)</span>
+          <input
+            type="number"
+            min={0}
+            value={currentPlan.targetCaloriesKcal || ''}
+            placeholder={String(totalCalories || '')}
+            onChange={(e) => {
+              setCurrentPlan((p) => ({ ...p, targetCaloriesKcal: Number(e.target.value) || 0 }));
+              setIsSaved(false);
+            }}
+            className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 font-semibold text-slate-800"
+          />
+        </label>
+        <label className="block">
+          <span className="text-2xs font-semibold text-slate-500 uppercase tracking-wider">Hidratación (L/día)</span>
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            value={currentPlan.hydrationDailyLiters || ''}
+            onChange={(e) => {
+              setCurrentPlan((p) => ({ ...p, hydrationDailyLiters: Number(e.target.value) || 0 }));
+              setIsSaved(false);
+            }}
+            className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 font-semibold text-slate-800"
+          />
+        </label>
+        <label className="block sm:col-span-4">
+          <span className="text-2xs font-semibold text-slate-500 uppercase tracking-wider">Indicaciones generales</span>
+          <textarea
+            rows={2}
+            value={currentPlan.generalIndications}
+            onChange={(e) => {
+              setCurrentPlan((p) => ({ ...p, generalIndications: e.target.value }));
+              setIsSaved(false);
+            }}
+            className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-slate-800"
+            placeholder="Recomendaciones clínicas, restricciones, suplementación…"
+          />
+        </label>
+      </div>
+
       <div className="space-y-4">
         {currentPlan.meals.map((meal) => {
           const mealKcal = meal.entries.reduce((s, e) => s + e.caloriesKcal, 0);
@@ -269,6 +351,23 @@ export const NutritionPlanningModule: React.FC<NutritionPlanningModuleProps> = (
                     <Plus className="w-3 h-3" /> Alimento
                   </button>
                 </div>
+              </div>
+              <div className="px-3 pt-3">
+                <input
+                  type="text"
+                  value={meal.clinicalTip || ''}
+                  onChange={(e) => {
+                    setCurrentPlan((p) => ({
+                      ...p,
+                      meals: p.meals.map((m) =>
+                        m.mealTime === meal.mealTime ? { ...m, clinicalTip: e.target.value } : m,
+                      ),
+                    }));
+                    setIsSaved(false);
+                  }}
+                  placeholder="Nota clínica de esta comida (opcional)"
+                  className="w-full rounded-lg border border-slate-200 px-2 py-1 text-2xs text-slate-700"
+                />
               </div>
               <div className="p-3 space-y-2">
                 {meal.entries.length === 0 ? (

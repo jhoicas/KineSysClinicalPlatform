@@ -14,12 +14,21 @@ import {
   getAnthropometryPdfBlob,
   getAnthropometryPdfDataUrl,
 } from '../../utils/anthropometryPdfExport';
+import {
+  downloadNutritionReportPdf,
+  getNutritionReportPdfBase64,
+  getNutritionReportPdfBlob,
+} from '../../utils/nutritionReportPdf';
+import { buildNutritionReportSummary } from '../../utils/nutritionReportSummary';
 import { PdfViewer } from './PdfViewer';
 
 export interface EcoExportActionsProps {
   patient: PacienteClinico;
-  documentType: 'plan_nutricional' | 'antropometria' | 'historia_clinica';
+  documentType: 'plan_nutricional' | 'antropometria' | 'historia_clinica' | 'informe_nutricional';
   plan?: PlanNutricional | null;
+  /** Informe integral: último ISAK, última medición Withings y plan activo. */
+  isakEvaluation?: EvaluacionAntropometrica | null;
+  withingsEvaluation?: EvaluacionAntropometrica | null;
   evaluation?: EvaluacionAntropometrica | null;
   historyEvaluations?: EvaluacionAntropometrica[];
   tenant?: Tenant | null;
@@ -36,6 +45,8 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
   patient,
   documentType,
   plan,
+  isakEvaluation,
+  withingsEvaluation,
   evaluation,
   historyEvaluations,
   tenant: propsTenant,
@@ -58,7 +69,11 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
   const [recipientEmail, setRecipientEmail] = useState(defaultEmail);
   const [customMessage, setCustomMessage] = useState(
     `Hola ${patient.first_name || ''}, te adjunto tu ${
-      documentType === 'plan_nutricional' ? 'Plan Nutricional' : 'Evaluación Antropométrica'
+      documentType === 'plan_nutricional'
+        ? 'Plan Nutricional'
+        : documentType === 'informe_nutricional'
+        ? 'Informe Nutricional Integral'
+        : 'Evaluación Antropométrica'
     } actualizado con las pautas e indicaciones clínicas.`
   );
   const [isSendingEmail, setIsSendingEmail] = useState(false);
@@ -70,6 +85,8 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
   const docTypeName =
     documentType === 'plan_nutricional'
       ? 'Plan Nutricional'
+      : documentType === 'informe_nutricional'
+      ? 'Informe Nutricional Integral'
       : documentType === 'antropometria'
       ? 'Evaluación Antropométrica'
       : 'Historia Clínica';
@@ -100,6 +117,14 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
     };
   };
 
+  const reportIsak = isakEvaluation ?? evaluation ?? null;
+  const hasReportData = Boolean(reportIsak || withingsEvaluation || plan);
+
+  const getReportPdfOptions = () => {
+    const { patient: _p, ...rest } = getPdfOptions();
+    return { ...rest, patient, isak: reportIsak, withings: withingsEvaluation ?? null, plan: plan ?? null };
+  };
+
   // 1. Download handler
   const handleDownloadPdf = async () => {
     try {
@@ -109,7 +134,9 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
       // Yield event loop for immediate UI responsiveness
       await new Promise((r) => setTimeout(r, 80));
 
-      if (documentType === 'plan_nutricional' && plan) {
+      if (documentType === 'informe_nutricional' && hasReportData) {
+        await downloadNutritionReportPdf(getReportPdfOptions());
+      } else if (documentType === 'plan_nutricional' && plan) {
         downloadNutritionPlanPdf({
           ...getPdfOptions(),
           plan,
@@ -167,7 +194,9 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
       const dateStr = new Date().toISOString().split('T')[0];
       const filename = `${docTypeName.replace(/\s+/g, '_')}_${lastName}_${dateStr}.pdf`;
 
-      if (documentType === 'plan_nutricional' && plan) {
+      if (documentType === 'informe_nutricional' && hasReportData) {
+        pdfBase64 = await getNutritionReportPdfBase64(getReportPdfOptions());
+      } else if (documentType === 'plan_nutricional' && plan) {
         pdfBase64 = await getNutritionPlanPdfBase64({
           ...getPdfOptions(),
           plan,
@@ -193,6 +222,17 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
         clinic_name: activeTenant?.name || 'KineSys Salud & Centro Clínico',
         primary_color: activeTenant?.primary_color || '#004870',
         nutritionist_name: effectiveNutritionistName,
+        clinic_phone: getPdfOptions().clinicPhone,
+        clinic_email: getPdfOptions().clinicEmail,
+        report_summary:
+          documentType === 'informe_nutricional'
+            ? buildNutritionReportSummary({
+                patient,
+                isak: reportIsak,
+                withings: withingsEvaluation ?? null,
+                plan: plan ?? null,
+              })
+            : undefined,
         custom_message: customMessage,
         tenant_id: activeTenant?.id,
       };
@@ -210,7 +250,7 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
       setStatusMessage({
         type: 'success',
         text: `🌱 ¡Documento enviado con éxito a ${recipientEmail}!`,
-        impact: data?.eco_saved || { paper_sheets: 2, water_liters: 20 },
+        impact: data?.eco_impact || data?.eco_saved || { paper_sheets: 2, water_liters: 20 },
       });
 
       onSuccess?.(data);
@@ -300,8 +340,8 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
               <span className="font-bold">{statusMessage.text}</span>
               {statusMessage.impact && (
                 <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium mt-0.5">
-                  🌱 Impacto ambiental: Has ahorrado aproximadamente {statusMessage.impact.paper_sheets || 2} hojas
-                  de papel y {(statusMessage.impact.water_liters || 20)}L de agua.
+                  🌱 Impacto ambiental: Has ahorrado aproximadamente {statusMessage.impact.paper_sheets || statusMessage.impact.paper_saved_sheets || 2} hojas
+                  de papel y {(statusMessage.impact.water_liters || statusMessage.impact.water_saved_liters || 20)}L de agua.
                 </p>
               )}
             </div>
@@ -478,6 +518,9 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
             <div className="flex-1 w-full h-full min-h-[500px] overflow-hidden">
               <PdfViewer
                 generatePdf={() => {
+                  if (documentType === 'informe_nutricional' && hasReportData) {
+                    return getNutritionReportPdfBlob(getReportPdfOptions());
+                  }
                   if (documentType === 'plan_nutricional' && plan) {
                     return getNutritionPlanPdfBlob({
                       ...getPdfOptions(),

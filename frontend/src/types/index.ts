@@ -523,6 +523,8 @@ export interface EvaluacionAntropometrica {
   skinfold_biceps_mm?: number;
   skinfold_thigh_mm?: number;
   skinfold_calf_mm?: number;
+  skinfold_iliac_crest_mm?: number;
+  skinfold_chest_mm?: number;
 
   // Perímetros (cm)
   waist_cm: number;
@@ -532,6 +534,27 @@ export interface EvaluacionAntropometrica {
   thigh_cm?: number;
   calf_cm?: number;
   neck_cm?: number;
+
+  // Diámetros óseos (cm) — protocolo ISAK
+  diameter_biacromial_cm?: number;
+  diameter_humerus_cm?: number;
+  diameter_femur_cm?: number;
+
+  // Metadatos y resultados ISAK
+  isak_equation?: string;
+  fat_status?: string;
+  somatotype_category?: string;
+  somatotype_endomorphy?: number;
+  somatotype_mesomorphy?: number;
+  somatotype_ectomorphy?: number;
+  somatotype_interpretation?: string;
+  waist_height_ratio?: number;
+  waist_hip_status?: string;
+  arm_ratio?: number;
+  perimeters_interpretation?: string;
+  evaluator_name?: string;
+  evaluator_certification?: string;
+  evaluation_number?: string;
 
   // Resultados calculados (Termodinámica & Antropometría)
   bmi: number;
@@ -551,6 +574,14 @@ export interface EvaluacionAntropometrica {
   bone_mass_kg?: number;
   muscle_mass_kg?: number;
   visceral_fat_index?: number;
+  fat_ratio_percent?: number;
+  heart_rate_bpm?: number;
+  /** Composición segmental (kg) cuando la báscula/entrada manual la provee. */
+  segmental?: Partial<Record<'brazoIzq' | 'brazoDer' | 'tronco' | 'piernaIzq' | 'piernaDer', {
+    muscleKg: number;
+    fatKg: number;
+    fatPct?: number;
+  }>>;
 
   clinical_notes?: string;
   created_at: string;
@@ -568,6 +599,8 @@ export interface AlimentoItem {
   carbs_g: number;
   fats_g: number;
   sodium_mg: number;
+  portion_count?: number;
+  cost_cop?: number;
   potassium_mg?: number;
   fiber_g?: number;
   sugars_g?: number;
@@ -596,6 +629,7 @@ export interface TiempoComida {
   id: string;
   name: string; // "Desayuno", "Colación Mañana", "Almuerzo", "Merienda", "Cena", etc.
   time_suggestion?: string; // "08:00"
+  clinical_tip?: string;
   items: AlimentoItem[];
   total_calories: number;
   total_protein: number;
@@ -636,6 +670,12 @@ export interface PlanNutricional {
   
   notes_and_recommendations: string;
   hydration_target_liters: number;
+  objective?: string;
+  bmr_kcal?: number;
+  tdee_kcal?: number;
+  micronutrient_targets?: { calcium_mg: number; iron_mg: number; sodium_mg: number };
+  daily_cost_cop?: number;
+  monthly_cost_cop?: number;
   created_at: string;
   updated_at?: string;
 }

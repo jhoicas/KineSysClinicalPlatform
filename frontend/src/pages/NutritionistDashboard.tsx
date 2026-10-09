@@ -19,7 +19,9 @@ import {
   toCoreBodyPatient,
   coreBodyAnthroToKinesys,
   coreBodyPlanToKinesys,
+  biaToKinesys,
 } from '../utils/coreBodyAdapters';
+import { selectNutritionSnapshot } from '../utils/nutritionReportSnapshot';
 import { useAppStore, ActivePatient } from '../store/useAppStore';
 import { logSupabaseError } from '../utils/supabaseErrors';
 import {
@@ -491,11 +493,49 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       nutritionist_id: nutritionistId,
       nutritionist_name: nutritionistName,
     };
-    const payload = toNutritionPlanInsert(scopedPlan);
-    const { error } = await supabase.from('planes_nutricionales').insert(payload);
+    const payload = toNutritionPlanInsert({ ...scopedPlan, status: 'active' });
+    const { data: inserted, error } = await supabase
+      .from('planes_nutricionales')
+      .insert(payload)
+      .select('id')
+      .single();
     if (error) {
       console.error('Supabase Error:', error);
       logSupabaseError('planes_nutricionales.insert', error);
+      throw error;
+    }
+
+    // Un solo plan activo por paciente: el resto pasa a archivado.
+    if (inserted?.id) {
+      const { error: archiveError } = await supabase
+        .from('planes_nutricionales')
+        .update({ status: 'archived' })
+        .eq('tenant_id', tenantId)
+        .eq('patient_id', activePatient.id)
+        .eq('status', 'active')
+        .neq('id', inserted.id);
+      if (archiveError) logSupabaseError('planes_nutricionales.archive', archiveError);
+    }
+    await loadPatientNutritionData(activePatient.id);
+  };
+
+  // Captura/edición manual de Withings Body Scan → fila persistida. Las lecturas automáticas
+  // de la báscula ya las guarda el backend (webhook), por eso solo se persiste la entrada manual.
+  const handleSaveBia = async (bia: BodyCompositionBIA) => {
+    if (!activePatient || !currentClinico) return;
+    if (bia.sourceMode !== 'manual_entry') return;
+    if (!(bia.pesoKg.value > 0) && !(bia.porcentajeGrasaCorporal.value > 0)) return;
+    const record = biaToKinesys(bia, {
+      tenantId,
+      nutritionistId,
+      patientId: activePatient.id,
+      age: toCoreBodyPatient(currentClinico).age,
+      gender: currentClinico.gender === 'female' ? 'female' : currentClinico.gender === 'other' ? 'other' : 'male',
+      heightCm: baseHeightCm ?? 0,
+    });
+    const { error } = await supabase.from('evaluaciones_antropometricas').insert(toAnthropometryInsert(record));
+    if (error) {
+      logSupabaseError('evaluaciones_antropometricas.insert(bia)', error);
       throw error;
     }
     await loadPatientNutritionData(activePatient.id);
@@ -522,6 +562,12 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   // Find latest evaluation for the active patient
   const latestEvaluation = evaluations.length > 0 ? evaluations[0] : null;
 
+  // Informe consolidado: último ISAK, última medición Withings y plan activo (por separado).
+  const snapshot = useMemo(() => selectNutritionSnapshot(evaluations, plans), [evaluations, plans]);
+  const latestIsak = snapshot.isak;
+  const latestWithings = snapshot.withings;
+  const activePlan = snapshot.plan;
+
   // La estatura registrada del paciente es la base de los cálculos; una evaluación previa
   // solo se usa si el paciente no tiene estatura registrada.
   const baseHeightCm =
@@ -529,16 +575,17 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
 
   // Derive BIA snapshot for BodyCompositionModule from latest evaluation (Withings or manual)
   const latestBiaData = useMemo<BodyCompositionBIA | undefined>(() => {
-    if (!latestEvaluation || !currentClinico) return undefined;
-    const evAny = latestEvaluation as any;
+    const biaSource = latestWithings ?? latestEvaluation;
+    if (!biaSource || !currentClinico) return undefined;
+    const evAny = biaSource as any;
     const isWithings = evAny.source === 'withings_scale' || (evAny.device_model && String(evAny.device_model).includes('Withings'));
     const isFemale = currentClinico.gender === 'female';
     const fatMin = isFemale ? 18 : 10;
     const fatMax = isFemale ? 28 : 20;
 
-    const weight = Number(latestEvaluation.weight_kg) || Number(evAny.weight_kg) || 0;
-    const fatPct = Number(latestEvaluation.body_fat_percentage) || Number(evAny.fat_ratio_percent) || 0;
-    const muscle = Number(latestEvaluation.muscle_mass_kg) || Number(evAny.muscle_mass_kg) || 0;
+    const weight = Number(biaSource.weight_kg) || Number(evAny.weight_kg) || 0;
+    const fatPct = Number(biaSource.body_fat_percentage) || Number(evAny.fat_ratio_percent) || 0;
+    const muscle = Number(biaSource.muscle_mass_kg) || Number(evAny.muscle_mass_kg) || 0;
     const fatMass = Number(evAny.fat_mass_kg) || (weight > 0 && fatPct > 0 ? Number(((weight * fatPct) / 100).toFixed(1)) : 0);
     const hydration = Number(evAny.hydration_kg) || 0;
     const bone = Number(evAny.bone_mass_kg) || 0;
@@ -557,12 +604,12 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
     if (weight === 0 && fatPct === 0) return undefined;
 
     return {
-      id: `bia-${latestEvaluation.id || currentClinico.id}`,
+      id: `bia-${biaSource.id || currentClinico.id}`,
       patientId: currentClinico.id,
-      date: latestEvaluation.evaluation_date ? String(latestEvaluation.evaluation_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      date: biaSource.evaluation_date ? String(biaSource.evaluation_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
       deviceModel: 'Withings Body Scan',
       sourceMode: isWithings ? 'hardware_auto' : 'manual_entry',
-      lastSyncTimestamp: String(latestEvaluation.evaluation_date || ''),
+      lastSyncTimestamp: String(biaSource.evaluation_date || ''),
       pesoKg: { value: weight, minNormal: 45, maxNormal: 100, unit: 'kg', status: 'Normal' },
       masaMuscularEsqueleticaKg: { value: muscle, minNormal: 18, maxNormal: 40, unit: 'kg', status: 'Normal' },
       masaGrasaKg: { value: fatMass, minNormal: 8, maxNormal: 35, unit: 'kg', status: 'Normal' },
@@ -574,11 +621,11 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
         status: fatPct < fatMin ? 'Bajo' : fatPct <= fatMax ? 'Adecuada' : 'Elevado',
       },
       segmental: {
-        brazoIzq: { muscleKg: 0, fatKg: 0 },
-        brazoDer: { muscleKg: 0, fatKg: 0 },
-        tronco: { muscleKg: 0, fatKg: 0 },
-        piernaIzq: { muscleKg: 0, fatKg: 0 },
-        piernaDer: { muscleKg: 0, fatKg: 0 },
+        brazoIzq: biaSource.segmental?.brazoIzq ?? { muscleKg: 0, fatKg: 0 },
+        brazoDer: biaSource.segmental?.brazoDer ?? { muscleKg: 0, fatKg: 0 },
+        tronco: biaSource.segmental?.tronco ?? { muscleKg: 0, fatKg: 0 },
+        piernaIzq: biaSource.segmental?.piernaIzq ?? { muscleKg: 0, fatKg: 0 },
+        piernaDer: biaSource.segmental?.piernaDer ?? { muscleKg: 0, fatKg: 0 },
       },
       otherIndicators: {
         aguaCorporalTotalL: { value: hydration, minNormal: 25, maxNormal: 45, unit: 'L', status: 'Normal' },
@@ -588,7 +635,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       },
       evaluatorNotes: isWithings ? 'Medición sincronizada automáticamente desde Báscula Withings' : '',
     };
-  }, [latestEvaluation, currentClinico]);
+  }, [latestWithings, latestEvaluation, currentClinico]);
 
   return (
     <div className="min-h-screen flex bg-background font-sans text-on-background overflow-hidden">
@@ -779,22 +826,14 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {plans[0] && (
+                {(latestIsak || latestWithings || activePlan) && (
                   <EcoExportActions
                     patient={currentClinico}
-                    documentType="plan_nutricional"
-                    plan={plans[0]}
-                    nutritionistName={nutritionistName}
-                    tenant={tenant}
-                    size="sm"
-                    showPreviewOption={true}
-                  />
-                )}
-                {latestEvaluation && (
-                  <EcoExportActions
-                    patient={currentClinico}
-                    documentType="antropometria"
-                    evaluation={latestEvaluation}
+                    documentType="informe_nutricional"
+                    plan={activePlan}
+                    isakEvaluation={latestIsak}
+                    withingsEvaluation={latestWithings}
+                    evaluation={latestIsak ?? latestWithings}
                     historyEvaluations={evaluations}
                     nutritionistName={nutritionistName}
                     tenant={tenant}
@@ -1007,6 +1046,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                     biaSnapshot: bia as unknown as Record<string, unknown>,
                     weightKg: bia.pesoKg.value || undefined,
                   });
+                  await handleSaveBia(bia);
                 }}
               />
             )}

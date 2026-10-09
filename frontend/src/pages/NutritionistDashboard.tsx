@@ -40,6 +40,7 @@ import { PatientSearchCombobox } from '../components/common/PatientSearchCombobo
 import { EcoExportActions } from '../components/common/EcoExportActions';
 import { MedicalHistoryModal } from '../components/patients/MedicalHistoryModal';
 import { api } from '../services/apiClient';
+import { useNutritionReportExport } from '../hooks/useNutritionReportExport';
 import {
   anthropometryDraftApi,
   getAnthropometryDraft,
@@ -549,16 +550,20 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       bia.otherIndicators.grasaVisceralNivel,
     ].some((i) => i.value > 0);
 
-  const handleSaveBia = async (bia: BodyCompositionBIA, opts: { silent?: boolean } = {}) => {
-    if (!activePatient || !currentClinico) return;
+  /** Devuelve la medición persistida (null si no hay nada que guardar o la lectura es automática). */
+  const handleSaveBia = async (
+    bia: BodyCompositionBIA,
+    opts: { silent?: boolean } = {},
+  ): Promise<EvaluacionAntropometrica | null> => {
+    if (!activePatient || !currentClinico) return null;
     useAppStore.getState().patchNutritionDraft({
       patientId: currentClinico.id,
       biaSource: 'WITHINGS',
       biaSnapshot: bia as unknown as Record<string, unknown>,
       weightKg: bia.pesoKg.value || undefined,
     });
-    if (bia.sourceMode !== 'manual_entry') return; // las lecturas automáticas ya las persiste el backend
-    if (!hasBiaValues(bia)) return;
+    if (bia.sourceMode !== 'manual_entry') return null; // las lecturas automáticas ya las persiste el backend
+    if (!hasBiaValues(bia)) return null;
     const record = biaToKinesys(bia, {
       tenantId,
       nutritionistId,
@@ -586,6 +591,7 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
       biaSavedAt: new Date().toISOString(),
     });
     if (!opts.silent) await loadPatientNutritionData(activePatient.id);
+    return record;
   };
 
   const handleCreateTestFhirOrder = async (order: OrdenNutricionFHIR) => {
@@ -610,22 +616,29 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   const latestEvaluation = evaluations.length > 0 ? evaluations[0] : null;
 
   // Informe consolidado: último ISAK, última medición Withings y plan activo (por separado).
+  const buildDraftIsak = useCallback(
+    (form: Partial<AnthropometryDraftForm>, updatedAt: string): EvaluacionAntropometrica | null => {
+      if (!currentClinico) return null;
+      const corePatient = toCoreBodyPatient(currentClinico);
+      return isakDraftToKinesys(form, {
+        id: `isak-draft-${currentClinico.id}`,
+        tenantId,
+        nutritionistId,
+        patientId: currentClinico.id,
+        age: corePatient.age,
+        gender: currentClinico.gender === 'female' ? 'female' : currentClinico.gender === 'other' ? 'other' : 'male',
+        weightKg: latestEvaluation?.weight_kg ?? 0,
+        heightCm: currentClinico.height_cm && currentClinico.height_cm > 0 ? currentClinico.height_cm : latestEvaluation?.height_cm ?? 0,
+        evaluatorName: nutritionistName,
+        updatedAt,
+      });
+    },
+    [currentClinico, latestEvaluation, tenantId, nutritionistId, nutritionistName],
+  );
   const draftIsak = useMemo<EvaluacionAntropometrica | null>(() => {
     if (!draftIsakForm || !currentClinico || draftIsakForm.patientId !== currentClinico.id) return null;
-    const corePatient = toCoreBodyPatient(currentClinico);
-    return isakDraftToKinesys(draftIsakForm.form, {
-      id: `isak-draft-${currentClinico.id}`,
-      tenantId,
-      nutritionistId,
-      patientId: currentClinico.id,
-      age: corePatient.age,
-      gender: currentClinico.gender === 'female' ? 'female' : currentClinico.gender === 'other' ? 'other' : 'male',
-      weightKg: latestEvaluation?.weight_kg ?? 0,
-      heightCm: currentClinico.height_cm && currentClinico.height_cm > 0 ? currentClinico.height_cm : latestEvaluation?.height_cm ?? 0,
-      evaluatorName: nutritionistName,
-      updatedAt: draftIsakForm.updatedAt,
-    });
-  }, [draftIsakForm, currentClinico, latestEvaluation, tenantId, nutritionistId, nutritionistName]);
+    return buildDraftIsak(draftIsakForm.form, draftIsakForm.updatedAt);
+  }, [draftIsakForm, currentClinico, buildDraftIsak]);
   const snapshot = useMemo(
     () => selectNutritionSnapshot(evaluations, plans, draftIsak),
     [evaluations, plans, draftIsak],
@@ -633,6 +646,28 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
   const latestIsak = snapshot.isak;
   const latestWithings = snapshot.withings;
   const activePlan = snapshot.plan;
+
+  // Informe PDF integral: lo comparten la barra fija y los accesos directos de los módulos.
+  const reportExport = useNutritionReportExport({
+    patient: currentClinico,
+    nutritionistName,
+    tenant,
+    isak: latestIsak,
+    withings: latestWithings,
+    plan: activePlan,
+  });
+
+  /** ISAK: descarga el PDF con el borrador recién guardado (antes de que el estado se re-renderice). */
+  const handleGenerateReportFromIsak = async (form: AnthropometryDraftForm) => {
+    const fresh = hasIsakMeasurements(form) ? buildDraftIsak(form, new Date().toISOString()) : null;
+    await reportExport.download(fresh ? { isak: fresh } : {});
+  };
+
+  /** BIA: guarda la medición actual y descarga el PDF con ella. */
+  const handleGenerateReportFromBia = async (bia: BodyCompositionBIA) => {
+    const saved = await handleSaveBia(bia, { silent: true });
+    await reportExport.download(saved ? { withings: saved } : {});
+  };
 
   // La estatura registrada del paciente es la base de los cálculos; una evaluación previa
   // solo se usa si el paciente no tiene estatura registrada.
@@ -855,6 +890,62 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               ESTADO 2: PACIENTE ACTIVO SELECCIONADO (PESTAÑAS & MÓDULOS DE CÁLCULO)
               ========================================================================= */
           <div className="space-y-6 animate-fadeIn">
+            {/* Barra fija: paciente seleccionado + acciones del informe (visibles en cualquier pestaña) */}
+            <div
+              id="nutrition-report-toolbar"
+              className="sticky top-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 bg-surface-container-lowest border-b border-outline-variant/40 shadow-sm"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="material-symbols-outlined text-primary text-2xl shrink-0">account_circle</span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-primary">
+                      Paciente seleccionado
+                    </p>
+                    <h2 className="text-base font-extrabold text-on-surface truncate">
+                      {activePatient.full_name}
+                    </h2>
+                  </div>
+                </div>
+
+                <EcoExportActions
+                  variant="toolbar"
+                  patient={currentClinico}
+                  documentType="informe_nutricional"
+                  plan={activePlan}
+                  isakEvaluation={latestIsak}
+                  withingsEvaluation={latestWithings}
+                  evaluation={latestIsak ?? latestWithings}
+                  historyEvaluations={evaluations}
+                  nutritionistName={nutritionistName}
+                  tenant={tenant}
+                  showPreviewOption={true}
+                />
+              </div>
+
+              {/* Aviso de los accesos directos de ISAK / BIA (la barra ya avisa sus propias acciones) */}
+              {reportExport.status && (
+                <div
+                  role="status"
+                  className={`absolute right-4 sm:right-6 lg:right-8 top-full mt-2 z-40 w-[min(92vw,26rem)] shadow-lg p-3 rounded-2xl border text-xs flex items-center justify-between gap-3 ${
+                    reportExport.status.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                      : 'bg-error-container text-on-error-container border-error/30'
+                  }`}
+                >
+                  <span className="font-bold">{reportExport.status.text}</span>
+                  <button
+                    type="button"
+                    onClick={reportExport.dismissStatus}
+                    aria-label="Cerrar aviso"
+                    className="p-1 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Header del Paciente Activo */}
             <div className="bg-surface-container-low p-4 rounded-2xl border border-outline-variant/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -892,21 +983,6 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                {(latestIsak || latestWithings || activePlan) && (
-                  <EcoExportActions
-                    patient={currentClinico}
-                    documentType="informe_nutricional"
-                    plan={activePlan}
-                    isakEvaluation={latestIsak}
-                    withingsEvaluation={latestWithings}
-                    evaluation={latestIsak ?? latestWithings}
-                    historyEvaluations={evaluations}
-                    nutritionistName={nutritionistName}
-                    tenant={tenant}
-                    size="sm"
-                    showPreviewOption={true}
-                  />
-                )}
                 <button
                   type="button"
                   onClick={handleConnectWithings}
@@ -1093,6 +1169,8 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                   setDraftIsakForm(null);
                   setActiveTab('bia');
                 }}
+                onGenerateReport={handleGenerateReportFromIsak}
+                isGeneratingReport={reportExport.isDownloading}
                 onSectionSaved={({ skinfolds, perimeters, diameters, equation, form }) => {
                   useAppStore.getState().patchNutritionDraft({
                     patientId: currentClinico.id,
@@ -1119,8 +1197,14 @@ export const NutritionistDashboard: React.FC<NutritionistDashboardProps> = ({ on
                   heightCm: baseHeightCm,
                 })}
                 data={liveWithingsBia || latestBiaData}
-                onSave={(bia) => handleSaveBia(bia)}
-                onAutosave={(bia) => handleSaveBia(bia, { silent: true })}
+                onSave={async (bia) => {
+                  await handleSaveBia(bia);
+                }}
+                onAutosave={async (bia) => {
+                  await handleSaveBia(bia, { silent: true });
+                }}
+                onGenerateReport={handleGenerateReportFromBia}
+                isGeneratingReport={reportExport.isDownloading}
               />
             )}
 

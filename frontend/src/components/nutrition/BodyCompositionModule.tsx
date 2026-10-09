@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Scale,
   Download,
+  FileDown,
 } from 'lucide-react';
 import { api } from '../../services/apiClient';
 
@@ -24,6 +25,12 @@ interface BodyCompositionModuleProps {
   onSave: (data: BodyCompositionBIA) => void | Promise<void>;
   /** Guardado silencioso mientras se llenan los campos. */
   onAutosave?: (data: BodyCompositionBIA) => void | Promise<void>;
+  /**
+   * Acceso directo "Generar y Descargar PDF": recibe la composición actual para guardarla y
+   * descargar el informe nutricional con esos valores.
+   */
+  onGenerateReport?: (data: BodyCompositionBIA) => void | Promise<void>;
+  isGeneratingReport?: boolean;
 }
 
 const AUTOSAVE_DEBOUNCE_MS = 1500;
@@ -33,6 +40,8 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
   data,
   onSave,
   onAutosave,
+  onGenerateReport,
+  isGeneratingReport = false,
 }) => {
   const emptyRange = (
     unit: string,
@@ -329,6 +338,19 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
     }
   };
 
+  /** Guarda la composición actual y descarga el informe PDF con esos valores. */
+  const handleGenerateReport = async () => {
+    if (!onGenerateReport) return;
+    try {
+      setSaveError(null);
+      await onGenerateReport(compositionRef.current ?? composition);
+      dirtyRef.current = false;
+    } catch (err) {
+      console.error('No se pudo generar el informe PDF desde BIA:', err);
+      setSaveError('No se pudo guardar la composición corporal antes de generar el PDF. Intenta de nuevo.');
+    }
+  };
+
   // Helper renderer for Horizontal Range Bar (Matching Image 3)
   const renderRangeBar = (
     label: string,
@@ -466,6 +488,20 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
               <Sliders className="w-3.5 h-3.5" />
               {manualMode ? 'Modo Manual Activo' : 'Edición Manual'}
             </button>
+
+            {onGenerateReport && (
+              <button
+                id="btn-generate-bia-pdf"
+                type="button"
+                onClick={() => void handleGenerateReport()}
+                disabled={isGeneratingReport}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                title="Guarda la composición corporal y descarga el informe nutricional en PDF"
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                {isGeneratingReport ? 'Generando PDF...' : 'Generar y Descargar PDF'}
+              </button>
+            )}
 
             <button
               id="btn-print-bia-report"
@@ -876,6 +912,18 @@ export const BodyCompositionModule: React.FC<BodyCompositionModuleProps> = ({
           <span role="alert" className="text-xs font-medium text-red-600">
             {saveError}
           </span>
+        )}
+        {onGenerateReport && (
+          <button
+            id="btn-generate-bia-pdf-bottom"
+            type="button"
+            onClick={() => void handleGenerateReport()}
+            disabled={isGeneratingReport}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <FileDown className="w-4 h-4" />
+            {isGeneratingReport ? 'Generando PDF...' : 'Generar y Descargar PDF'}
+          </button>
         )}
         <button
           id="btn-save-composition"

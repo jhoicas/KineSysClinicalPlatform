@@ -28,6 +28,7 @@ import {
   Calculator,
   UserCheck,
   FileSpreadsheet,
+  FileDown,
 } from 'lucide-react';
 
 interface AnthropometryModuleProps {
@@ -41,6 +42,12 @@ interface AnthropometryModuleProps {
   onAutosaveHeight?: (patientId: string, heightCm: number) => Promise<void>;
   /** Finaliza la evaluación: el borrador pasa a evaluación definitiva. */
   onSave: (assessment: AnthropometryAssessment) => void | Promise<void>;
+  /**
+   * Acceso directo "Generar y Descargar PDF": recibe el borrador ya guardado para que el informe
+   * incluya las últimas medidas sin esperar a finalizar la evaluación.
+   */
+  onGenerateReport?: (form: AnthropometryDraftForm) => void | Promise<void>;
+  isGeneratingReport?: boolean;
   /** Notifica al estado global las medidas capturadas al guardar cada subsección. */
   onSectionSaved?: (measures: {
     skinfolds: SkinfoldMeasurements;
@@ -111,6 +118,8 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
   onAutosaveDraft,
   onAutosaveHeight,
   onSave,
+  onGenerateReport,
+  isGeneratingReport = false,
   onSectionSaved,
 }) => {
   const [activeTab, setActiveTab] = useState<AnthropometryTab>('perimeters');
@@ -315,6 +324,20 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
     } catch (err) {
       console.error('No se pudo guardar la subsección antropométrica:', err);
       setSaveError('No se pudo guardar la sección. Intenta de nuevo.');
+    }
+  };
+
+  /** Guarda lo capturado y descarga el informe PDF con esos datos. */
+  const handleGenerateReport = async () => {
+    if (!onGenerateReport) return;
+    try {
+      setSaveError(null);
+      await Promise.all([draftAutosave.flush(), heightAutosave.flush()]);
+      onSectionSaved?.({ skinfolds, perimeters, diameters, equation, form: draftForm });
+      await onGenerateReport(draftForm);
+    } catch (err) {
+      console.error('No se pudo generar el informe PDF desde ISAK:', err);
+      setSaveError('No se pudo guardar la evaluación antes de generar el PDF. Intenta de nuevo.');
     }
   };
 
@@ -921,6 +944,19 @@ export const AnthropometryModule: React.FC<AnthropometryModuleProps> = ({
               Paso {SECTION_FLOW.findIndex((s) => s.tab === activeTab) + 1} de {SECTION_FLOW.length}
             </span>
             <div className="flex items-center gap-2">
+              {activeTab === 'diameters' && onGenerateReport && (
+                <button
+                  id="btn-anthro-generate-pdf"
+                  type="button"
+                  onClick={() => void handleGenerateReport()}
+                  disabled={isGeneratingReport}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  title="Guarda la evaluación y descarga el informe nutricional en PDF"
+                >
+                  <FileDown className="w-4 h-4" />
+                  {isGeneratingReport ? 'Generando PDF...' : 'Generar y Descargar PDF'}
+                </button>
+              )}
               <button
                 id="btn-anthro-section-save"
                 type="button"

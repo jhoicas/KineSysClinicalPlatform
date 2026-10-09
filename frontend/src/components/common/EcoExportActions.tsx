@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PacienteClinico, PlanNutricional, EvaluacionAntropometrica, Tenant } from '../../types';
 import { useAuth } from '../../app/providers/AuthProvider';
 import { supabase } from '../../services/supabaseClient';
@@ -20,6 +21,7 @@ import {
   getNutritionReportPdfBlob,
 } from '../../utils/nutritionReportPdf';
 import { buildNutritionReportSummary } from '../../utils/nutritionReportSummary';
+import { buildNutritionReportPdfOptions, getClinicPdfBranding } from '../../utils/nutritionReportExport';
 import { PdfViewer } from './PdfViewer';
 
 export interface EcoExportActionsProps {
@@ -36,6 +38,11 @@ export interface EcoExportActionsProps {
   customTitle?: string;
   className?: string;
   size?: 'sm' | 'md' | 'lg';
+  /**
+   * `toolbar`: acciones principales siempre visibles (descarga destacada + envío por correo),
+   * pensadas para una barra fija. `default`: botones compactos de tarjeta.
+   */
+  variant?: 'default' | 'toolbar';
   showPreviewOption?: boolean;
   onSuccess?: (result: any) => void;
   onError?: (error: string) => void;
@@ -54,6 +61,7 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
   customTitle,
   className = '',
   size = 'md',
+  variant = 'default',
   showPreviewOption = true,
   onSuccess,
   onError,
@@ -97,33 +105,22 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
     user?.full_name ||
     'Nutricionista KineSys';
 
-  const getPdfOptions = () => {
-    const primaryColor = activeTenant?.primary_color || '#004870';
-    const clinicName = activeTenant?.name || 'KineSys Salud & Centro Clínico';
-    const clinicAddress = (activeTenant?.settings as any)?.address || 'Av. Salud Integral 1050, Piso 4';
-    const clinicPhone = (activeTenant?.settings as any)?.phone || '+56 9 8765 4321';
-    const clinicEmail = (activeTenant?.settings as any)?.email || 'contacto@kinesys.health';
-    const clinicLogo = activeTenant?.logo_url || undefined;
-
-    return {
-      patient,
-      nutritionistName: effectiveNutritionistName,
-      clinicName,
-      clinicAddress,
-      clinicPhone,
-      clinicEmail,
-      clinicLogoBase64: clinicLogo,
-      primaryColorHex: primaryColor,
-    };
-  };
+  const getPdfOptions = () => ({
+    patient,
+    nutritionistName: effectiveNutritionistName,
+    ...getClinicPdfBranding(activeTenant),
+  });
 
   const reportIsak = isakEvaluation ?? evaluation ?? null;
   const hasReportData = Boolean(reportIsak || withingsEvaluation || plan);
 
-  const getReportPdfOptions = () => {
-    const { patient: _p, ...rest } = getPdfOptions();
-    return { ...rest, patient, isak: reportIsak, withings: withingsEvaluation ?? null, plan: plan ?? null };
-  };
+  const getReportPdfOptions = () =>
+    buildNutritionReportPdfOptions({
+      patient,
+      nutritionistName: effectiveNutritionistName,
+      tenant: activeTenant,
+      data: { isak: reportIsak, withings: withingsEvaluation ?? null, plan: plan ?? null },
+    });
 
   // 1. Download handler
   const handleDownloadPdf = async () => {
@@ -272,66 +269,17 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
       ? 'px-6 py-3 text-sm'
       : 'px-4 py-2.5 text-xs';
 
-  return (
-    <div className={`space-y-3 ${className}`}>
-      {/* Action Buttons Row */}
-      <div className="flex flex-wrap items-center gap-2.5">
-        {/* 1. Download PDF Button */}
-        <button
-          type="button"
-          onClick={handleDownloadPdf}
-          disabled={isDownloading}
-          className={`${btnPadding} bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-extrabold rounded-2xl border border-outline-variant/50 flex items-center gap-2 cursor-pointer shadow-2xs transition-all hover:scale-[1.01] active:scale-[0.99]`}
-          title={`Descargar ${docTypeName} en PDF con branding institucional`}
-        >
-          <span className="material-symbols-outlined text-base text-primary">
-            {isDownloading ? 'hourglass_top' : 'download'}
-          </span>
-          <span>{isDownloading ? 'Generando PDF...' : 'Descargar PDF'}</span>
-        </button>
-
-        {/* 2. Eco-Friendly Email Button */}
-        <button
-          type="button"
-          onClick={() => {
-            setRecipientEmail(patient.telecom_email || '');
-            setIsEmailModalOpen(true);
-          }}
-          className={`${btnPadding} bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-2xl shadow-xs flex items-center gap-2 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] border border-emerald-500/40`}
-          title="Enviar documento directamente al correo del paciente (Cero Papel)"
-        >
-          <span className="material-symbols-outlined text-base text-emerald-200">
-            eco
-          </span>
-          <span>Enviar por Correo</span>
-          <span className="hidden sm:inline-block px-1.5 py-0.5 bg-emerald-800/60 text-emerald-200 text-[9px] font-black rounded-md tracking-wider uppercase">
-            Eco-Friendly
-          </span>
-        </button>
-
-        {/* 3. Optional Preview Button */}
-        {showPreviewOption && (
-          <button
-            type="button"
-            onClick={handleOpenPreview}
-            className={`${btnPadding} bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface font-bold rounded-2xl border border-outline-variant/30 flex items-center gap-1.5 cursor-pointer transition-colors`}
-            title="Vista previa del documento generado"
-          >
-            <span className="material-symbols-outlined text-base">visibility</span>
-            <span className="hidden md:inline">Vista Previa</span>
-          </button>
-        )}
-      </div>
-
-      {/* Dynamic Status / Feedback Alert */}
-      {statusMessage && (
-        <div
-          className={`p-3 rounded-2xl border flex items-center justify-between gap-3 text-xs animate-fadeIn ${
-            statusMessage.type === 'success'
-              ? 'bg-emerald-50 text-emerald-900 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-200 dark:border-emerald-800/50'
-              : 'bg-error-container/40 text-on-error-container border-error/30'
-          }`}
-        >
+  // `floating`: aviso sobre el contenido (barra fija); necesita fondo sólido para leerse.
+  const statusAlert = (extraClass: string, floating = false) =>
+    statusMessage && (
+      <div
+        className={`p-3 rounded-2xl border flex items-center justify-between gap-3 text-xs animate-fadeIn ${extraClass} ${
+          statusMessage.type === 'success'
+            ? 'bg-emerald-50 text-emerald-900 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-200 dark:border-emerald-800/50'
+            : `${floating ? 'bg-error-container' : 'bg-error-container/40'} text-on-error-container border-error/30`
+        }`}
+        role="status"
+      >
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-base">
               {statusMessage.type === 'success' ? 'check_circle' : 'error'}
@@ -352,9 +300,11 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
           >
             <span className="material-symbols-outlined text-sm">close</span>
           </button>
-        </div>
-      )}
+      </div>
+    );
 
+  const modals = createPortal(
+    <>
       {/* ========================================================================= */}
       {/* MODAL 1: ECO-FRIENDLY EMAIL DISPATCH MODAL                                */}
       {/* ========================================================================= */}
@@ -545,6 +495,116 @@ export const EcoExportActions: React.FC<EcoExportActionsProps> = ({
           </div>
         </div>
       )}
+    </>,
+    document.body,
+  );
+
+  const reportDisabled = documentType === 'informe_nutricional' && !hasReportData;
+  const disabledHint = 'Aún no hay datos (ISAK, BIA o plan) para generar el informe.';
+
+  if (variant === 'toolbar') {
+    return (
+      <div className={`relative flex flex-wrap items-center gap-2 ${className}`}>
+        <button
+          type="button"
+          onClick={handleDownloadPdf}
+          disabled={isDownloading || reportDisabled}
+          className="px-4 py-2.5 bg-primary hover:bg-primary/90 text-on-primary text-sm font-extrabold rounded-2xl shadow-sm flex items-center gap-2 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+          title={reportDisabled ? disabledHint : `Descargar ${docTypeName} en PDF con branding institucional`}
+        >
+          <span className="material-symbols-outlined text-xl">
+            {isDownloading ? 'hourglass_top' : 'picture_as_pdf'}
+          </span>
+          <span>{isDownloading ? 'Generando PDF...' : 'Descargar Reporte PDF'}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setRecipientEmail(patient.telecom_email || '');
+            setIsEmailModalOpen(true);
+          }}
+          disabled={reportDisabled}
+          className="px-4 py-2.5 bg-surface-container-lowest hover:bg-primary/10 text-primary text-sm font-extrabold rounded-2xl border-2 border-primary/60 flex items-center gap-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-surface-container-lowest"
+          title={reportDisabled ? disabledHint : 'Enviar el informe en PDF al correo del paciente'}
+        >
+          <span className="material-symbols-outlined text-xl">mail</span>
+          <span>Enviar Informe por Correo</span>
+        </button>
+
+        {showPreviewOption && (
+          <button
+            type="button"
+            onClick={handleOpenPreview}
+            disabled={reportDisabled}
+            className="p-2.5 bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface rounded-2xl border border-outline-variant/40 flex items-center cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Vista previa del informe"
+            aria-label="Vista previa del informe"
+          >
+            <span className="material-symbols-outlined text-xl">visibility</span>
+          </button>
+        )}
+
+        {statusAlert('absolute right-0 top-full mt-2 z-40 w-[min(92vw,26rem)] shadow-lg', true)}
+        {modals}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`space-y-3 ${className}`}>
+      {/* Action Buttons Row */}
+      <div className="flex flex-wrap items-center gap-2.5">
+        {/* 1. Download PDF Button */}
+        <button
+          type="button"
+          onClick={handleDownloadPdf}
+          disabled={isDownloading}
+          className={`${btnPadding} bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-extrabold rounded-2xl border border-outline-variant/50 flex items-center gap-2 cursor-pointer shadow-2xs transition-all hover:scale-[1.01] active:scale-[0.99]`}
+          title={`Descargar ${docTypeName} en PDF con branding institucional`}
+        >
+          <span className="material-symbols-outlined text-base text-primary">
+            {isDownloading ? 'hourglass_top' : 'download'}
+          </span>
+          <span>{isDownloading ? 'Generando PDF...' : 'Descargar PDF'}</span>
+        </button>
+
+        {/* 2. Eco-Friendly Email Button */}
+        <button
+          type="button"
+          onClick={() => {
+            setRecipientEmail(patient.telecom_email || '');
+            setIsEmailModalOpen(true);
+          }}
+          className={`${btnPadding} bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-2xl shadow-xs flex items-center gap-2 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] border border-emerald-500/40`}
+          title="Enviar documento directamente al correo del paciente (Cero Papel)"
+        >
+          <span className="material-symbols-outlined text-base text-emerald-200">
+            eco
+          </span>
+          <span>Enviar por Correo</span>
+          <span className="hidden sm:inline-block px-1.5 py-0.5 bg-emerald-800/60 text-emerald-200 text-[9px] font-black rounded-md tracking-wider uppercase">
+            Eco-Friendly
+          </span>
+        </button>
+
+        {/* 3. Optional Preview Button */}
+        {showPreviewOption && (
+          <button
+            type="button"
+            onClick={handleOpenPreview}
+            className={`${btnPadding} bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface font-bold rounded-2xl border border-outline-variant/30 flex items-center gap-1.5 cursor-pointer transition-colors`}
+            title="Vista previa del documento generado"
+          >
+            <span className="material-symbols-outlined text-base">visibility</span>
+            <span className="hidden md:inline">Vista Previa</span>
+          </button>
+        )}
+      </div>
+
+      {statusAlert('')}
+
+      {modals}
     </div>
   );
 };
